@@ -22,6 +22,7 @@ import inspect
 import logging
 import os
 from pathlib import Path
+from time import perf_counter
 from typing import Optional, Union, Literal
 
 from core.config import get_settings
@@ -77,6 +78,11 @@ def audio_to_midi(
     if mode == "stub":
         logger.warning("⚠️ 使用 Stub 模式 (生成伪造 MIDI)，不会进行真实 AI 推理。")
         _create_dummy_midi(target_midi_path)
+        logger.info(
+            "[H2S timing] audio_to_midi path=stub mode=%s predict_and_save_ms=0 output_midi=%s",
+            mode,
+            target_midi_path.name,
+        )
         logger.info("✅ [Stub] MIDI 生成完毕: %s", target_midi_path.name)
         return target_midi_path
 
@@ -90,6 +96,11 @@ def audio_to_midi(
             raise
         logger.warning("⚠️ Real 推理失败，自动回退 Stub: %s", e)
         _create_dummy_midi(target_midi_path)
+        logger.info(
+            "[H2S timing] audio_to_midi path=stub_fallback mode=%s predict_and_save_ms=n/a output_midi=%s",
+            mode,
+            target_midi_path.name,
+        )
         logger.info("✅ [Stub Fallback] MIDI 生成完毕: %s", target_midi_path.name)
         return target_midi_path
 
@@ -160,11 +171,13 @@ def _audio_to_midi_basic_pitch(
     settings = get_settings()
 
     logger.info("🧠 加载 Basic Pitch 推理器... (可能会较慢)")
+    t_imp0 = perf_counter()
     try:
         from basic_pitch.inference import predict_and_save  # type: ignore
         from basic_pitch import ICASSP_2022_MODEL_PATH  # type: ignore
     except Exception as e:
         raise RuntimeError(f"basic_pitch 导入失败：{e}")
+    import_setup_ms = (perf_counter() - t_imp0) * 1000.0
 
     sig = inspect.signature(predict_and_save)
     params = sig.parameters
@@ -215,7 +228,15 @@ def _audio_to_midi_basic_pitch(
         raise TypeError(f"predict_and_save 缺少必填参数：{missing_required}；当前已准备参数：{sorted(call_kwargs.keys())}")
 
     logger.info("🔥 开始 AI 推理 (可能需要几秒)...")
+    t_pred0 = perf_counter()
     predict_and_save(**call_kwargs)
+    predict_ms = (perf_counter() - t_pred0) * 1000.0
+    logger.info(
+        "[H2S timing] basic_pitch import_setup_ms=%.1f predict_and_save_ms=%.1f output_midi=%s",
+        import_setup_ms,
+        predict_ms,
+        target_midi_path.name,
+    )
 
     stem = in_path.stem
     base_name = stem.replace("_clean", "")

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 from typing import Optional, Union
 
 # Demucs is trained/evaluated around 44.1 kHz; keep stereo when the source is stereo.
@@ -82,12 +83,14 @@ def preprocess_audio(
 
     try:
         # 核心优化：即使用户丢一个 1 小时文件，也只解码前 max_sec 秒
+        t_load0 = perf_counter()
         y, sr = librosa.load(
             str(in_path),
             sr=target_sr,
             mono=True,
             duration=max_sec,
         )
+        load_ms = (perf_counter() - t_load0) * 1000.0
     except Exception as e:
         logger.error("❌ Librosa 加载失败: %s", e)
         if "NoBackendError" in str(e) or "audioread" in str(e):
@@ -107,7 +110,19 @@ def preprocess_audio(
 
     # 4. 写出为标准 WAV
     logger.info("💾 [Preprocess] 写入: %s", out_path.name)
+    t_w0 = perf_counter()
     sf.write(str(out_path), y, target_sr)
+    write_ms = (perf_counter() - t_w0) * 1000.0
+    src_dur_sec = float(len(y) / target_sr) if target_sr > 0 else 0.0
+    logger.info(
+        "[H2S timing] preprocess librosa_load_ms=%.1f source_duration_sec=%.3f target_sr=%d "
+        "clean_wav_write_ms=%.1f output_wav=%s",
+        load_ms,
+        src_dur_sec,
+        int(target_sr),
+        write_ms,
+        out_path.name,
+    )
 
     logger.info(
         "✅ [Preprocess] 完成: %s (sr=%d, duration=%.2fs)",

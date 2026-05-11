@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from time import perf_counter
 from typing import Optional, Union, Literal
 
 from core.config import get_settings
@@ -140,13 +141,19 @@ def midi_to_audio(
 
     logger.info("🎼 [Synth] 渲染 MIDI -> WAV: %s", midi_path.name)
     logger.info("▶  %s", " ".join(cmd_synth))
+    t_fs0 = perf_counter()
     _run_cmd(cmd_synth, err_prefix="FluidSynth 渲染失败")
+    fluidsynth_ms = (perf_counter() - t_fs0) * 1000.0
 
     if not wav_path.exists() or wav_path.stat().st_size == 0:
         raise RuntimeError("FluidSynth 执行完成，但未生成有效 WAV 文件。")
 
     # 2) 若只要 WAV
     if output_format == "wav":
+        logger.info(
+            "[H2S timing] midi_to_audio fluidsynth_ms=%.1f ffmpeg_ms=0 output_format=wav",
+            fluidsynth_ms,
+        )
         logger.info("✅ [Synth] 输出完成: %s", wav_path.name)
         return wav_path
 
@@ -169,7 +176,9 @@ def midi_to_audio(
 
     logger.info("🎧 [Synth] 转码 WAV -> MP3: %s", mp3_path.name)
     logger.info("▶  %s", " ".join(cmd_ffmpeg))
+    t_ff0 = perf_counter()
     _run_cmd(cmd_ffmpeg, err_prefix="ffmpeg 转码失败")
+    ffmpeg_ms = (perf_counter() - t_ff0) * 1000.0
 
     if not mp3_path.exists() or mp3_path.stat().st_size == 0:
         raise RuntimeError("ffmpeg 执行完成，但未生成有效 MP3 文件。")
@@ -181,5 +190,10 @@ def midi_to_audio(
         except OSError:
             pass
 
+    logger.info(
+        "[H2S timing] midi_to_audio fluidsynth_ms=%.1f ffmpeg_ms=%.1f output_format=mp3",
+        fluidsynth_ms,
+        ffmpeg_ms,
+    )
     logger.info("✅ [Synth] 输出完成: %s", mp3_path.name)
     return mp3_path

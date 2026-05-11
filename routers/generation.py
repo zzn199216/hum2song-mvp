@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
@@ -101,6 +103,18 @@ def _status_is_success_done(st: TaskStatus) -> bool:
     return st == TaskStatus.completed
 
 
+def _ai_mode_hint_for_timing() -> str:
+    """Best-effort label for logs only (no behavior change)."""
+    v = (os.getenv("H2S_AI_MODE") or "").strip().lower()
+    if v in ("auto", "real", "stub"):
+        return v
+    try:
+        s = get_settings()
+        return "stub" if bool(getattr(s, "use_stub_converter", False)) else "auto"
+    except Exception:
+        return "unknown"
+
+
 async def _save_upload_file(upload_file: UploadFile, dst_path: Path, *, max_mb: int) -> int:
     """
     Async chunk write + size limit (no full file read into memory).
@@ -179,7 +193,9 @@ async def generate_music(
         pass
 
     try:
+        _t_upload0 = time.perf_counter()
         written = await _save_upload_file(file, input_path, max_mb=max_mb)
+        _upload_ms = (time.perf_counter() - _t_upload0) * 1000.0
         if written <= 0:
             task_manager.mark_failed(task_id, message="Empty file", stage=Stage.preprocessing)
             _safe_unlink(input_path)
@@ -190,6 +206,17 @@ async def generate_music(
             task_id,
             written,
             input_path.name,
+            bool(vocal_separation),
+        )
+        logger.info(
+            "[H2S timing] POST /generate task_id=%s upload_receive_save_ms=%.1f input_ext=%s input_bytes=%s "
+            "output_format=%s ai_mode_hint=%s vocal_separation=%s",
+            task_id,
+            _upload_ms,
+            original_ext,
+            written,
+            output_format,
+            _ai_mode_hint_for_timing(),
             bool(vocal_separation),
         )
 

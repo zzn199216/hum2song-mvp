@@ -5,6 +5,7 @@ import inspect
 import logging
 import shutil
 import time
+from time import perf_counter
 from pathlib import Path
 from typing import Callable, Optional, Union
 from uuid import UUID
@@ -201,6 +202,8 @@ class GenerationService:
         logger.info(f"🚀 [Start] Task {task_id} processing...")
 
         current_stage = Stage.preprocessing
+        _t_wall0 = perf_counter()
+        _timing_status = "failed"
         try:
             if not input_path.exists():
                 raise FileNotFoundError(f"Input file missing: {input_path}")
@@ -239,6 +242,7 @@ class GenerationService:
                 output_format=None,  # 让 Manager 自动推断
             )
             logger.info(f"✅ [Done] Task {task_id} finished.")
+            _timing_status = "completed"
 
         except Exception as e:
             logger.error(f"❌ [Fail] Task {task_id} failed: {e}", exc_info=True)
@@ -255,6 +259,14 @@ class GenerationService:
                     logger.debug(f"🧹 Cleaned up input: {input_path}")
             except Exception as e:
                 logger.warning(f"Failed to cleanup input {input_path}: {e}")
+
+            wall_ms = (perf_counter() - _t_wall0) * 1000.0
+            logger.info(
+                "[H2S timing] process_task task_id=%s total_wall_ms=%.1f status=%s",
+                task_id,
+                wall_ms,
+                _timing_status,
+            )
 
     # ----------------------------------------------------------------
     # MOCK implementation (当没有 core.pipeline 时使用)

@@ -41,6 +41,26 @@
     }catch(e){ return false; }
   }
 
+  /** Import / audio-to-notes timing: same gate as perf import + h2s_debug. */
+  function _h2sImportTimingEnabled(){
+    try{
+      if (typeof localStorage === 'undefined') return false;
+      if (localStorage.h2s_debug === '1') return true;
+      return _devPerfTimingEnabled();
+    }catch(e){ return false; }
+  }
+
+  function _h2sTimingLog(msg, extra){
+    if (!_h2sImportTimingEnabled()) return;
+    try{
+      if (extra && typeof extra === 'object'){
+        console.info('[H2S timing] ' + msg, extra);
+      } else {
+        console.info('[H2S timing] ' + msg);
+      }
+    }catch(_e){}
+  }
+
   /** Transcription import: skip auto-opening the editor when result exceeds these (notes or span in seconds). */
   const IMPORT_AUTO_OPEN_MAX_NOTES = 2000;
   const IMPORT_AUTO_OPEN_MAX_SPAN_SEC = 180;
@@ -5784,10 +5804,18 @@ renderTimeline(){
       this.state.importCancelled = false;
       this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.uploading') : 'Uploading audio...', true);
       log(`Uploading ${file.name} ...`);
+      const tImport0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+      let uploadMs = 0;
+      let pollMs = 0;
+      let pollAttempts = 0;
+      let scoreFetchMs = 0;
+      let materializeMs = 0;
       try{
         const fd = new FormData();
         fd.append('file', file, file.name);
+        const tUp0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
         const res = await fetchJson(API.generate('mp3'), { method:'POST', body:fd });
+        uploadMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tUp0;
         const tid = res.task_id || res.id || res.taskId || res.task || null;
         if (!tid){
           const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, dflt) => (dflt != null ? dflt : k);
@@ -5799,14 +5827,20 @@ renderTimeline(){
         this.state.lastUploadTaskId = tid;
         log(`Generate queued: ${tid}`);
         this.setImportStatus(((window.I18N && window.I18N.t) ? window.I18N.t('io.processing') : 'Processing...') + ' (task: ' + String(tid).slice(0, 8) + '...)', true);
-        await this.pollTaskUntilDone(tid);
+        const pollStats = { attempts: 0 };
+        const tPoll0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+        await this.pollTaskUntilDone(tid, pollStats);
+        pollMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tPoll0;
+        pollAttempts = pollStats.attempts || 0;
         if (this.state.importCancelled){
           this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.cancelled') : 'Cancelled.', false);
           log('Import cancelled by user');
           return;
         }
         this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.fetching') : 'Fetching...', true);
+        const tSc0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
         const score = await fetchJson(API.score(tid));
+        scoreFetchMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tSc0;
         if (this.state.importCancelled){
           this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.cancelled') : 'Cancelled.', false);
           return;
@@ -5826,6 +5860,8 @@ renderTimeline(){
         const scoreForClip = splitRes.score;
 
         this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.creatingClip') : 'Creating clip...', true);
+
+        const tMat0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
 
         if ((this.project.clips || []).length === 0){
           const srcBpm = (typeof scoreForClip.tempo_bpm === 'number') ? scoreForClip.tempo_bpm : ((typeof scoreForClip.bpm === 'number') ? scoreForClip.bpm : null);
@@ -5982,6 +6018,7 @@ renderTimeline(){
             log('Import: editor not auto-opened (multi-clip).');
           }
           setTimeout(() => this.setImportStatus('', false), this._importSuccessStatusClearMs({ autoOpen: shouldAutoOpen }));
+          materializeMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tMat0;
         } else if (useExplode){
           if (!this.project.tracks) this.project.tracks = [];
           while (this.project.tracks.length < explodeParts.length){
@@ -6059,6 +6096,7 @@ renderTimeline(){
           log('Clips added (split explode): ' + explodeClipCount);
           log('Import: editor not auto-opened (multi-clip).');
           setTimeout(() => this.setImportStatus('', false), this._importSuccessStatusClearMs({ autoOpen: false }));
+          materializeMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tMat0;
         } else {
           let placeStartSec = playheadSec;
           let placeTrackIndex = 0;
@@ -6097,7 +6135,18 @@ renderTimeline(){
             setTimeout(() => this.openClipEditor(cidNew), 0);
           }
           setTimeout(() => this.setImportStatus('', false), this._importSuccessStatusClearMs({ autoOpen: shouldAutoOpen }));
+          materializeMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tMat0;
         }
+        const tImport1 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+        _h2sTimingLog('client import_flow', {
+          task_id: this.state.lastUploadTaskId,
+          upload_ms: Math.round(uploadMs * 10) / 10,
+          poll_ms: Math.round(pollMs * 10) / 10,
+          poll_attempts: pollAttempts,
+          score_fetch_ms: Math.round(scoreFetchMs * 10) / 10,
+          materialize_ms: Math.round(materializeMs * 10) / 10,
+          total_perceived_ms: Math.round((tImport1 - tImport0) * 10) / 10,
+        });
       }catch(e){
         if (this.state.importCancelled){
           this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.cancelled') : 'Cancelled.', false);
@@ -6387,11 +6436,14 @@ renderTimeline(){
       }catch(e){ /* minimal safe failure: do not break recording or generation flow */ }
     },
 
-    async pollTaskUntilDone(taskId){
+    async pollTaskUntilDone(taskId, pollStats){
       const maxWaitMs = 180000;
       const start = performance.now();
       while (true){
         if (this.state.importCancelled) throw new Error('Cancelled by user');
+        if (pollStats && typeof pollStats === 'object'){
+          pollStats.attempts = (Number(pollStats.attempts) || 0) + 1;
+        }
         const data = await fetchJson(API.task(taskId));
         const status = String((data.status || data.state || data.task_status || data.taskStatus || '')).toLowerCase();
         if (status.includes('completed') || status.includes('done') || status === 'success'){

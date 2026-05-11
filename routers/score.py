@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from time import perf_counter
 from types import SimpleNamespace
 from typing import Literal
 
@@ -71,6 +72,10 @@ def _get_latest_midi_path(task_id: str) -> Path:
     raise HTTPException(status_code=409, detail="MIDI not available for this task")
 
 
+def _score_note_count(doc: ScoreDoc) -> int:
+    return sum(len(tr.notes) for tr in doc.tracks)
+
+
 @router.get("/tasks/{task_id}/score", response_model=ScoreDoc)
 def get_score(task_id: str) -> ScoreDoc:
     """
@@ -79,22 +84,42 @@ def get_score(task_id: str) -> ScoreDoc:
     _ensure_task_completed(task_id)
     out_dir = _resolve_output_dir()
     score_json_path = (out_dir / f"{task_id}.score.json").resolve()
+    score_json_exists = 1 if score_json_path.exists() else 0
+
+    t_req0 = perf_counter()
+    midi_ms = 0.0
+    norm_ms = 0.0
 
     # 1) Prefer persisted JSON (Stable)
     if score_json_path.exists():
         try:
             raw = score_json_path.read_text(encoding="utf-8")
             score = ScoreDoc.model_validate_json(raw)
-            return normalize_score(score) # Double check normalize on read
+            t_n0 = perf_counter()
+            score_n = normalize_score(score)
+            norm_ms = (perf_counter() - t_n0) * 1000.0
+            total_ms = (perf_counter() - t_req0) * 1000.0
+            logger.info(
+                "[H2S timing] GET /tasks/id/score task_id=%s total_ms=%.1f cache_hit=1 "
+                "score_json_exists=1 midi_to_score_ms=0 normalize_ms=%.1f note_count=%d",
+                task_id,
+                total_ms,
+                norm_ms,
+                _score_note_count(score_n),
+            )
+            return score_n
         except Exception:
             pass
 
     # 2) Fallback: derive from MIDI
     midi_path = _get_latest_midi_path(task_id)
     try:
+        t_m0 = perf_counter()
         score = midi_to_score(midi_path)
-        # FORCE NORMALIZE: Add IDs, Sort, Round, Fix types
+        midi_ms = (perf_counter() - t_m0) * 1000.0
+        t_n0 = perf_counter()
         score_n = normalize_score(score)
+        norm_ms = (perf_counter() - t_n0) * 1000.0
 
         # Cache it immediately
         try:
@@ -102,6 +127,17 @@ def get_score(task_id: str) -> ScoreDoc:
         except Exception:
             pass
 
+        total_ms = (perf_counter() - t_req0) * 1000.0
+        logger.info(
+            "[H2S timing] GET /tasks/id/score task_id=%s total_ms=%.1f cache_hit=0 "
+            "score_json_exists=%d midi_to_score_ms=%.1f normalize_ms=%.1f note_count=%d",
+            task_id,
+            total_ms,
+            score_json_exists,
+            midi_ms,
+            norm_ms,
+            _score_note_count(score_n),
+        )
         return score_n
     except HTTPException:
         raise
