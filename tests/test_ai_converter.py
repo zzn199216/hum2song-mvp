@@ -62,6 +62,25 @@ def test_input_not_found():
     with pytest.raises(FileNotFoundError):
         audio_to_midi("ghost_file.wav")
 
+
+def test_auto_mode_raises_on_basic_pitch_failure_no_stub_fallback(monkeypatch, workspace, clean_env):
+    """auto 模式不得静默回退 stub：Basic Pitch 失败应抛出，由 pipeline 将任务标为失败。"""
+    wav_path, out_dir = workspace
+    settings = get_settings()
+    original = settings.use_stub_converter
+    settings.use_stub_converter = False
+    monkeypatch.delenv("H2S_AI_MODE", raising=False)
+
+    def _boom():
+        raise RuntimeError("basic_pitch 导入失败：No module named 'basic_pitch'")
+
+    monkeypatch.setattr("core.ai_converter._ensure_basic_pitch_runtime", _boom)
+    try:
+        with pytest.raises(RuntimeError, match="basic_pitch"):
+            audio_to_midi(wav_path, output_dir=out_dir)
+    finally:
+        settings.use_stub_converter = original
+
 # 注意：Real 模式通常不放入自动化单元测试，
 # 因为它涉及下载大模型(100MB+)和 TensorFlow 初始化，耗时太长。
 # Real 模式我们通过 CLI 手动验证。

@@ -2,6 +2,13 @@
 setlocal
 cd /d "%~dp0"
 
+REM After first setup, venv exists — reuse it so installs land in the same env as beginner_launch.bat
+if exist "%~dp0venv\Scripts\python.exe" (
+  echo [Hum2Song] Using project venv: "%~dp0venv\Scripts\python.exe"
+  "%~dp0venv\Scripts\python.exe" "%~dp0scripts\beginner_setup.py" %*
+  exit /b %ERRORLEVEL%
+)
+
 set "PY_CMD="
 where python >nul 2>&1
 if not errorlevel 1 set "PY_CMD=python"

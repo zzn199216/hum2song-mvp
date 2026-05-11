@@ -11,6 +11,7 @@ Hum2Song MVP main entry (FastAPI)
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -80,6 +81,15 @@ async def lifespan(_: FastAPI):
             logger.info("Task prune: removed=%s", removed_tasks)
     except Exception as e:
         logger.warning("Task prune warning: %s", e)
+
+    # 4) Optional Basic Pitch / TF stack warmup (off by default; avoids first-request cold load)
+    if os.getenv("H2S_BASIC_PITCH_WARMUP", "").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            from core.ai_converter import warmup_basic_pitch
+
+            warmup_basic_pitch()
+        except Exception as e:
+            logger.warning("Basic Pitch warmup skipped: %s", e)
 
     yield
     logger.info("Service shutting down...")

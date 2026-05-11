@@ -2,6 +2,13 @@
 setlocal
 cd /d "%~dp0"
 
+REM Prefer project venv so Basic Pitch / deps match `pip install -r requirements.txt`
+if exist "%~dp0venv\Scripts\python.exe" (
+  echo [Hum2Song] Using project venv: "%~dp0venv\Scripts\python.exe"
+  "%~dp0venv\Scripts\python.exe" "%~dp0scripts\beginner_launch.py" %*
+  exit /b %ERRORLEVEL%
+)
+
 set "PY_CMD="
 where python >nul 2>&1
 if not errorlevel 1 set "PY_CMD=python"

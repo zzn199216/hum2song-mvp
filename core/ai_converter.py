@@ -13,23 +13,80 @@ AI 转换模块 (Step 03)
 模式规则（兼容增强）：
 - 若环境变量 H2S_AI_MODE=stub|real|auto，则优先按它执行
 - 否则按 settings.use_stub_converter：
-    - True  -> stub
-    - False -> auto（优先 real，失败自动回退 stub，保证 demo 更稳）
+    - True  -> stub（显式假 MIDI，供测试/离线）
+    - False -> auto（Basic Pitch；失败时任务失败，不再静默回退 stub）
 """
 from __future__ import annotations
 
 import inspect
 import logging
 import os
+import threading
 from pathlib import Path
 from time import perf_counter
-from typing import Optional, Union, Literal
+from typing import Any, Callable, NamedTuple, Optional, Union, Literal
 
 from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 AIMode = Literal["auto", "real", "stub"]
+
+
+class _BasicPitchRuntime(NamedTuple):
+    predict_and_save: Callable[..., Any]
+    model_path: Any
+    sig: inspect.Signature
+
+
+_basic_pitch_lock = threading.Lock()
+_basic_pitch_cached: Optional[_BasicPitchRuntime] = None
+
+
+def warmup_basic_pitch() -> None:
+    """
+    Eagerly load Basic Pitch / TensorFlow stack once (same as first real conversion).
+
+    Opt-in from app lifespan via env ``H2S_BASIC_PITCH_WARMUP=1`` so default startup stays fast.
+    """
+    _ensure_basic_pitch_runtime()
+
+
+def _ensure_basic_pitch_runtime() -> tuple[_BasicPitchRuntime, bool]:
+    """
+    Lazy singleton: import basic_pitch + build signature once per process.
+
+    Returns:
+        (runtime, warm_hit) where warm_hit is True if this call reused an already-loaded cache
+        (import/setup cost for this call should be ~0).
+    """
+    global _basic_pitch_cached
+    if _basic_pitch_cached is not None:
+        return _basic_pitch_cached, True
+
+    with _basic_pitch_lock:
+        if _basic_pitch_cached is not None:
+            return _basic_pitch_cached, True
+
+        t_cold0 = perf_counter()
+        try:
+            from basic_pitch.inference import predict_and_save  # type: ignore
+            from basic_pitch import ICASSP_2022_MODEL_PATH  # type: ignore
+        except Exception as e:
+            raise RuntimeError(f"basic_pitch 导入失败：{e}") from e
+
+        sig = inspect.signature(predict_and_save)
+        _basic_pitch_cached = _BasicPitchRuntime(
+            predict_and_save=predict_and_save,
+            model_path=ICASSP_2022_MODEL_PATH,
+            sig=sig,
+        )
+        cold_ms = (perf_counter() - t_cold0) * 1000.0
+        logger.info(
+            "[H2S timing] basic_pitch cold_load_ms=%.1f basic_pitch_singleton=ready",
+            cold_ms,
+        )
+        return _basic_pitch_cached, False
 
 
 def _resolve_ai_mode() -> AIMode:
@@ -57,8 +114,8 @@ def audio_to_midi(
 
     兼容行为：
     - 仍然使用 base_name = stem.replace('_clean','') 生成目标 <base_name>.mid
-    - 仍然支持 settings.use_stub_converter
-    - 增强：默认 auto（优先 real，失败回退 stub）
+    - 仍然支持 settings.use_stub_converter（仅显式 stub）
+    - real / auto：仅 Basic Pitch；导入或推理失败时抛出，由上层将任务标为失败
     """
     settings = get_settings()
     in_path = Path(audio_path)
@@ -86,23 +143,10 @@ def audio_to_midi(
         logger.info("✅ [Stub] MIDI 生成完毕: %s", target_midi_path.name)
         return target_midi_path
 
-    # real / auto: try basic_pitch
-    try:
-        midi_path = _audio_to_midi_basic_pitch(in_path, target_midi_path, out_dir)
-        logger.info("✅ [AI Converter] 转换成功: %s", midi_path.name)
-        return midi_path
-    except Exception as e:
-        if mode == "real":
-            raise
-        logger.warning("⚠️ Real 推理失败，自动回退 Stub: %s", e)
-        _create_dummy_midi(target_midi_path)
-        logger.info(
-            "[H2S timing] audio_to_midi path=stub_fallback mode=%s predict_and_save_ms=n/a output_midi=%s",
-            mode,
-            target_midi_path.name,
-        )
-        logger.info("✅ [Stub Fallback] MIDI 生成完毕: %s", target_midi_path.name)
-        return target_midi_path
+    # real / auto: Basic Pitch only (no dummy MIDI on failure — surfaced to caller / task failure)
+    midi_path = _audio_to_midi_basic_pitch(in_path, target_midi_path, out_dir)
+    logger.info("✅ [AI Converter] 转换成功: %s", midi_path.name)
+    return midi_path
 
 
 def _create_dummy_midi(path: Path) -> None:
@@ -160,6 +204,8 @@ def _audio_to_midi_basic_pitch(
     使用 Basic Pitch 模型将音频转换为 MIDI。
 
     关键点：
+    - Basic Pitch 模块与 ``predict_and_save`` 的 ``inspect.signature`` 在进程内只加载一次（懒单例），
+      避免每个请求重复支付 TensorFlow / 导入冷启动成本。
     - 你当前安装的 basic_pitch 的 predict_and_save() 需要显式传：
       save_midi / sonify_midi / save_model_outputs / save_notes / model_or_model_path
     - 这里通过 inspect.signature 做“按签名过滤参数”，避免版本差异导致崩。
@@ -172,15 +218,11 @@ def _audio_to_midi_basic_pitch(
 
     logger.info("🧠 加载 Basic Pitch 推理器... (可能会较慢)")
     t_imp0 = perf_counter()
-    try:
-        from basic_pitch.inference import predict_and_save  # type: ignore
-        from basic_pitch import ICASSP_2022_MODEL_PATH  # type: ignore
-    except Exception as e:
-        raise RuntimeError(f"basic_pitch 导入失败：{e}")
+    runtime, warm_hit = _ensure_basic_pitch_runtime()
     import_setup_ms = (perf_counter() - t_imp0) * 1000.0
-
-    sig = inspect.signature(predict_and_save)
-    params = sig.parameters
+    predict_and_save = runtime.predict_and_save
+    ICASSP_2022_MODEL_PATH = runtime.model_path
+    params = runtime.sig.parameters
 
     onset = getattr(settings, "onset_threshold", None)
     frame = getattr(settings, "frame_threshold", None)
@@ -232,8 +274,10 @@ def _audio_to_midi_basic_pitch(
     predict_and_save(**call_kwargs)
     predict_ms = (perf_counter() - t_pred0) * 1000.0
     logger.info(
-        "[H2S timing] basic_pitch import_setup_ms=%.1f predict_and_save_ms=%.1f output_midi=%s",
+        "[H2S timing] basic_pitch import_setup_ms=%.1f basic_pitch_warm=%s "
+        "predict_and_save_ms=%.1f output_midi=%s",
         import_setup_ms,
+        "yes" if warm_hit else "no",
         predict_ms,
         target_midi_path.name,
     )
