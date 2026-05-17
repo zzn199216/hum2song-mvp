@@ -6,6 +6,7 @@
   'use strict';
 
   var ALLOWED_CLOUD_ORIGINS = new Set([
+    'https://hum2song.cn',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'http://localhost:3010',
