@@ -1483,7 +1483,13 @@
                 <div class="help" id="editorOptStatus" style="margin-top:4px; font-size:12px; opacity:0.78;"></div>
                 <div style="margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,.08);">
                   <div style="font-weight:700; margin-bottom:6px;" data-i18n="editor.llmSettings">LLM Settings (Scaffold)</div>
-                  <div class="col" style="gap:6px;">
+                  <div id="editorCloudAiPanel" class="help" style="display:none; font-size:12px; padding:8px; border:1px solid rgba(255,255,255,.12); border-radius:8px; background:rgba(255,255,255,.04);">
+                    <div style="font-weight:700; margin-bottom:4px;">云端 AI 已由 Hum2Song 托管</div>
+                    <div id="editorCloudAiStatus" class="muted">正在加载云端 AI 能力...</div>
+                    <div id="editorCloudAiQuota" class="muted" style="margin-top:4px;"></div>
+                    <div id="editorCloudAiPresets" class="muted" style="margin-top:4px;"></div>
+                  </div>
+                  <div id="editorLocalLlmSettings" class="col" style="gap:6px;">
                     <label class="muted" style="margin:0;" data-i18n="editor.gatewayPreset">Gateway Preset</label>
                     <select id="editorLlmGatewayPreset" class="btn" style="width:100%; padding:6px; font-size:12px;">
                       <option value="custom" data-i18n="editor.gatewayCustom">Custom</option>

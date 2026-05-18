@@ -1762,6 +1762,13 @@
         const el = doc.getElementById('editorOptStatus');
         if (el) el.textContent = text || '';
       };
+      const shouldBlockCloudLlmOptimize = (opts) => {
+        const g = typeof window !== 'undefined' ? window : null;
+        return !!(g && g.H2S_CLOUD_MODE && opts && opts.requestedPresetId === 'llm_v0');
+      };
+      const showCloudLlmPendingMessage = () => {
+        setEditorOptStatus('云端 AI 优化即将接入；当前可先使用本地确定性优化功能。');
+      };
       const setEditorOptimizeDetailsVisible = (visible) => {
         if (typeof document === 'undefined') return;
         const btns = [
@@ -1962,6 +1969,10 @@
               const app = g.H2SApp;
               if (!app || typeof app.optimizeClip !== 'function') return;
               const opts = readOptimizeOptionsFromUI();
+              if (shouldBlockCloudLlmOptimize(opts)) {
+                showCloudLlmPendingMessage();
+                return;
+              }
               if (app.setOptimizeOptions) app.setOptimizeOptions(opts, clipId);
               const presetId = opts.requestedPresetId;
               setEditorOptStatus('running...');
@@ -2217,6 +2228,10 @@
               const app = g.H2SApp;
               if (!app || typeof app.optimizeClip !== 'function') return;
               const opts = readOptimizeOptionsFromUI();
+              if (shouldBlockCloudLlmOptimize(opts)) {
+                showCloudLlmPendingMessage();
+                return;
+              }
               if (app.setOptimizeOptions) app.setOptimizeOptions(opts, clipId);
               const presetId = opts.requestedPresetId;
               setEditorOptStatus('running...');

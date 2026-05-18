@@ -32,6 +32,63 @@
     window.parent.postMessage(payload, origin);
   }
 
+  function isCloudModeRequested() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      return params.get('cloudMode') === '1';
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function setText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text || '';
+  }
+
+  function renderCloudAiStatus() {
+    var local = document.getElementById('editorLocalLlmSettings');
+    var panel = document.getElementById('editorCloudAiPanel');
+    if (!panel || !local || !window.H2S_CLOUD_MODE) return;
+    local.style.display = 'none';
+    panel.style.display = 'block';
+
+    var status = window.H2S_CLOUD_AI_STATUS || { loading: true };
+    if (status.loading) {
+      setText('editorCloudAiStatus', '正在加载云端 AI 能力...');
+      setText('editorCloudAiQuota', '');
+      setText('editorCloudAiPresets', '');
+      return;
+    }
+    if (!status.ok) {
+      setText('editorCloudAiStatus', '云端 AI 暂不可用，请稍后再试。');
+      setText('editorCloudAiQuota', '');
+      setText('editorCloudAiPresets', '');
+      return;
+    }
+    var quota = status.quota || {};
+    var presetsBody = status.presets || {};
+    var presets = Array.isArray(presetsBody.presets) ? presetsBody.presets : [];
+    setText('editorCloudAiStatus', '当前套餐：' + (quota.planCode || presetsBody.planCode || 'free'));
+    setText(
+      'editorCloudAiQuota',
+      '额度：' + (quota.remaining != null ? quota.remaining : '-') + '/' + (quota.limit != null ? quota.limit : '-') + ' · ' + (quota.period || '-')
+    );
+    setText('editorCloudAiPresets', presets.length ? ('可用预设：' + presets.map(function (p) { return p.name || p.id; }).join(' / ')) : '暂无可用云端 AI 预设。');
+  }
+
+  function requestCloudAiStatus() {
+    if (!window.H2S_CLOUD_MODE || !window.parent || window.parent === window) return;
+    var requestId = 'cloud-ai-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+    window.H2S_CLOUD_AI_STATUS_REQUEST_ID = requestId;
+    window.H2S_CLOUD_AI_STATUS = { loading: true };
+    renderCloudAiStatus();
+    window.parent.postMessage({
+      type: 'H2S_CLOUD_AI_STATUS_REQUEST',
+      requestId: requestId,
+    }, '*');
+  }
+
   function isProjectDocLikely(projectDoc) {
     if (!projectDoc || typeof projectDoc !== 'object' || Array.isArray(projectDoc)) return false;
     if (projectDoc.version === 2) return true;
@@ -56,6 +113,21 @@
           ok: true,
         });
         return;
+
+      case 'H2S_CLOUD_AI_STATUS_RESPONSE': {
+        if (!window.H2S_CLOUD_AI_STATUS_REQUEST_ID || data.requestId !== window.H2S_CLOUD_AI_STATUS_REQUEST_ID) return;
+        window.H2S_CLOUD_MODE = true;
+        window.H2S_CLOUD_AI_STATUS = {
+          loading: false,
+          ok: data.ok === true,
+          presets: data.presets,
+          quota: data.quota,
+          error: typeof data.error === 'string' ? data.error : null,
+        };
+        renderCloudAiStatus();
+        window.dispatchEvent(new CustomEvent('h2s-cloud-ai-status', { detail: window.H2S_CLOUD_AI_STATUS }));
+        return;
+      }
 
       case 'H2S_CLOUD_REQUEST_PROJECT': {
         var app = getApp();
@@ -224,6 +296,20 @@
         return;
     }
   });
+
+  if (isCloudModeRequested()) {
+    window.H2S_CLOUD_MODE = true;
+    window.H2S_CLOUD_AI_STATUS = { loading: true };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () {
+        renderCloudAiStatus();
+        requestCloudAiStatus();
+      }, { once: true });
+    } else {
+      renderCloudAiStatus();
+      requestCloudAiStatus();
+    }
+  }
 
   if (window.parent && window.parent !== window) {
     window.parent.postMessage({ type: 'H2S_STUDIO_BRIDGE_READY', version: 1 }, '*');
