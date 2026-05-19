@@ -4602,6 +4602,7 @@ ensureTrackButtons(){
     // PR-UX4d: Returns true when AI config is incomplete (missing baseUrl/model, or token for non-local)
     _aiConfigNeedsAttention(){
       try{
+        if (typeof window !== 'undefined' && window.H2S_CLOUD_MODE) return false;
         const api = (typeof globalThis !== 'undefined' && globalThis.H2S_LLM_CONFIG) ? globalThis.H2S_LLM_CONFIG : null;
         if (!api || typeof api.loadLlmConfig !== 'function') return false;
         const cfg = api.loadLlmConfig();
@@ -4616,8 +4617,79 @@ ensureTrackButtons(){
     },
 
     // PR-UX4c: AI Settings panel — renders into given container (drawer body)
+    requestCloudAiStatusRefresh(){
+      try{
+        if (typeof window === 'undefined' || !window.H2S_CLOUD_MODE) return;
+        if (typeof window.H2S_REQUEST_CLOUD_AI_STATUS === 'function'){
+          window.H2S_REQUEST_CLOUD_AI_STATUS();
+          return;
+        }
+        if (!window.parent || window.parent === window) return;
+        const requestId = 'cloud-ai-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+        window.H2S_CLOUD_AI_STATUS_REQUEST_ID = requestId;
+        window.H2S_CLOUD_AI_STATUS = { loading: true };
+        window.parent.postMessage({ type: 'H2S_CLOUD_AI_STATUS_REQUEST', requestId: requestId }, '*');
+      }catch(e){}
+    },
+
+    renderCloudAiSettingsPanel(container){
+      if (!container) return;
+      const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : { loading: true };
+      const presetsBody = status.presets || {};
+      const presets = Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
+      const quota = (status.quota && typeof status.quota === 'object') ? status.quota : {};
+      const planCode = status.planCode || quota.planCode || presetsBody.planCode || '';
+      const used = quota.used != null ? quota.used : null;
+      const limit = quota.limit != null ? quota.limit : null;
+      const remaining = quota.remaining != null ? quota.remaining : null;
+      const quotaParts = [];
+      if (used != null || limit != null) quotaParts.push('Used: ' + (used != null ? used : '-') + ' / ' + (limit != null ? limit : '-'));
+      if (remaining != null) quotaParts.push('Remaining: ' + remaining);
+      if (quota.period) quotaParts.push('Period: ' + quota.period);
+      const presetNames = presets.map(function(p){
+        if (!p) return '';
+        if (typeof p === 'string') return p;
+        return p.name || p.label || p.id || '';
+      }).filter(Boolean);
+      let stateHtml = '';
+      if (status.loading || typeof window === 'undefined' || !window.H2S_CLOUD_AI_STATUS){
+        stateHtml = '<div class="muted" data-cloud-ai-state="loading">Requesting Cloud AI status...</div>';
+      } else if (status.ok === false || status.error){
+        stateHtml = '<div class="aiHint aiHintErr" data-cloud-ai-state="error">Cloud AI status is unavailable. Please retry.</div>';
+      } else {
+        stateHtml =
+          '<div class="muted" data-cloud-ai-plan>Plan: ' + escapeHtml(planCode || 'unknown') + '</div>' +
+          '<div class="muted" data-cloud-ai-quota>' + escapeHtml(quotaParts.length ? quotaParts.join(' / ') : 'Quota: unavailable') + '</div>' +
+          '<div class="muted" data-cloud-ai-presets>' + escapeHtml(presetNames.length ? ('Available presets: ' + presetNames.join(' / ')) : 'Available presets: unavailable') + '</div>';
+      }
+      container.innerHTML = (
+        '<div class="col" style="gap:8px;">' +
+        '<div style="font-weight:800; font-size:14px;">Cloud AI</div>' +
+        '<div class="muted" style="font-size:12px;">AI is managed by Hum2Song Cloud in this mode. Local API-key settings are hidden.</div>' +
+        stateHtml +
+        '<div class="row" style="gap:6px;">' +
+        '<button id="inspAi_cloudRefresh" type="button" class="btn mini">Refresh</button>' +
+        '</div>' +
+        '<div id="aiSettingsInlineStatus" class="aiInlineStatus"></div>' +
+        '</div>'
+      );
+      const self = this;
+      const btn = document.getElementById('inspAi_cloudRefresh');
+      if (btn) btn.addEventListener('click', function(){
+        self.requestCloudAiStatusRefresh();
+        if (container && window.H2S_CLOUD_AI_STATUS && window.H2S_CLOUD_AI_STATUS.loading) self.renderCloudAiSettingsPanel(container);
+      });
+      if (typeof window !== 'undefined' && (status.loading || !window.H2S_CLOUD_AI_STATUS) && typeof window.H2S_REQUEST_CLOUD_AI_STATUS === 'function') {
+        window.H2S_REQUEST_CLOUD_AI_STATUS();
+      }
+    },
+
     renderAiSettingsPanel(container){
       if (!container) return;
+      if (typeof window !== 'undefined' && window.H2S_CLOUD_MODE){
+        this.renderCloudAiSettingsPanel(container);
+        return;
+      }
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : function(k){ return k; };
       const DEEPSEEK_URL = 'https://api.deepseek.com/v1';
       const OLLAMA_URL = 'http://localhost:11434/v1';

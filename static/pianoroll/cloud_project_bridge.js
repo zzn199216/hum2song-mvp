@@ -89,6 +89,8 @@
     }, '*');
   }
 
+  window.H2S_REQUEST_CLOUD_AI_STATUS = requestCloudAiStatus;
+
   function isProjectDocLikely(projectDoc) {
     if (!projectDoc || typeof projectDoc !== 'object' || Array.isArray(projectDoc)) return false;
     if (projectDoc.version === 2) return true;
@@ -125,6 +127,10 @@
           error: typeof data.error === 'string' ? data.error : null,
         };
         renderCloudAiStatus();
+        try {
+          var app = getApp();
+          if (app && app.state && app.state.aiSettingsOpen && typeof app.render === 'function') app.render();
+        } catch (_renderErr) {}
         window.dispatchEvent(new CustomEvent('h2s-cloud-ai-status', { detail: window.H2S_CLOUD_AI_STATUS }));
         return;
       }
