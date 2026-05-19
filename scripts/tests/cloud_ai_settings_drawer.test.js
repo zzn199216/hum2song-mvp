@@ -48,5 +48,8 @@ assert(renderBody.includes('inspAi_authToken'), 'standalone token field should r
 
 assert(bridge.includes('window.H2S_REQUEST_CLOUD_AI_STATUS'), 'bridge should expose a token-safe Cloud AI status refresh function');
 assert(bridge.includes('H2S_CLOUD_AI_STATUS_REQUEST'), 'refresh should use Cloud AI status request message');
+assert(bridge.includes('rerenderAiSettingsDrawerIfOpen'), 'bridge should re-render AI Settings drawer when cloud status arrives');
+
+assert(app.includes("addEventListener('h2s-cloud-ai-status'"), 'app should re-render AI Settings drawer on cloud status updates');
 
 console.log('cloud_ai_settings_drawer.test.js ok');

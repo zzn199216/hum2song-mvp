@@ -1590,7 +1590,25 @@
   <script src="/static/pianoroll/core/score_heuristic_split.js"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
-  <script src="/static/pianoroll/app.js"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=2c50abb2"></script>
+  <script>
+  (function () {
+    try {
+      if (window.H2S_CLOUD_MODE === true) return;
+      var params = new URLSearchParams(window.location.search || '');
+      if (params.get('cloudMode') === '1') {
+        window.H2S_CLOUD_MODE = true;
+        return;
+      }
+      if (window.parent && window.parent !== window) {
+        var ref = document.referrer || '';
+        if (/https:\/\/hum2song\.cn\//i.test(ref)) window.H2S_CLOUD_MODE = true;
+        else if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(ref)) window.H2S_CLOUD_MODE = true;
+      }
+    } catch (_err) {}
+  })();
+  </script>
+  <script src="/static/pianoroll/app.js?v=2c50abb2"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=2c50abb2"></script>
 </body>
 </html>

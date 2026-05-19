@@ -34,11 +34,22 @@
 
   function isCloudModeRequested() {
     try {
+      if (window.H2S_CLOUD_MODE === true) return true;
       var params = new URLSearchParams(window.location.search || '');
-      return params.get('cloudMode') === '1';
-    } catch (_err) {
-      return false;
-    }
+      if (params.get('cloudMode') === '1') return true;
+      if (window.parent && window.parent !== window) {
+        var ref = document.referrer || '';
+        if (/https:\/\/hum2song\.cn\//i.test(ref)) return true;
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(ref)) return true;
+      }
+    } catch (_err) {}
+    return false;
+  }
+
+  function rerenderAiSettingsDrawerIfOpen() {
+    var app = getApp();
+    if (!app || !app.state || !app.state.aiSettingsOpen) return;
+    if (typeof app.render === 'function') app.render();
   }
 
   function setText(id, text) {
@@ -127,11 +138,8 @@
           error: typeof data.error === 'string' ? data.error : null,
         };
         renderCloudAiStatus();
-        try {
-          var app = getApp();
-          if (app && app.state && app.state.aiSettingsOpen && typeof app.render === 'function') app.render();
-        } catch (_renderErr) {}
         window.dispatchEvent(new CustomEvent('h2s-cloud-ai-status', { detail: window.H2S_CLOUD_AI_STATUS }));
+        rerenderAiSettingsDrawerIfOpen();
         return;
       }
 
@@ -306,14 +314,15 @@
   if (isCloudModeRequested()) {
     window.H2S_CLOUD_MODE = true;
     window.H2S_CLOUD_AI_STATUS = { loading: true };
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', function () {
-        renderCloudAiStatus();
-        requestCloudAiStatus();
-      }, { once: true });
-    } else {
+    var onCloudBoot = function () {
       renderCloudAiStatus();
       requestCloudAiStatus();
+      rerenderAiSettingsDrawerIfOpen();
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', onCloudBoot, { once: true });
+    } else {
+      onCloudBoot();
     }
   }
 

@@ -4568,6 +4568,10 @@ ensureTrackButtons(){
       document.addEventListener('keydown', (ev) => {
         if (ev.key === 'Escape' && this.state.aiSettingsOpen) this.closeAiSettingsDrawer();
       });
+      const self = this;
+      window.addEventListener('h2s-cloud-ai-status', function () {
+        if (self.state.aiSettingsOpen) self.render();
+      });
     },
     openAiSettingsDrawer(){
       this.state.aiSettingsOpen = true;
