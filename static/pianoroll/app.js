@@ -4638,6 +4638,7 @@ ensureTrackButtons(){
 
     renderCloudAiSettingsPanel(container){
       if (!container) return;
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : function(k){ return k; };
       const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : { loading: true };
       const presetsBody = status.presets || {};
       const presets = Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
@@ -4646,10 +4647,11 @@ ensureTrackButtons(){
       const used = quota.used != null ? quota.used : null;
       const limit = quota.limit != null ? quota.limit : null;
       const remaining = quota.remaining != null ? quota.remaining : null;
-      const quotaParts = [];
-      if (used != null || limit != null) quotaParts.push('Used: ' + (used != null ? used : '-') + ' / ' + (limit != null ? limit : '-'));
-      if (remaining != null) quotaParts.push('Remaining: ' + remaining);
-      if (quota.period) quotaParts.push('Period: ' + quota.period);
+      const quotaParts = [
+        (used != null ? used : '-') + ' / ' + (limit != null ? limit : '-'),
+        remaining != null ? remaining : '-',
+        quota.period || '-'
+      ];
       const presetNames = presets.map(function(p){
         if (!p) return '';
         if (typeof p === 'string') return p;
@@ -4657,22 +4659,22 @@ ensureTrackButtons(){
       }).filter(Boolean);
       let stateHtml = '';
       if (status.loading || typeof window === 'undefined' || !window.H2S_CLOUD_AI_STATUS){
-        stateHtml = '<div class="muted" data-cloud-ai-state="loading">Requesting Cloud AI status...</div>';
+        stateHtml = '<div class="muted" data-cloud-ai-state="loading">' + escapeHtml(_t('cloudAi.loading')) + '</div>';
       } else if (status.ok === false || status.error){
-        stateHtml = '<div class="aiHint aiHintErr" data-cloud-ai-state="error">Cloud AI status is unavailable. Please retry.</div>';
+        stateHtml = '<div class="aiHint aiHintErr" data-cloud-ai-state="error">' + escapeHtml(_t('cloudAi.error')) + '</div>';
       } else {
         stateHtml =
-          '<div class="muted" data-cloud-ai-plan>Plan: ' + escapeHtml(planCode || 'unknown') + '</div>' +
-          '<div class="muted" data-cloud-ai-quota>' + escapeHtml(quotaParts.length ? quotaParts.join(' / ') : 'Quota: unavailable') + '</div>' +
-          '<div class="muted" data-cloud-ai-presets>' + escapeHtml(presetNames.length ? ('Available presets: ' + presetNames.join(' / ')) : 'Available presets: unavailable') + '</div>';
+          '<div class="muted" data-cloud-ai-plan>' + escapeHtml(_t('cloudAi.currentPlan')) + ': ' + escapeHtml(planCode || _t('cloudAi.unknownPlan')) + '</div>' +
+          '<div class="muted" data-cloud-ai-quota>' + escapeHtml(_t('cloudAi.usedRemainingPeriod')) + ': ' + escapeHtml(quotaParts.join(' / ') || _t('cloudAi.quotaUnavailable')) + '</div>' +
+          '<div class="muted" data-cloud-ai-presets>' + escapeHtml(_t('cloudAi.availablePresets')) + ': ' + escapeHtml(presetNames.length ? presetNames.join(' / ') : _t('cloudAi.presetsUnavailable')) + '</div>';
       }
       container.innerHTML = (
         '<div class="col" style="gap:8px;">' +
-        '<div style="font-weight:800; font-size:14px;">Cloud AI</div>' +
-        '<div class="muted" style="font-size:12px;">AI is managed by Hum2Song Cloud in this mode. Local API-key settings are hidden.</div>' +
+        '<div style="font-weight:800; font-size:14px;">' + escapeHtml(_t('cloudAi.title')) + '</div>' +
+        '<div class="muted" style="font-size:12px;">' + escapeHtml(_t('cloudAi.managedHint')) + '</div>' +
         stateHtml +
         '<div class="row" style="gap:6px;">' +
-        '<button id="inspAi_cloudRefresh" type="button" class="btn mini">Refresh</button>' +
+        '<button id="inspAi_cloudRefresh" type="button" class="btn mini">' + escapeHtml(_t('cloudAi.refresh')) + '</button>' +
         '</div>' +
         '<div id="aiSettingsInlineStatus" class="aiInlineStatus"></div>' +
         '</div>'

@@ -28,14 +28,22 @@ const cloudEnd = app.indexOf('\n    renderAiSettingsPanel(container)', cloudStar
 assert(cloudEnd > cloudStart, 'Cloud AI panel renderer should be immediately before the local drawer renderer');
 const cloudBody = app.slice(cloudStart, cloudEnd);
 
-assert(cloudBody.includes('Cloud AI'), 'Cloud panel should show a Cloud AI title');
-assert(cloudBody.includes('Hum2Song Cloud'), 'Cloud panel should explain that AI is managed by Hum2Song Cloud');
+assert(cloudBody.includes("_t('cloudAi.title'"), 'Cloud panel should show a localized Cloud AI title');
+assert(cloudBody.includes("_t('cloudAi.managedHint'"), 'Cloud panel should explain localized Hum2Song Cloud management');
 assert(/planCode/.test(cloudBody), 'Cloud panel should render planCode when available');
 assert(/quota/.test(cloudBody) && /remaining/.test(cloudBody), 'Cloud panel should render quota used/limit/remaining when available');
 assert(/presets/.test(cloudBody), 'Cloud panel should render available presets when available');
 assert(/loading/.test(cloudBody), 'Cloud panel should render a loading state while status is requested');
 assert(/error/.test(cloudBody), 'Cloud panel should render a safe error state');
 assert(/requestCloudAiStatusRefresh/.test(cloudBody), 'Cloud panel should expose refresh/retry action');
+assert(cloudBody.includes("_t('cloudAi.title'"), 'Cloud panel title should use i18n');
+assert(cloudBody.includes("_t('cloudAi.managedHint'"), 'Cloud panel managed hint should use i18n');
+assert(cloudBody.includes("_t('cloudAi.currentPlan'"), 'Cloud panel plan label should use i18n');
+assert(cloudBody.includes("_t('cloudAi.usedRemainingPeriod'"), 'Cloud panel quota label should use i18n');
+assert(cloudBody.includes("_t('cloudAi.availablePresets'"), 'Cloud panel presets label should use i18n');
+assert(cloudBody.includes("_t('cloudAi.refresh'"), 'Cloud panel refresh button should use i18n');
+assert(!cloudBody.includes('Requesting Cloud AI status...'), 'Cloud loading copy should not be hardcoded English');
+assert(!cloudBody.includes('Cloud AI status is unavailable. Please retry.'), 'Cloud error copy should not be hardcoded English');
 
 for (const forbidden of ['DeepSeek', 'Ollama', 'Base URL', 'Auth Token', 'testConnection', 'inspAi_authToken', 'inspAi_btnTest']) {
   assert(!cloudBody.includes(forbidden), `Cloud panel should not include local provider UI: ${forbidden}`);

@@ -19,6 +19,22 @@ if (fs.existsSync(enPath) && fs.existsSync(zhPath)){
   for (var i = 0; i < enKeys.length; i++){
     assert(zh[enKeys[i]] != null, 'zh.json missing key: ' + enKeys[i]);
   }
+  [
+    'cloudAi.title',
+    'cloudAi.managedHint',
+    'cloudAi.currentPlan',
+    'cloudAi.usedRemainingPeriod',
+    'cloudAi.availablePresets',
+    'cloudAi.refresh',
+    'cloudAi.loading',
+    'cloudAi.error',
+    'cloudAi.unknownPlan',
+    'cloudAi.quotaUnavailable',
+    'cloudAi.presetsUnavailable'
+  ].forEach(function(k){
+    assert(en[k] != null, 'en.json missing Cloud AI key: ' + k);
+    assert(zh[k] != null, 'zh.json missing Cloud AI key: ' + k);
+  });
 }
 
 // Studio index: beginner hint bar (first-open guidance)
@@ -52,6 +68,7 @@ if (fs.existsSync(appJsPath)) {
   assert(appJs.indexOf('docKeyAtRun') !== -1, 'app.js should pin last optimize to project storage key');
   assert(appJs.indexOf('_initLastOptimizeDetails') !== -1, 'app.js should wire last optimize details popover');
   assert(appJs.indexOf('modalSyncGhostFromClipParent') !== -1, 'app.render should refresh clip-editor ghost when modal open');
+  assert(/\.topbar\s*\{[\s\S]*?flex-wrap:\s*wrap/.test(appJs) === false, 'responsive topbar CSS should live in index.html, not app.js');
 }
 
 // Clip editor ghost: parent revision overlay sync (editor_runtime.js)
