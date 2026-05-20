@@ -4691,6 +4691,16 @@ ensureTrackButtons(){
         };
         return tierKeyByTier[tier] ? _t(tierKeyByTier[tier]) : tier;
       };
+      const safeCloudAiTestErrorText = function(result){
+        const err = result && typeof result.error === 'string' ? result.error : '';
+        const status = result && typeof result.status === 'number' ? result.status : null;
+        const normalized = err.toLowerCase();
+        if (status === 401 || normalized === 'auth_required' || normalized.indexOf('login') >= 0 || normalized.indexOf('session') >= 0) return _t('cloudAi.loginRequired');
+        if (status === 403 || normalized === 'internal_only' || normalized.indexOf('internal') >= 0) return _t('cloudAi.internalOnly');
+        if (status === 408 || status === 504 || normalized.indexOf('timeout') >= 0 || normalized.indexOf('timed_out') >= 0) return _t('cloudAi.requestTimedOut');
+        if (normalized.indexOf('bridge') >= 0 || normalized.indexOf('parent') >= 0 || normalized.indexOf('postmessage') >= 0) return _t('cloudAi.bridgeUnavailable');
+        return _t('cloudAi.requestFailedRetry');
+      };
       const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : { loading: true };
       const presetsBody = status.presets || {};
       const presets = Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
@@ -4724,13 +4734,16 @@ ensureTrackButtons(){
         }catch(e){}
       }
       const selectedPreset = availablePresets.find(function(p){ return p.id === selectedPresetId; }) || null;
+      const chatResult = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_CHAT_RESULT && typeof window.H2S_CLOUD_AI_CHAT_RESULT === 'object') ? window.H2S_CLOUD_AI_CHAT_RESULT : null;
+      const cloudTestLoading = !!(chatResult && chatResult.loading);
       const presetItemHtml = presets.filter(function(preset){
         return preset && typeof preset === 'object' && preset.id;
       }).map(function(preset){
-        const selectable = preset.available !== false && preset.enabled !== false;
-        const selected = selectable && preset.id === selectedPresetId;
+        const available = preset.available !== false && preset.enabled !== false;
+        const selectable = available && !cloudTestLoading;
+        const selected = available && preset.id === selectedPresetId;
         const tierText = cloudAiPresetTierLabel(preset);
-        const desc = cloudAiPresetDescription(preset, selectable);
+        const desc = cloudAiPresetDescription(preset, available);
         const itemStyle = [
           'width:100%',
           'text-align:left',
@@ -4744,12 +4757,12 @@ ensureTrackButtons(){
           'color:var(--text)',
           'box-sizing:border-box',
           'cursor:' + (selectable ? 'pointer' : 'not-allowed'),
-          'opacity:' + (selectable ? '1' : '.48')
+          'opacity:' + (available ? '1' : '.48')
         ].join(';');
         return '<button type="button" class="btn" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '" data-cloud-ai-preset-item="1" data-preset-id="' + escapeHtml(preset.id) + '" data-selected="' + (selected ? 'true' : 'false') + '" ' + (!selectable ? 'disabled aria-disabled="true"' : '') + ' style="' + itemStyle + '">' +
           '<span style="display:flex; align-items:center; justify-content:space-between; gap:8px;">' +
           '<span style="font-weight:800; font-size:12px;">' + escapeHtml(cloudAiPresetDisplayName(preset)) + '</span>' +
-          '<span class="muted" style="font-size:10px;">' + escapeHtml(selected ? _t('cloudAi.selected') : (selectable ? '' : _t('cloudAi.unavailable'))) + '</span>' +
+          '<span class="muted" style="font-size:10px;">' + escapeHtml(preset.id === selectedPresetId ? _t('cloudAi.selected') : (available ? '' : _t('cloudAi.unavailable'))) + '</span>' +
           '</span>' +
           (desc ? '<span class="muted" data-cloud-ai-preset-description style="font-size:11px; line-height:1.35;">' + escapeHtml(desc) + '</span>' : '') +
           (tierText ? '<span class="muted" data-cloud-ai-preset-tier style="font-size:10px; line-height:1.2;">' + escapeHtml(tierText) + '</span>' : '') +
@@ -4761,25 +4774,25 @@ ensureTrackButtons(){
         (cloudAiPresetTierLabel(selectedPreset) ? ' · ' + escapeHtml(cloudAiPresetTierLabel(selectedPreset)) : '') +
         '</div>'
       ) : '<div class="muted" data-cloud-ai-preset-description style="font-size:11px;">' + escapeHtml(_t('cloudAi.presetsUnavailable')) + '</div>';
-      const chatResult = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_CHAT_RESULT && typeof window.H2S_CLOUD_AI_CHAT_RESULT === 'object') ? window.H2S_CLOUD_AI_CHAT_RESULT : null;
       const promptValue = (typeof window !== 'undefined' && typeof window.H2S_CLOUD_AI_TEST_PROMPT === 'string') ? window.H2S_CLOUD_AI_TEST_PROMPT : defaultPrompt;
       let testResultHtml = '';
       if (chatResult && chatResult.loading) {
         testResultHtml = '<div class="muted" data-cloud-ai-test-state="loading">' + escapeHtml(_t('cloudAi.testing')) + '</div>';
       } else if (chatResult && chatResult.ok === false) {
-        let err = chatResult.error || _t('cloudAi.unavailable');
-        if (chatResult.status === 401 || err === 'auth_required') err = _t('cloudAi.loginRequired');
-        else if (chatResult.status === 403 || err === 'internal_only') err = _t('cloudAi.internalOnly');
+        const err = safeCloudAiTestErrorText(chatResult);
         testResultHtml = '<div class="aiHint aiHintErr" data-cloud-ai-test-state="error">' + escapeHtml(err) + '</div>' +
-          (chatResult.requestId ? '<div class="muted" style="font-size:11px;">' + escapeHtml(_t('cloudAi.requestId')) + ': ' + escapeHtml(chatResult.requestId) + '</div>' : '');
+          (chatResult.requestId ? '<div class="muted" data-cloud-ai-test-debug style="font-size:10px; opacity:.72;">' + escapeHtml(_t('cloudAi.requestId')) + ': ' + escapeHtml(chatResult.requestId) + '</div>' : '');
       } else if (chatResult && chatResult.ok === true) {
         const usage = chatResult.usage && typeof chatResult.usage === 'object' ? chatResult.usage : null;
         const usageText = usage ? Object.keys(usage).map(function(k){ return k + '=' + usage[k]; }).join(', ') : '-';
         testResultHtml =
           '<div class="muted" style="font-weight:700;">' + escapeHtml(_t('cloudAi.testResult')) + '</div>' +
-          '<div data-cloud-ai-test-result style="white-space:pre-wrap; font-size:12px;">' + escapeHtml(chatResult.text || '') + '</div>' +
-          '<div class="muted" data-cloud-ai-test-usage style="font-size:11px;">' + escapeHtml(_t('cloudAi.usage')) + ': ' + escapeHtml(usageText) + '</div>' +
-          '<div class="muted" data-cloud-ai-test-request-id style="font-size:11px;">' + escapeHtml(_t('cloudAi.requestId')) + ': ' + escapeHtml(chatResult.requestId || '') + '</div>';
+          '<div data-cloud-ai-test-result style="white-space:pre-wrap; max-height:148px; overflow:auto; overflow-wrap:anywhere; word-break:break-word; padding:8px; border:1px solid var(--border); border-radius:8px; background:rgba(0,0,0,.32); color:var(--text); font-size:12px; line-height:1.45;">' + escapeHtml(chatResult.text || '') + '</div>' +
+          '<div class="muted" style="font-size:11px;">' + escapeHtml(_t('cloudAi.testNoMelodyChange')) + '</div>' +
+          '<div class="muted" data-cloud-ai-test-debug style="font-size:10px; opacity:.72;">' +
+          '<span data-cloud-ai-test-usage>' + escapeHtml(_t('cloudAi.usage')) + ': ' + escapeHtml(usageText) + '</span>' +
+          (chatResult.requestId ? '<span data-cloud-ai-test-request-id> · ' + escapeHtml(_t('cloudAi.requestId')) + ': ' + escapeHtml(chatResult.requestId || '') + '</span>' : '') +
+          '</div>';
       }
       let stateHtml = '';
       if (status.loading || typeof window === 'undefined' || !window.H2S_CLOUD_AI_STATUS){
@@ -4802,10 +4815,11 @@ ensureTrackButtons(){
         (presetItemHtml || '<div class="muted" style="font-size:11px;">' + escapeHtml(_t('cloudAi.presetsUnavailable')) + '</div>') +
         '</div>' +
         presetDetailHtml +
-        '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.testCloudAi')) + '</label>' +
+        '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.connectionTest')) + '</label>' +
         '<textarea id="inspAi_cloudTestPrompt" rows="3" style="width:100%; min-height:68px; max-height:120px; resize:vertical; padding:7px; border:1px solid var(--border); border-radius:8px; background:rgba(0,0,0,.28); color:var(--text); font-size:12px; line-height:1.4; box-sizing:border-box;">' + escapeHtml(promptValue) + '</textarea>' +
+        '<div class="muted" style="font-size:11px;">' + escapeHtml(_t('cloudAi.testNoMelodyChange')) + '</div>' +
         '<div class="row" style="gap:6px;">' +
-        '<button id="inspAi_cloudTestButton" type="button" class="btn mini" data-cloud-ai-response-type="H2S_CLOUD_AI_CHAT_RESPONSE" ' + (!selectedPresetId ? 'disabled' : '') + '>' + escapeHtml(chatResult && chatResult.loading ? _t('cloudAi.testing') : _t('cloudAi.testCloudAi')) + '</button>' +
+        '<button id="inspAi_cloudTestButton" type="button" class="btn mini" data-cloud-ai-response-type="H2S_CLOUD_AI_CHAT_RESPONSE" ' + (!selectedPresetId || cloudTestLoading ? 'disabled' : '') + '>' + escapeHtml(cloudTestLoading ? _t('cloudAi.testing') : _t('cloudAi.testCloudAi')) + '</button>' +
         '</div>' +
         testResultHtml +
         '<div class="row" style="gap:6px;">' +
@@ -4837,6 +4851,7 @@ ensureTrackButtons(){
       const testBtn = document.getElementById('inspAi_cloudTestButton');
       if (testBtn) testBtn.addEventListener('click', function(){
         if (!window.parent || window.parent === window) return;
+        if (window.H2S_CLOUD_AI_CHAT_RESULT && window.H2S_CLOUD_AI_CHAT_RESULT.loading) return;
         const requestId = 'cloud-ai-chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
         const presetId = selectedPresetId;
         const prompt = (document.getElementById('inspAi_cloudTestPrompt') || {}).value || defaultPrompt;

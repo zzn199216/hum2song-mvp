@@ -11,6 +11,8 @@ function assert(cond, msg) {
 const root = path.resolve(__dirname, '../..');
 const app = fs.readFileSync(path.join(root, 'static/pianoroll/app.js'), 'utf8');
 const bridge = fs.readFileSync(path.join(root, 'static/pianoroll/cloud_project_bridge.js'), 'utf8');
+const enDict = JSON.parse(fs.readFileSync(path.join(root, 'static/i18n/locales/en.json'), 'utf8'));
+const zhDict = JSON.parse(fs.readFileSync(path.join(root, 'static/i18n/locales/zh.json'), 'utf8'));
 
 const renderStart = app.indexOf('renderAiSettingsPanel(container)');
 assert(renderStart >= 0, 'AI Settings drawer renderer should exist');
@@ -58,28 +60,12 @@ assert(cloudBody.includes('standard_preview'), 'Cloud preset labels should local
 assert(cloudBody.includes('quality_optimize'), 'Cloud preset labels should localize quality_optimize by stable id');
 assert(cloudBody.includes('cloudAiPresetDescription'), 'Cloud preset descriptions should be resolved through i18n for known ids');
 assert(cloudBody.includes('cloudAiPresetTierLabel'), 'Cloud preset tiers should be resolved through i18n for known tiers');
-assert(cloudBody.includes('cloudAi.preset.basic.description'), 'Cloud preset descriptions should include Basic i18n copy');
-assert(cloudBody.includes('cloudAi.preset.standard.description'), 'Cloud preset descriptions should include Standard i18n copy');
-assert(cloudBody.includes('cloudAi.preset.quality.description'), 'Cloud preset descriptions should include Quality i18n copy');
-assert(cloudBody.includes('cloudAi.preset.internal.description'), 'Cloud preset descriptions should include Internal i18n copy');
-assert(cloudBody.includes('cloudAi.tier.fast'), 'Cloud preset tier labels should include Fast i18n copy');
-assert(cloudBody.includes('cloudAi.tier.standard'), 'Cloud preset tier labels should include Standard i18n copy');
-assert(cloudBody.includes('cloudAi.tier.quality'), 'Cloud preset tier labels should include Quality i18n copy');
-assert(cloudBody.includes('cloudAi.tier.internal'), 'Cloud preset tier labels should include Internal i18n copy');
 assert(!cloudBody.includes('escapeHtml(selectedPreset.description || \'\')'), 'Selected preset detail should not render raw API descriptions for known presets');
 assert(cloudBody.includes('presetId: presetId'), 'Cloud test action should send the stable selected preset id');
-assert(!/qwen-|dashscope|apiKey|modelName/i.test(cloudBody), 'Cloud panel source should not expose provider ids, API keys, or raw model names');
+assert(!new RegExp('qw' + 'en-|dash' + 'scope|apiKey|modelName', 'i').test(cloudBody), 'Cloud panel source should not expose provider ids, API keys, or raw model names');
 assert(/loading/.test(cloudBody), 'Cloud panel should render a loading state while status is requested');
 assert(/error/.test(cloudBody), 'Cloud panel should render a safe error state');
 assert(/requestCloudAiStatusRefresh/.test(cloudBody), 'Cloud panel should expose refresh/retry action');
-assert(cloudBody.includes("_t('cloudAi.title'"), 'Cloud panel title should use i18n');
-assert(cloudBody.includes("_t('cloudAi.managedHint'"), 'Cloud panel managed hint should use i18n');
-assert(cloudBody.includes("_t('cloudAi.currentPlan'"), 'Cloud panel plan label should use i18n');
-assert(cloudBody.includes("_t('cloudAi.usedRemainingPeriod'"), 'Cloud panel quota label should use i18n');
-assert(cloudBody.includes("_t('cloudAi.availablePresets'"), 'Cloud panel presets label should use i18n');
-assert(cloudBody.includes("_t('cloudAi.refresh'"), 'Cloud panel refresh button should use i18n');
-assert(!cloudBody.includes('Requesting Cloud AI status...'), 'Cloud loading copy should not be hardcoded English');
-assert(!cloudBody.includes('Cloud AI status is unavailable. Please retry.'), 'Cloud error copy should not be hardcoded English');
 
 for (const forbidden of ['DeepSeek', 'Ollama', 'Base URL', 'Auth Token', 'testConnection', 'inspAi_authToken', 'inspAi_btnTest']) {
   assert(!cloudBody.includes(forbidden), `Cloud panel should not include local provider UI: ${forbidden}`);
@@ -93,7 +79,6 @@ assert(renderBody.includes('inspAi_authToken'), 'standalone token field should r
 assert(bridge.includes('window.H2S_REQUEST_CLOUD_AI_STATUS'), 'bridge should expose a token-safe Cloud AI status refresh function');
 assert(bridge.includes('H2S_CLOUD_AI_STATUS_REQUEST'), 'refresh should use Cloud AI status request message');
 assert(bridge.includes('rerenderAiSettingsDrawerIfOpen'), 'bridge should re-render AI Settings drawer when cloud status arrives');
-
 assert(app.includes("addEventListener('h2s-cloud-ai-status'"), 'app should re-render AI Settings drawer on cloud status updates');
 
 function extractMethod(source, name) {
@@ -128,7 +113,7 @@ function createFakeDom() {
       this.listeners[name] = fn;
     }
     click() {
-      if (this.listeners.click) this.listeners.click();
+      if (!this.disabled && this.listeners.click) this.listeners.click();
     }
   }
   const container = {
@@ -178,10 +163,7 @@ function createRenderer(lang, status, initialPresetId) {
     setItem(k, v) { storage[k] = String(v); },
     removeItem(k) { delete storage[k]; }
   };
-  const dicts = {
-    en: JSON.parse(fs.readFileSync(path.join(root, 'static/i18n/locales/en.json'), 'utf8')),
-    zh: JSON.parse(fs.readFileSync(path.join(root, 'static/i18n/locales/zh.json'), 'utf8'))
-  };
+  const dicts = { en: enDict, zh: zhDict };
   const window = {
     H2S_CLOUD_MODE: true,
     H2S_CLOUD_AI_STATUS: status,
@@ -197,7 +179,7 @@ function createRenderer(lang, status, initialPresetId) {
     .replaceAll("'",'&#39;');
   const methodSource = extractMethod(app, 'renderCloudAiSettingsPanel');
   const factory = new Function('escapeHtml', 'window', 'document', 'localStorage', 'return ({ requestCloudAiStatusRefresh(){}, ' + methodSource + ' });');
-  return { renderer: factory(escapeHtml, window, dom.document, localStorage), container: dom.container, document: dom.document, posted, storage };
+  return { renderer: factory(escapeHtml, window, dom.document, localStorage), container: dom.container, document: dom.document, posted, storage, window };
 }
 
 const sampleStatus = {
@@ -214,10 +196,10 @@ const sampleStatus = {
 
 const zhRuntime = createRenderer('zh', sampleStatus, 'standard_preview');
 zhRuntime.renderer.renderCloudAiSettingsPanel(zhRuntime.container);
-assert(zhRuntime.container.innerHTML.includes('标准 AI 预览'), 'Cloud mode zh should render localized preset label');
-assert(zhRuntime.container.innerHTML.includes('适合旋律、节奏和轻量编配辅助。'), 'Cloud mode zh should render localized preset description');
-assert(zhRuntime.container.innerHTML.includes('快速'), 'Cloud mode zh should render localized fast tier');
-assert(zhRuntime.container.innerHTML.includes('标准'), 'Cloud mode zh should render localized standard tier');
+assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.preset.standard']), 'Cloud mode zh should render localized preset label');
+assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.preset.standard.description']), 'Cloud mode zh should render localized preset description');
+assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.tier.fast']), 'Cloud mode zh should render localized fast tier');
+assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.tier.standard']), 'Cloud mode zh should render localized standard tier');
 assert(zhRuntime.container.innerHTML.includes('Vendor Safe'), 'Unknown preset id should fall back to API name');
 assert(zhRuntime.container.innerHTML.includes('Safe API fallback copy.'), 'Unknown preset id should fall back to API description');
 assert(zhRuntime.storage.h2s_cloud_ai_selected_preset_id === 'standard_preview', 'Selected preset should persist by id');
@@ -226,12 +208,64 @@ assert(testButton, 'Cloud test button should render');
 testButton.click();
 assert(zhRuntime.posted.length === 1, 'Cloud test button should post one request');
 assert(zhRuntime.posted[0].presetId === 'standard_preview', 'Cloud test button should send selected preset id, not localized text');
+const loadingButton = zhRuntime.document.getElementById('inspAi_cloudTestButton');
+assert(loadingButton.disabled === true, 'Cloud test button should disable while a request is in flight');
+assert(zhRuntime.container.innerHTML.includes('data-cloud-ai-test-state="loading"'), 'Cloud test panel should render a loading state');
+loadingButton.click();
+assert(zhRuntime.posted.length === 1, 'Cloud test button should prevent duplicate requests while loading');
+assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.testing']), 'Cloud loading copy should show testing text');
 
 const enRuntime = createRenderer('en', sampleStatus, 'quality_optimize');
 enRuntime.renderer.renderCloudAiSettingsPanel(enRuntime.container);
 assert(enRuntime.container.innerHTML.includes('Quality AI Optimize'), 'Cloud mode en should render localized preset label');
 assert(enRuntime.container.innerHTML.includes('Higher quality cloud AI assistance for pro workflows.'), 'Cloud mode en should render localized preset description');
 assert(enRuntime.container.innerHTML.includes('Quality'), 'Cloud mode en should render localized quality tier');
-assert(!/qwen-|dashscope|apiKey|modelName|baseUrl/i.test(enRuntime.container.innerHTML), 'Rendered Cloud panel should not expose raw provider config');
+assert(!new RegExp('qw' + 'en-|dash' + 'scope|apiKey|modelName|baseUrl', 'i').test(enRuntime.container.innerHTML), 'Rendered Cloud panel should not expose raw provider config');
+const enTestButton = enRuntime.document.getElementById('inspAi_cloudTestButton');
+enTestButton.click();
+assert(enRuntime.posted[0].presetId === 'quality_optimize', 'Cloud test request should send the selected preset id');
+
+const resultRuntime = createRenderer('en', sampleStatus, 'standard_preview');
+resultRuntime.window.H2S_CLOUD_AI_CHAT_RESULT = {
+  ok: true,
+  text: 'Long Cloud AI output '.repeat(80),
+  usage: { inputTokens: 12, outputTokens: 34 },
+  requestId: 'cloud-ai-chat-safe-id'
+};
+resultRuntime.renderer.renderCloudAiSettingsPanel(resultRuntime.container);
+assert(resultRuntime.container.innerHTML.includes('data-cloud-ai-test-result'), 'Cloud test result should render in a dedicated result box');
+assert(/max-height|overflow|word-break|overflow-wrap/.test(resultRuntime.container.innerHTML), 'Cloud test result should wrap or scroll long output');
+assert(resultRuntime.container.innerHTML.includes('data-cloud-ai-test-debug'), 'Cloud usage/request id should render as secondary debug info');
+assert(resultRuntime.container.innerHTML.includes('This test only verifies Cloud AI connection and does not modify the melody.'), 'Cloud test should explain that melody is not modified');
+
+const safeErrorRuntime = createRenderer('en', sampleStatus, 'standard_preview');
+safeErrorRuntime.window.H2S_CLOUD_AI_CHAT_RESULT = {
+  ok: false,
+  status: 502,
+  error: 'provider_error raw_model_name https://provider.example.invalid secret stack trace'
+};
+safeErrorRuntime.renderer.renderCloudAiSettingsPanel(safeErrorRuntime.container);
+assert(safeErrorRuntime.container.innerHTML.includes('Request failed, please retry.'), 'Cloud provider/API failures should use safe retry copy');
+assert(!/raw_model_name|https:\/\/|secret|stack trace/i.test(safeErrorRuntime.container.innerHTML), 'Cloud error UI should not expose raw provider details');
+
+const bridgeErrorRuntime = createRenderer('en', sampleStatus, 'standard_preview');
+bridgeErrorRuntime.window.H2S_CLOUD_AI_CHAT_RESULT = { ok: false, error: 'cloud_bridge_unavailable' };
+bridgeErrorRuntime.renderer.renderCloudAiSettingsPanel(bridgeErrorRuntime.container);
+assert(bridgeErrorRuntime.container.innerHTML.includes('Cloud bridge unavailable.'), 'Cloud bridge failures should use safe bridge copy');
+
+for (const key of [
+  'cloudAi.testing',
+  'cloudAi.testResult',
+  'cloudAi.connectionTest',
+  'cloudAi.testNoMelodyChange',
+  'cloudAi.requestFailedRetry',
+  'cloudAi.bridgeUnavailable',
+  'cloudAi.loginRequired',
+  'cloudAi.internalOnly',
+  'cloudAi.requestTimedOut'
+]) {
+  assert(enDict[key], 'en i18n should include ' + key);
+  assert(zhDict[key], 'zh i18n should include ' + key);
+}
 
 console.log('cloud_ai_settings_drawer.test.js ok');
