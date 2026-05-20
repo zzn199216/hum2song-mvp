@@ -31,6 +31,11 @@
   "cloudAi.unavailable": "Cloud AI unavailable",
   "cloudAi.loginRequired": "Login required / session unavailable",
   "cloudAi.internalOnly": "Internal users only",
+  "cloudAi.selected": "Selected",
+  "cloudAi.preset.basic": "Basic AI Optimize",
+  "cloudAi.preset.standard": "Standard AI Preview",
+  "cloudAi.preset.quality": "Quality AI Optimize",
+  "cloudAi.preset.internal": "Internal Debug",
 
   "beginnerHint.title": "First steps in Studio",
   "beginnerHint.region": "First steps in Studio",

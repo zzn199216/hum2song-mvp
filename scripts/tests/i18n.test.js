@@ -40,7 +40,12 @@ if (fs.existsSync(enPath) && fs.existsSync(zhPath)){
     'cloudAi.requestId',
     'cloudAi.unavailable',
     'cloudAi.loginRequired',
-    'cloudAi.internalOnly'
+    'cloudAi.internalOnly',
+    'cloudAi.selected',
+    'cloudAi.preset.basic',
+    'cloudAi.preset.standard',
+    'cloudAi.preset.quality',
+    'cloudAi.preset.internal'
   ].forEach(function(k){
     assert(en[k] != null, 'en.json missing Cloud AI key: ' + k);
     assert(zh[k] != null, 'zh.json missing Cloud AI key: ' + k);

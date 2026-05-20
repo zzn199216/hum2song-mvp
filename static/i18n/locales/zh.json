@@ -31,6 +31,11 @@
   "cloudAi.unavailable": "云端 AI 暂不可用",
   "cloudAi.loginRequired": "需要登录 / 会话不可用",
   "cloudAi.internalOnly": "仅内部用户可用",
+  "cloudAi.selected": "已选择",
+  "cloudAi.preset.basic": "基础 AI 优化",
+  "cloudAi.preset.standard": "标准 AI 预览",
+  "cloudAi.preset.quality": "高质量 AI 优化",
+  "cloudAi.preset.internal": "内部调试",
 
   "beginnerHint.title": "在 Studio 里先做这些",
   "beginnerHint.region": "在 Studio 里先做这些",

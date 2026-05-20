@@ -4641,6 +4641,18 @@ ensureTrackButtons(){
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : function(k){ return k; };
       const selectedPresetStorageKey = 'h2s_cloud_ai_selected_preset_id';
       const defaultPrompt = '用一句中文回复：Hum2Song 云端 AI 已连接。';
+      const cloudAiPresetDisplayName = function(preset){
+        const id = preset && preset.id ? String(preset.id) : '';
+        const labelKeyById = {
+          fast: 'cloudAi.preset.basic',
+          standard: 'cloudAi.preset.standard',
+          quality: 'cloudAi.preset.quality',
+          internal: 'cloudAi.preset.internal',
+          internal_debug: 'cloudAi.preset.internal'
+        };
+        const fallback = (preset && (preset.label || preset.name)) || id || _t('cloudAi.selectPreset');
+        return labelKeyById[id] ? _t(labelKeyById[id]) : fallback;
+      };
       const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : { loading: true };
       const presetsBody = status.presets || {};
       const presets = Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
@@ -4657,7 +4669,7 @@ ensureTrackButtons(){
       const presetNames = presets.map(function(p){
         if (!p) return '';
         if (typeof p === 'string') return p;
-        return p.name || p.label || p.id || '';
+        return cloudAiPresetDisplayName(p);
       }).filter(Boolean);
       const availablePresets = presets.filter(function(p){
         return p && typeof p === 'object' && p.id && p.available !== false && p.enabled !== false;
@@ -4674,9 +4686,44 @@ ensureTrackButtons(){
         }catch(e){}
       }
       const selectedPreset = availablePresets.find(function(p){ return p.id === selectedPresetId; }) || null;
-      const optionHtml = availablePresets.map(function(p){
-        const label = p.label || p.name || p.id;
-        return '<option data-cloud-ai-preset-option="1" value="' + escapeHtml(p.id) + '"' + (p.id === selectedPresetId ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+      const presetItemHtml = presets.filter(function(preset){
+        return preset && typeof preset === 'object' && preset.id;
+      }).map(function(preset){
+        const selectable = preset.available !== false && preset.enabled !== false;
+        const selected = selectable && preset.id === selectedPresetId;
+        const tierText = preset.tier ? String(preset.tier) : '';
+        const rawDesc = preset.description ? String(preset.description) : '';
+        const rawDescLower = rawDesc.toLowerCase();
+        const rawDescLooksProviderSpecific =
+          rawDescLower.indexOf('qw' + 'en') >= 0 ||
+          rawDescLower.indexOf('dash' + 'scope') >= 0 ||
+          rawDescLower.indexOf('base ' + 'url') >= 0 ||
+          rawDescLower.indexOf('api ' + 'key') >= 0 ||
+          rawDescLower.indexOf('model name') >= 0;
+        const desc = rawDescLooksProviderSpecific ? '' : (rawDesc || (selectable ? '' : _t('cloudAi.unavailable')));
+        const itemStyle = [
+          'width:100%',
+          'text-align:left',
+          'display:flex',
+          'flex-direction:column',
+          'gap:3px',
+          'padding:8px',
+          'border-radius:8px',
+          'border:1px solid ' + (selected ? 'rgba(91,168,255,.85)' : 'var(--border)'),
+          'background:' + (selected ? 'rgba(91,168,255,.16)' : 'rgba(255,255,255,.035)'),
+          'color:var(--text)',
+          'box-sizing:border-box',
+          'cursor:' + (selectable ? 'pointer' : 'not-allowed'),
+          'opacity:' + (selectable ? '1' : '.48')
+        ].join(';');
+        return '<button type="button" class="btn" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '" data-cloud-ai-preset-item="1" data-preset-id="' + escapeHtml(preset.id) + '" data-selected="' + (selected ? 'true' : 'false') + '" ' + (!selectable ? 'disabled aria-disabled="true"' : '') + ' style="' + itemStyle + '">' +
+          '<span style="display:flex; align-items:center; justify-content:space-between; gap:8px;">' +
+          '<span style="font-weight:800; font-size:12px;">' + escapeHtml(cloudAiPresetDisplayName(preset)) + '</span>' +
+          '<span class="muted" style="font-size:10px;">' + escapeHtml(selected ? _t('cloudAi.selected') : (selectable ? '' : _t('cloudAi.unavailable'))) + '</span>' +
+          '</span>' +
+          (desc ? '<span class="muted" data-cloud-ai-preset-description style="font-size:11px; line-height:1.35;">' + escapeHtml(desc) + '</span>' : '') +
+          (tierText ? '<span class="muted" data-cloud-ai-preset-tier style="font-size:10px; line-height:1.2;">' + escapeHtml(tierText) + '</span>' : '') +
+          '</button>';
       }).join('');
       const presetDetailHtml = selectedPreset ? (
         '<div class="muted" data-cloud-ai-preset-description style="font-size:11px;">' +
@@ -4721,12 +4768,12 @@ ensureTrackButtons(){
         '<div class="muted" style="font-size:12px;">' + escapeHtml(_t('cloudAi.managedHint')) + '</div>' +
         stateHtml +
         '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.preset')) + '</label>' +
-        '<select id="inspAi_cloudPreset" class="btn" style="width:100%; padding:6px; font-size:12px;" ' + (!availablePresets.length ? 'disabled' : '') + '>' +
-        (optionHtml || '<option value="">' + escapeHtml(_t('cloudAi.selectPreset')) + '</option>') +
-        '</select>' +
+        '<div data-cloud-ai-preset-list="1" role="radiogroup" aria-label="' + escapeHtml(_t('cloudAi.selectPreset')) + '" style="display:grid; gap:6px;">' +
+        (presetItemHtml || '<div class="muted" style="font-size:11px;">' + escapeHtml(_t('cloudAi.presetsUnavailable')) + '</div>') +
+        '</div>' +
         presetDetailHtml +
         '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.testCloudAi')) + '</label>' +
-        '<textarea id="inspAi_cloudTestPrompt" rows="3" style="width:100%; padding:6px; border:1px solid var(--border); border-radius:8px; background:rgba(0,0,0,.2); color:var(--text); font-size:12px; box-sizing:border-box;">' + escapeHtml(promptValue) + '</textarea>' +
+        '<textarea id="inspAi_cloudTestPrompt" rows="3" style="width:100%; min-height:68px; max-height:120px; resize:vertical; padding:7px; border:1px solid var(--border); border-radius:8px; background:rgba(0,0,0,.28); color:var(--text); font-size:12px; line-height:1.4; box-sizing:border-box;">' + escapeHtml(promptValue) + '</textarea>' +
         '<div class="row" style="gap:6px;">' +
         '<button id="inspAi_cloudTestButton" type="button" class="btn mini" data-cloud-ai-response-type="H2S_CLOUD_AI_CHAT_RESPONSE" ' + (!selectedPresetId ? 'disabled' : '') + '>' + escapeHtml(chatResult && chatResult.loading ? _t('cloudAi.testing') : _t('cloudAi.testCloudAi')) + '</button>' +
         '</div>' +
@@ -4743,11 +4790,15 @@ ensureTrackButtons(){
         self.requestCloudAiStatusRefresh();
         if (container && window.H2S_CLOUD_AI_STATUS && window.H2S_CLOUD_AI_STATUS.loading) self.renderCloudAiSettingsPanel(container);
       });
-      const presetEl = document.getElementById('inspAi_cloudPreset');
-      if (presetEl) presetEl.addEventListener('change', function(){
-        try{ localStorage.setItem(selectedPresetStorageKey, presetEl.value || ''); }catch(e){}
-        if (typeof window !== 'undefined') window.H2S_CLOUD_AI_CHAT_RESULT = null;
-        self.renderCloudAiSettingsPanel(container);
+      Array.prototype.slice.call(container.querySelectorAll('[data-cloud-ai-preset-item]')).forEach(function(presetButton){
+        presetButton.addEventListener('click', function(){
+          if (presetButton.disabled) return;
+          const nextPresetId = presetButton.getAttribute('data-preset-id') || '';
+          if (!nextPresetId) return;
+          try{ localStorage.setItem(selectedPresetStorageKey, nextPresetId); }catch(e){}
+          if (typeof window !== 'undefined') window.H2S_CLOUD_AI_CHAT_RESULT = null;
+          self.renderCloudAiSettingsPanel(container);
+        });
       });
       const promptEl = document.getElementById('inspAi_cloudTestPrompt');
       if (promptEl) promptEl.addEventListener('input', function(){
@@ -4757,7 +4808,7 @@ ensureTrackButtons(){
       if (testBtn) testBtn.addEventListener('click', function(){
         if (!window.parent || window.parent === window) return;
         const requestId = 'cloud-ai-chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
-        const presetId = (document.getElementById('inspAi_cloudPreset') || {}).value || selectedPresetId;
+        const presetId = selectedPresetId;
         const prompt = (document.getElementById('inspAi_cloudTestPrompt') || {}).value || defaultPrompt;
         window.H2S_CLOUD_AI_TEST_PROMPT = prompt;
         window.H2S_CLOUD_AI_CHAT_REQUEST_ID = requestId;
