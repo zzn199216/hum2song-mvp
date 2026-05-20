@@ -34,6 +34,7 @@ runOne('scripts/tests/internal_skill_registry.test.js');
 runOne('scripts/tests/cloud_ai_mode.test.js');
 runOne('scripts/tests/cloud_ai_settings_drawer.test.js');
 runOne('scripts/tests/studio_cloud_ai_runtime.test.js');
+runOne('scripts/tests/dark_select_styling.test.js');
 runOne('scripts/tests/ai_assist_dock.test.js');
 runOne('scripts/tests/selection_sync.test.js');
 runOne('scripts/tests/selection_instance_convert.test.js');

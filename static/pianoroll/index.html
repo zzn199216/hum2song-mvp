@@ -425,6 +425,35 @@
     .btn.icon{
       width:38px; height:38px; justify-content:center; padding:0; border-radius:999px;
     }
+    select{
+      appearance:auto;
+      color:var(--text);
+      background:rgba(0,0,0,.32);
+      border:1px solid var(--border);
+      border-radius:10px;
+      color-scheme:dark;
+    }
+    select option, select optgroup{
+      background:#111827;
+      color:#e7edf6;
+    }
+    select:disabled{
+      opacity:.55;
+      cursor:not-allowed;
+    }
+    select:focus-visible,
+    textarea:focus-visible,
+    input[type="text"]:focus-visible,
+    input[type="number"]:focus-visible,
+    input[type="password"]:focus-visible{
+      outline:2px solid rgba(91,168,255,.70);
+      outline-offset:2px;
+      border-color:rgba(91,168,255,.72);
+    }
+    textarea::placeholder,
+    input::placeholder{
+      color:rgba(231,237,246,.48);
+    }
     .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .col{ display:flex; flex-direction:column; gap:10px; }
     .muted{ color:var(--muted); font-size:12px; }
@@ -1023,21 +1052,12 @@
     .editor-llm-checkbox span{
       flex:1;
     }
-    /* PR-8L: Model select dropdown readability — dark text on white dropdown, light text on dark control */
+    /* Native dropdown readability in the dark Studio UI. */
     #editorLlmModelSelect{
       color: rgba(255,255,255,.90);
     }
-    #editorLlmModelSelect option{
-      background: #fff;
-      color: #111;
-    }
-    /* Preset and Gateway Preset dropdowns — same readability pattern */
     #editorOptimizePreset, #editorLlmGatewayPreset, #editorQuickOptimizePreset{
       color: rgba(255,255,255,.90);
-    }
-    #editorOptimizePreset option, #editorLlmGatewayPreset option, #editorQuickOptimizePreset option{
-      background: #fff;
-      color: #111;
     }
     #editorQuickOptimizeTemplates .btn[data-template-id].active{
       background: rgba(59,130,246,.24);
