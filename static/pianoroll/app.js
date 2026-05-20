@@ -4639,6 +4639,8 @@ ensureTrackButtons(){
     renderCloudAiSettingsPanel(container){
       if (!container) return;
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : function(k){ return k; };
+      const selectedPresetStorageKey = 'h2s_cloud_ai_selected_preset_id';
+      const defaultPrompt = '用一句中文回复：Hum2Song 云端 AI 已连接。';
       const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : { loading: true };
       const presetsBody = status.presets || {};
       const presets = Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
@@ -4657,6 +4659,51 @@ ensureTrackButtons(){
         if (typeof p === 'string') return p;
         return p.name || p.label || p.id || '';
       }).filter(Boolean);
+      const availablePresets = presets.filter(function(p){
+        return p && typeof p === 'object' && p.id && p.available !== false && p.enabled !== false;
+      });
+      let selectedPresetId = '';
+      try{ selectedPresetId = String(localStorage.getItem(selectedPresetStorageKey) || ''); }catch(e){}
+      const selectedStillAvailable = availablePresets.some(function(p){ return p.id === selectedPresetId; });
+      if (!selectedStillAvailable) {
+        const preferred = planCode === 'internal' ? availablePresets.find(function(p){ return p.id === 'internal_debug'; }) : null;
+        selectedPresetId = (preferred || availablePresets[0] || {}).id || '';
+        try{
+          if (selectedPresetId) localStorage.setItem(selectedPresetStorageKey, selectedPresetId);
+          else localStorage.removeItem(selectedPresetStorageKey);
+        }catch(e){}
+      }
+      const selectedPreset = availablePresets.find(function(p){ return p.id === selectedPresetId; }) || null;
+      const optionHtml = availablePresets.map(function(p){
+        const label = p.label || p.name || p.id;
+        return '<option data-cloud-ai-preset-option="1" value="' + escapeHtml(p.id) + '"' + (p.id === selectedPresetId ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+      }).join('');
+      const presetDetailHtml = selectedPreset ? (
+        '<div class="muted" data-cloud-ai-preset-description style="font-size:11px;">' +
+        escapeHtml(selectedPreset.description || '') +
+        (selectedPreset.tier ? ' · ' + escapeHtml(String(selectedPreset.tier)) : '') +
+        '</div>'
+      ) : '<div class="muted" data-cloud-ai-preset-description style="font-size:11px;">' + escapeHtml(_t('cloudAi.presetsUnavailable')) + '</div>';
+      const chatResult = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_CHAT_RESULT && typeof window.H2S_CLOUD_AI_CHAT_RESULT === 'object') ? window.H2S_CLOUD_AI_CHAT_RESULT : null;
+      const promptValue = (typeof window !== 'undefined' && typeof window.H2S_CLOUD_AI_TEST_PROMPT === 'string') ? window.H2S_CLOUD_AI_TEST_PROMPT : defaultPrompt;
+      let testResultHtml = '';
+      if (chatResult && chatResult.loading) {
+        testResultHtml = '<div class="muted" data-cloud-ai-test-state="loading">' + escapeHtml(_t('cloudAi.testing')) + '</div>';
+      } else if (chatResult && chatResult.ok === false) {
+        let err = chatResult.error || _t('cloudAi.unavailable');
+        if (chatResult.status === 401 || err === 'auth_required') err = _t('cloudAi.loginRequired');
+        else if (chatResult.status === 403 || err === 'internal_only') err = _t('cloudAi.internalOnly');
+        testResultHtml = '<div class="aiHint aiHintErr" data-cloud-ai-test-state="error">' + escapeHtml(err) + '</div>' +
+          (chatResult.requestId ? '<div class="muted" style="font-size:11px;">' + escapeHtml(_t('cloudAi.requestId')) + ': ' + escapeHtml(chatResult.requestId) + '</div>' : '');
+      } else if (chatResult && chatResult.ok === true) {
+        const usage = chatResult.usage && typeof chatResult.usage === 'object' ? chatResult.usage : null;
+        const usageText = usage ? Object.keys(usage).map(function(k){ return k + '=' + usage[k]; }).join(', ') : '-';
+        testResultHtml =
+          '<div class="muted" style="font-weight:700;">' + escapeHtml(_t('cloudAi.testResult')) + '</div>' +
+          '<div data-cloud-ai-test-result style="white-space:pre-wrap; font-size:12px;">' + escapeHtml(chatResult.text || '') + '</div>' +
+          '<div class="muted" data-cloud-ai-test-usage style="font-size:11px;">' + escapeHtml(_t('cloudAi.usage')) + ': ' + escapeHtml(usageText) + '</div>' +
+          '<div class="muted" data-cloud-ai-test-request-id style="font-size:11px;">' + escapeHtml(_t('cloudAi.requestId')) + ': ' + escapeHtml(chatResult.requestId || '') + '</div>';
+      }
       let stateHtml = '';
       if (status.loading || typeof window === 'undefined' || !window.H2S_CLOUD_AI_STATUS){
         stateHtml = '<div class="muted" data-cloud-ai-state="loading">' + escapeHtml(_t('cloudAi.loading')) + '</div>';
@@ -4673,6 +4720,17 @@ ensureTrackButtons(){
         '<div style="font-weight:800; font-size:14px;">' + escapeHtml(_t('cloudAi.title')) + '</div>' +
         '<div class="muted" style="font-size:12px;">' + escapeHtml(_t('cloudAi.managedHint')) + '</div>' +
         stateHtml +
+        '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.preset')) + '</label>' +
+        '<select id="inspAi_cloudPreset" class="btn" style="width:100%; padding:6px; font-size:12px;" ' + (!availablePresets.length ? 'disabled' : '') + '>' +
+        (optionHtml || '<option value="">' + escapeHtml(_t('cloudAi.selectPreset')) + '</option>') +
+        '</select>' +
+        presetDetailHtml +
+        '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.testCloudAi')) + '</label>' +
+        '<textarea id="inspAi_cloudTestPrompt" rows="3" style="width:100%; padding:6px; border:1px solid var(--border); border-radius:8px; background:rgba(0,0,0,.2); color:var(--text); font-size:12px; box-sizing:border-box;">' + escapeHtml(promptValue) + '</textarea>' +
+        '<div class="row" style="gap:6px;">' +
+        '<button id="inspAi_cloudTestButton" type="button" class="btn mini" data-cloud-ai-response-type="H2S_CLOUD_AI_CHAT_RESPONSE" ' + (!selectedPresetId ? 'disabled' : '') + '>' + escapeHtml(chatResult && chatResult.loading ? _t('cloudAi.testing') : _t('cloudAi.testCloudAi')) + '</button>' +
+        '</div>' +
+        testResultHtml +
         '<div class="row" style="gap:6px;">' +
         '<button id="inspAi_cloudRefresh" type="button" class="btn mini">' + escapeHtml(_t('cloudAi.refresh')) + '</button>' +
         '</div>' +
@@ -4684,6 +4742,33 @@ ensureTrackButtons(){
       if (btn) btn.addEventListener('click', function(){
         self.requestCloudAiStatusRefresh();
         if (container && window.H2S_CLOUD_AI_STATUS && window.H2S_CLOUD_AI_STATUS.loading) self.renderCloudAiSettingsPanel(container);
+      });
+      const presetEl = document.getElementById('inspAi_cloudPreset');
+      if (presetEl) presetEl.addEventListener('change', function(){
+        try{ localStorage.setItem(selectedPresetStorageKey, presetEl.value || ''); }catch(e){}
+        if (typeof window !== 'undefined') window.H2S_CLOUD_AI_CHAT_RESULT = null;
+        self.renderCloudAiSettingsPanel(container);
+      });
+      const promptEl = document.getElementById('inspAi_cloudTestPrompt');
+      if (promptEl) promptEl.addEventListener('input', function(){
+        if (typeof window !== 'undefined') window.H2S_CLOUD_AI_TEST_PROMPT = promptEl.value || '';
+      });
+      const testBtn = document.getElementById('inspAi_cloudTestButton');
+      if (testBtn) testBtn.addEventListener('click', function(){
+        if (!window.parent || window.parent === window) return;
+        const requestId = 'cloud-ai-chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+        const presetId = (document.getElementById('inspAi_cloudPreset') || {}).value || selectedPresetId;
+        const prompt = (document.getElementById('inspAi_cloudTestPrompt') || {}).value || defaultPrompt;
+        window.H2S_CLOUD_AI_TEST_PROMPT = prompt;
+        window.H2S_CLOUD_AI_CHAT_REQUEST_ID = requestId;
+        window.H2S_CLOUD_AI_CHAT_RESULT = { loading: true, requestId: requestId };
+        window.parent.postMessage({
+          type: 'H2S_CLOUD_AI_CHAT_REQUEST',
+          requestId: requestId,
+          presetId: presetId,
+          messages: [{ role: 'user', content: prompt }]
+        }, '*');
+        self.renderCloudAiSettingsPanel(container);
       });
       if (typeof window !== 'undefined' && (status.loading || !window.H2S_CLOUD_AI_STATUS) && typeof window.H2S_REQUEST_CLOUD_AI_STATUS === 'function') {
         window.H2S_REQUEST_CLOUD_AI_STATUS();

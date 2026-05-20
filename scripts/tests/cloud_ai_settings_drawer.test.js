@@ -33,6 +33,16 @@ assert(cloudBody.includes("_t('cloudAi.managedHint'"), 'Cloud panel should expla
 assert(/planCode/.test(cloudBody), 'Cloud panel should render planCode when available');
 assert(/quota/.test(cloudBody) && /remaining/.test(cloudBody), 'Cloud panel should render quota used/limit/remaining when available');
 assert(/presets/.test(cloudBody), 'Cloud panel should render available presets when available');
+assert(cloudBody.includes('h2s_cloud_ai_selected_preset_id'), 'Cloud panel should persist selected preset id');
+assert(cloudBody.includes('inspAi_cloudPreset'), 'Cloud panel should render a preset selector');
+assert(cloudBody.includes('data-cloud-ai-preset-option'), 'Cloud preset options should be identifiable for safety checks');
+assert(cloudBody.includes('H2S_CLOUD_AI_CHAT_REQUEST'), 'Cloud test action should request chat through the parent bridge');
+assert(cloudBody.includes('H2S_CLOUD_AI_CHAT_RESPONSE'), 'Cloud test action should render correlated chat responses');
+assert(cloudBody.includes('inspAi_cloudTestPrompt'), 'Cloud panel should render a test prompt textarea');
+assert(cloudBody.includes('inspAi_cloudTestButton'), 'Cloud panel should render a Cloud AI test button');
+assert(cloudBody.includes("_t('cloudAi.preset'"), 'Cloud preset label should use i18n');
+assert(cloudBody.includes("_t('cloudAi.testCloudAi'"), 'Cloud test button should use i18n');
+assert(!/qwen-|dashscope|apiKey|modelName/i.test(cloudBody), 'Cloud panel source should not expose provider ids, API keys, or raw model names');
 assert(/loading/.test(cloudBody), 'Cloud panel should render a loading state while status is requested');
 assert(/error/.test(cloudBody), 'Cloud panel should render a safe error state');
 assert(/requestCloudAiStatusRefresh/.test(cloudBody), 'Cloud panel should expose refresh/retry action');

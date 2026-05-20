@@ -143,6 +143,24 @@
         return;
       }
 
+      case 'H2S_CLOUD_AI_CHAT_RESPONSE': {
+        if (!window.H2S_CLOUD_AI_CHAT_REQUEST_ID || data.requestId !== window.H2S_CLOUD_AI_CHAT_REQUEST_ID) return;
+        window.H2S_CLOUD_MODE = true;
+        window.H2S_CLOUD_AI_CHAT_RESULT = {
+          loading: false,
+          requestId: data.requestId,
+          ok: data.ok === true,
+          text: typeof data.text === 'string' ? data.text : '',
+          usage: data.usage && typeof data.usage === 'object' ? data.usage : null,
+          finishReason: typeof data.finishReason === 'string' ? data.finishReason : '',
+          status: typeof data.status === 'number' ? data.status : null,
+          error: typeof data.error === 'string' ? data.error : null,
+        };
+        window.dispatchEvent(new CustomEvent('h2s-cloud-ai-chat-response', { detail: window.H2S_CLOUD_AI_CHAT_RESULT }));
+        rerenderAiSettingsDrawerIfOpen();
+        return;
+      }
+
       case 'H2S_CLOUD_REQUEST_PROJECT': {
         var app = getApp();
         if (!app || typeof app.getProjectV2 !== 'function') {
