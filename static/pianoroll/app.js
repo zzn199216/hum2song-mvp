@@ -4644,6 +4644,9 @@ ensureTrackButtons(){
       const cloudAiPresetDisplayName = function(preset){
         const id = preset && preset.id ? String(preset.id) : '';
         const labelKeyById = {
+          basic_optimize: 'cloudAi.preset.basic',
+          standard_preview: 'cloudAi.preset.standard',
+          quality_optimize: 'cloudAi.preset.quality',
           fast: 'cloudAi.preset.basic',
           standard: 'cloudAi.preset.standard',
           quality: 'cloudAi.preset.quality',
@@ -4652,6 +4655,41 @@ ensureTrackButtons(){
         };
         const fallback = (preset && (preset.label || preset.name)) || id || _t('cloudAi.selectPreset');
         return labelKeyById[id] ? _t(labelKeyById[id]) : fallback;
+      };
+      const rawCloudAiDescriptionLooksProviderSpecific = function(desc){
+        const rawDescLower = String(desc || '').toLowerCase();
+        return rawDescLower.indexOf('qw' + 'en') >= 0 ||
+          rawDescLower.indexOf('dash' + 'scope') >= 0 ||
+          rawDescLower.indexOf('base ' + 'url') >= 0 ||
+          rawDescLower.indexOf('api ' + 'key') >= 0 ||
+          rawDescLower.indexOf('model name') >= 0;
+      };
+      const cloudAiPresetDescription = function(preset, selectable){
+        const id = preset && preset.id ? String(preset.id) : '';
+        const descKeyById = {
+          basic_optimize: 'cloudAi.preset.basic.description',
+          standard_preview: 'cloudAi.preset.standard.description',
+          quality_optimize: 'cloudAi.preset.quality.description',
+          fast: 'cloudAi.preset.basic.description',
+          standard: 'cloudAi.preset.standard.description',
+          quality: 'cloudAi.preset.quality.description',
+          internal: 'cloudAi.preset.internal.description',
+          internal_debug: 'cloudAi.preset.internal.description'
+        };
+        if (descKeyById[id]) return _t(descKeyById[id]);
+        const rawDesc = preset && preset.description ? String(preset.description) : '';
+        if (rawCloudAiDescriptionLooksProviderSpecific(rawDesc)) return '';
+        return rawDesc || (selectable ? '' : _t('cloudAi.unavailable'));
+      };
+      const cloudAiPresetTierLabel = function(preset){
+        const tier = preset && preset.tier ? String(preset.tier) : '';
+        const tierKeyByTier = {
+          fast: 'cloudAi.tier.fast',
+          standard: 'cloudAi.tier.standard',
+          quality: 'cloudAi.tier.quality',
+          internal: 'cloudAi.tier.internal'
+        };
+        return tierKeyByTier[tier] ? _t(tierKeyByTier[tier]) : tier;
       };
       const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : { loading: true };
       const presetsBody = status.presets || {};
@@ -4691,16 +4729,8 @@ ensureTrackButtons(){
       }).map(function(preset){
         const selectable = preset.available !== false && preset.enabled !== false;
         const selected = selectable && preset.id === selectedPresetId;
-        const tierText = preset.tier ? String(preset.tier) : '';
-        const rawDesc = preset.description ? String(preset.description) : '';
-        const rawDescLower = rawDesc.toLowerCase();
-        const rawDescLooksProviderSpecific =
-          rawDescLower.indexOf('qw' + 'en') >= 0 ||
-          rawDescLower.indexOf('dash' + 'scope') >= 0 ||
-          rawDescLower.indexOf('base ' + 'url') >= 0 ||
-          rawDescLower.indexOf('api ' + 'key') >= 0 ||
-          rawDescLower.indexOf('model name') >= 0;
-        const desc = rawDescLooksProviderSpecific ? '' : (rawDesc || (selectable ? '' : _t('cloudAi.unavailable')));
+        const tierText = cloudAiPresetTierLabel(preset);
+        const desc = cloudAiPresetDescription(preset, selectable);
         const itemStyle = [
           'width:100%',
           'text-align:left',
@@ -4727,8 +4757,8 @@ ensureTrackButtons(){
       }).join('');
       const presetDetailHtml = selectedPreset ? (
         '<div class="muted" data-cloud-ai-preset-description style="font-size:11px;">' +
-        escapeHtml(selectedPreset.description || '') +
-        (selectedPreset.tier ? ' · ' + escapeHtml(String(selectedPreset.tier)) : '') +
+        escapeHtml(cloudAiPresetDescription(selectedPreset, true)) +
+        (cloudAiPresetTierLabel(selectedPreset) ? ' · ' + escapeHtml(cloudAiPresetTierLabel(selectedPreset)) : '') +
         '</div>'
       ) : '<div class="muted" data-cloud-ai-preset-description style="font-size:11px;">' + escapeHtml(_t('cloudAi.presetsUnavailable')) + '</div>';
       const chatResult = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_CHAT_RESULT && typeof window.H2S_CLOUD_AI_CHAT_RESULT === 'object') ? window.H2S_CLOUD_AI_CHAT_RESULT : null;

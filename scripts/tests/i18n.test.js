@@ -45,11 +45,31 @@ if (fs.existsSync(enPath) && fs.existsSync(zhPath)){
     'cloudAi.preset.basic',
     'cloudAi.preset.standard',
     'cloudAi.preset.quality',
-    'cloudAi.preset.internal'
+    'cloudAi.preset.internal',
+    'cloudAi.preset.basic.description',
+    'cloudAi.preset.standard.description',
+    'cloudAi.preset.quality.description',
+    'cloudAi.preset.internal.description',
+    'cloudAi.tier.fast',
+    'cloudAi.tier.standard',
+    'cloudAi.tier.quality',
+    'cloudAi.tier.internal'
   ].forEach(function(k){
     assert(en[k] != null, 'en.json missing Cloud AI key: ' + k);
     assert(zh[k] != null, 'zh.json missing Cloud AI key: ' + k);
   });
+  assert(zh['cloudAi.preset.basic.description'] === '适合基础清理、快速预览和轻量辅助。', 'zh basic preset description should be product-facing');
+  assert(zh['cloudAi.preset.standard.description'] === '适合旋律、节奏和轻量编配辅助。', 'zh standard preset description should be product-facing');
+  assert(zh['cloudAi.preset.quality.description'] === '适合更高质量的云端 AI 辅助。', 'zh quality preset description should be product-facing');
+  assert(zh['cloudAi.preset.internal.description'] === '用于内部验证云端 AI 连接和供应商链路。', 'zh internal preset description should be product-facing');
+  assert(zh['cloudAi.tier.fast'] === '快速', 'zh fast tier should be localized');
+  assert(zh['cloudAi.tier.standard'] === '标准', 'zh standard tier should be localized');
+  assert(zh['cloudAi.tier.quality'] === '高质量', 'zh quality tier should be localized');
+  assert(zh['cloudAi.tier.internal'] === '内部', 'zh internal tier should be localized');
+  assert(en['cloudAi.tier.fast'] === 'Fast', 'en fast tier should be localized');
+  assert(en['cloudAi.tier.standard'] === 'Standard', 'en standard tier should be localized');
+  assert(en['cloudAi.tier.quality'] === 'Quality', 'en quality tier should be localized');
+  assert(en['cloudAi.tier.internal'] === 'Internal', 'en internal tier should be localized');
 }
 
 // Studio index: beginner hint bar (first-open guidance)
