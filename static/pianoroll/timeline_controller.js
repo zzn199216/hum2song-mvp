@@ -536,26 +536,37 @@
 
           const sel = document.createElement('select');
           sel.className = 'trackInstrumentSelect';
-          var builtin = [
-            { v: 'default', l: 'dropdown.default' },
-            { v: 'bass', l: 'dropdown.bass' },
-            { v: 'lead', l: 'dropdown.lead' },
-            { v: 'pad', l: 'dropdown.pad' },
-            { v: 'pluck', l: 'dropdown.pluck' },
-            { v: 'drum', l: 'dropdown.drum' },
-            { v: 'sampler:tonejs:piano', l: 'dropdown.samplerPiano' },
-            { v: 'sampler:tonejs:strings', l: 'dropdown.samplerStrings' },
-            { v: 'sampler:tonejs:bass', l: 'dropdown.samplerBass' },
-            { v: 'sampler:tonejs:guitar-acoustic', l: 'dropdown.samplerGuitarAcoustic' },
-            { v: 'sampler:tonejs:guitar-electric', l: 'dropdown.samplerGuitarElectric' },
-          ];
+          var manifestApi = (typeof window !== 'undefined') ? window.H2SInstrumentManifest : null;
+          var builtin = (manifestApi && typeof manifestApi.getSelectableInstrumentOptions === 'function')
+            ? manifestApi.getSelectableInstrumentOptions()
+            : [
+              { value: 'default', labelKey: 'dropdown.default' },
+              { value: 'bass', labelKey: 'dropdown.bass' },
+              { value: 'lead', labelKey: 'dropdown.lead' },
+              { value: 'pad', labelKey: 'dropdown.pad' },
+              { value: 'pluck', labelKey: 'dropdown.pluck' },
+              { value: 'drum', labelKey: 'dropdown.drum' },
+              { value: 'sampler:tonejs:piano', labelKey: 'dropdown.samplerPiano' },
+              { value: 'sampler:tonejs:strings', labelKey: 'dropdown.samplerStrings' },
+              { value: 'sampler:tonejs:bass', labelKey: 'dropdown.samplerBass' },
+              { value: 'sampler:tonejs:guitar-acoustic', labelKey: 'dropdown.samplerGuitarAcoustic' },
+              { value: 'sampler:tonejs:guitar-electric', labelKey: 'dropdown.samplerGuitarElectric' },
+            ];
           var custom = (typeof window !== 'undefined' && window.__h2s_custom_instruments) ? window.__h2s_custom_instruments : [];
-          var opts = builtin.map(x=>'<option value="' + (x.v) + '">' + (ctrl._escapeHtml(_t(x.l))) + '</option>').join('');
+          var currentInstrumentValue = (track && typeof track.instrument === 'string' && track.instrument) ? track.instrument : 'default';
+          var hasCurrentInstrumentOption = false;
+          var opts = builtin.map(x=>{
+            var value = x.value || x.v;
+            var labelKey = x.labelKey || x.l;
+            if (value === currentInstrumentValue) hasCurrentInstrumentOption = true;
+            return '<option value="' + (ctrl._escapeHtml(value)) + '">' + (ctrl._escapeHtml(_t(labelKey))) + '</option>';
+          }).join('');
           if (custom.length){
             opts += '<optgroup label="' + (ctrl._escapeHtml(_t('inst.myInstruments'))) + '">';
             for (var i = 0; i < custom.length; i++){
               var c = custom[i];
               var val = (c.kind === 'oneshot') ? ('oneshot:' + c.packId) : ('sampler:' + c.packId);
+              if (val === currentInstrumentValue) hasCurrentInstrumentOption = true;
               var raw = (c.displayName || c.packId || '');
               var stripped = raw.replace(/^自定义[:：]\s*/i, '').replace(/^Custom:\s*/i, '').trim() || raw;
               var displayLabel = _t('inst.customPrefix') + stripped;
@@ -563,8 +574,12 @@
             }
             opts += '</optgroup>';
           }
+          if (currentInstrumentValue && !hasCurrentInstrumentOption){
+            var missingLabel = _t('instrument.missing') + ': ' + currentInstrumentValue;
+            opts += '<option value="' + (ctrl._escapeHtml(currentInstrumentValue)) + '">' + (ctrl._escapeHtml(missingLabel)) + '</option>';
+          }
           sel.innerHTML = opts;
-          sel.value = (track && typeof track.instrument === 'string' && track.instrument) ? track.instrument : 'default';
+          sel.value = currentInstrumentValue;
           sel.title = _t('trackpanel.instrument');
           sel.style.width = '100%';
           sel.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });

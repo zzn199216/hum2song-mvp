@@ -27,6 +27,7 @@ runOne('scripts/tests/llm_v0_optimize_hardening.test.js');
 runOne('scripts/tests/regression_phaseB_invariants.test.js');
 runOne('scripts/tests/regression_templates_directives.test.js');
 runOne('scripts/tests/instrument_library_store.test.js');
+runOne('scripts/tests/instrument_manifest.test.js');
 runOne('scripts/tests/i18n.test.js');
 runOne('scripts/tests/commands.test.js');
 runOne('scripts/tests/run_command_mvp.test.js');
