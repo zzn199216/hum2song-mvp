@@ -180,7 +180,8 @@
 
   function mapContentError(code) {
     var key = typeof code === 'string' ? code : '';
-    if (key === 'auth_required') return t('cloudMaterials.authRequired', 'Sign in to Hum2Song Cloud to import materials.');
+    if (key === 'auth_required' || key === 'materials_inspiration_login_required')
+      return t('cloudMaterials.authRequired', 'Sign in to Hum2Song Cloud to import materials.');
     if (key === 'materials_no_playable_audio') return t('cloudMaterials.noPlayable', 'This material has no playable audio.');
     if (key === 'materials_audio_load_failed') return t('cloudMaterials.loadFailed', 'Could not load material audio.');
     if (key === 'bad_request') return t('cloudMaterials.badRequest', 'Invalid material request.');

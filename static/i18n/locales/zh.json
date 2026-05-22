@@ -47,7 +47,7 @@
   "cloudMaterials.empty": "暂无云端音频素材。",
   "cloudMaterials.import": "导入",
   "cloudMaterials.importing": "正在从云端导入…",
-  "cloudMaterials.importDone": "已导入到素材库。",
+  "cloudMaterials.importDone": "已导入到素材库并添加到时间线（播放头位置）。",
   "cloudMaterials.importFailed": "导入失败。",
   "cloudMaterials.importUnavailable": "Studio 音频导入不可用。",
   "cloudMaterials.listFailed": "无法加载云端素材。",

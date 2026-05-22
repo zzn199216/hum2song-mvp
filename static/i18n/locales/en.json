@@ -47,7 +47,7 @@
   "cloudMaterials.empty": "No cloud audio materials yet.",
   "cloudMaterials.import": "Import",
   "cloudMaterials.importing": "Importing from cloud…",
-  "cloudMaterials.importDone": "Imported to clip library.",
+  "cloudMaterials.importDone": "Imported to clip library and timeline at playhead.",
   "cloudMaterials.importFailed": "Import failed.",
   "cloudMaterials.importUnavailable": "Audio import is unavailable in Studio.",
   "cloudMaterials.listFailed": "Could not load cloud materials.",

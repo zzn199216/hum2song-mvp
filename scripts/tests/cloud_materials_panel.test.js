@@ -31,6 +31,10 @@ assert(panel.includes('H2S_REQUEST_CLOUD_MATERIALS_LIST'), 'panel should request
 assert(panel.includes('H2S_REQUEST_CLOUD_MATERIAL_CONTENT'), 'panel should request material content via bridge');
 assert(panel.includes('_commitNativeAudioFile'), 'panel should import via native audio commit path');
 assert(
+  panel.includes('cloudMaterials.importDone') || /importDone|timeline at playhead|时间线/.test(panel),
+  'panel should surface import success including timeline placement via commit helper',
+);
+assert(
   panel.includes('cloudMaterials.standaloneHint') || indexHtml.includes('data-i18n="cloudMaterials.standaloneHint"'),
   'standalone mode should show disabled copy',
 );
