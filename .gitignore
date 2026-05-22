@@ -51,3 +51,7 @@ assets/**
 # --- Local tooling (not versioned) ---
 .workbuddy/
 
+# --- Deploy scratch (local only) ---
+.deploy-artifacts/
+.deploy-tmp/
+
