@@ -6288,6 +6288,7 @@ renderTimeline(){
         if (e.errorBucket === 'segment_extract_failed') return _t('convert.fail.segmentExtract', 'Conversion failed: audio segment extraction failed.');
         if (e.errorBucket === 'basic_pitch_failed') return _t('convert.fail.basicPitch', 'Conversion failed: transcription model failed.');
         if (e.errorBucket === 'score_fetch_failed') return _t('convert.fail.scoreFetch', 'Conversion failed: could not read transcription result.');
+        if (e.errorBucket === 'worker_unavailable') return _t('convert.fail.workerUnavailable', 'Worker conversion is unavailable. Falling back to local conversion.');
         if (e.errorBucket === 'timed_out') return _t('convert.phase.timedOut', 'Conversion timed out. Try again.');
         if (e.errorBucket === 'task_failed') return _t('convert.fail.taskFailed', 'Conversion failed on server. Try again.');
         if (e.errorBucket === 'server_unreachable') return _t('convert.fail.serverUnreachable', 'Cannot reach conversion server. Check Studio service and retry.');
@@ -6732,6 +6733,105 @@ renderTimeline(){
      * @param {string} clipId
      * @param {{ sourceAudioInstanceId?: string }} [opts] When set, placement aligns to that timeline instance (inspector / instance-scoped conversion).
      */
+    _materializeWorkerScoreAsClip(clipId, scoreForClip, workerJobId, opts){
+      opts = opts || {};
+      const P = window.H2SProject;
+      if (!P || typeof P.createClipFromScore !== 'function') return { ok: false, reason: 'project_api_missing' };
+      let placeStartSec = this.project && this.project.ui ? Number(this.project.ui.playheadSec || 0) : 0;
+      let placeTrackIndex = 0;
+      if (clipId && typeof P.resolveAudioConvertPlacementV1 === 'function'){
+        const pl = P.resolveAudioConvertPlacementV1(
+          this.project,
+          String(clipId),
+          placeStartSec,
+          0,
+          opts.sourceAudioInstanceId ? String(opts.sourceAudioInstanceId) : undefined
+        );
+        placeStartSec = pl.startSec;
+        placeTrackIndex = pl.trackIndex;
+      }
+      const maxTi = Math.max(0, ((this.project.tracks || []).length) - 1);
+      placeTrackIndex = Math.max(0, Math.min(maxTi, Math.floor(placeTrackIndex)));
+      const clip = P.createClipFromScore(scoreForClip, { name: 'Worker conversion', sourceTaskId: workerJobId || 'worker' });
+      if (!clip.meta) clip.meta = {};
+      clip.meta.sourceAudioClipId = String(clipId);
+      if (opts.sourceAudioInstanceId) clip.meta.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
+      clip.meta.workerJobId = workerJobId || null;
+      if (opts.segmentStartSec != null) clip.meta.segmentStartSec = Number(opts.segmentStartSec);
+      if (opts.segmentDurationSec != null) clip.meta.segmentDurationSec = Number(opts.segmentDurationSec);
+      if (typeof scoreForClip.tempo_bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.tempo_bpm;
+      else if (typeof scoreForClip.bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.bpm;
+      this.project.clips.unshift(clip);
+      this.addClipToTimeline(clip.id, placeStartSec, placeTrackIndex);
+      persist();
+      this.render();
+      log('Clip added: ' + clip.name);
+      const shouldAutoOpen = !!(this.state.autoOpenAfterImport && typeof this.openClipEditor === 'function' && !_importTooLargeForAutoOpen(clip));
+      this.setImportStatus(this._buildImportSuccessStatus({ clipCount: 1, autoOpen: shouldAutoOpen }), false);
+      if (shouldAutoOpen) setTimeout(() => this.openClipEditor(clip.id), 0);
+      setTimeout(() => this.setImportStatus('', false), this._importSuccessStatusClearMs({ autoOpen: shouldAutoOpen }));
+      return { ok: true, clipId: clip.id };
+    },
+
+    async _tryWorkerConvertAudioClipToEditable(clipId, file, seg, opts){
+      opts = opts || {};
+      const client = (typeof window !== 'undefined') ? window.H2SAudioWorkerConversionClient : null;
+      if (!client || typeof client.isEnabled !== 'function' || !client.isEnabled() || typeof client.convert !== 'function'){
+        return { ok: false, reason: 'worker_unavailable' };
+      }
+      try{
+        this._setAudioConvertState(clipId, {
+          phase: 'uploading',
+          taskId: null,
+          errorBucket: null,
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+        this.setImportStatus(this._audioConvertStatusText(clipId), true);
+        const res = await client.convert({ file: file, segment: seg });
+        if (!res || !res.ok || !res.scoreDoc) return { ok: false, reason: (res && res.reason) || 'worker_unavailable' };
+        const workerJobId = res.workerJobId || null;
+        this._setAudioConvertState(clipId, {
+          phase: 'processing',
+          taskId: workerJobId,
+          workerJobId: workerJobId,
+          errorBucket: null,
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+        const mat = this._materializeWorkerScoreAsClip(clipId, res.scoreDoc, workerJobId, {
+          sourceAudioInstanceId: opts.sourceAudioInstanceId,
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+        if (!mat || !mat.ok) return { ok: false, reason: 'score_fetch_failed' };
+        this._setAudioConvertState(clipId, {
+          phase: 'completed',
+          taskId: workerJobId,
+          workerJobId: workerJobId,
+          errorBucket: null,
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+        console.info('[H2S convert] worker phase=completed job_id=' + String(workerJobId || '').slice(0, 8) + ' clip_id=' + clipId);
+        this.setImportStatus(this._audioConvertStatusText(clipId), false);
+        this._clearAudioConvertState(clipId, 4000);
+        return { ok: true, workerJobId: workerJobId };
+      }catch(e){
+        const reason = (e && e.message) ? String(e.message) : 'worker_unavailable';
+        this._setAudioConvertState(clipId, {
+          phase: 'failed',
+          taskId: null,
+          workerJobId: null,
+          errorBucket: reason === 'worker_timeout' ? 'timed_out' : 'worker_unavailable',
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+        console.warn('[H2S convert] worker phase=failed bucket=worker_unavailable clip_id=' + clipId);
+        return { ok: false, reason: reason };
+      }
+    },
+
     async convertAudioClipToEditable(clipId, opts){
       opts = opts || {};
       const P = window.H2SProject;
@@ -6787,6 +6887,16 @@ renderTimeline(){
         segmentDurationSec: seg.durationSec,
       };
       if (opts.sourceAudioInstanceId) uploadOpts.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
+      const workerTry = await this._tryWorkerConvertAudioClipToEditable(clipId, file, seg, opts);
+      if (workerTry && workerTry.ok) return { ok: true, workerJobId: workerTry.workerJobId || null };
+      if (workerTry && workerTry.reason === 'worker_unavailable'){
+        this._setAudioConvertState(clipId, {
+          phase: 'failed',
+          errorBucket: 'worker_unavailable',
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+      }
       await this.uploadFileAndGenerate(file, uploadOpts);
       return { ok: true };
     },

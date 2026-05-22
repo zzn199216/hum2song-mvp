@@ -84,6 +84,7 @@
   "convert.fail.segmentExtract": "转换失败：音频片段提取失败",
   "convert.fail.basicPitch": "转换失败：转换模型失败",
   "convert.fail.scoreFetch": "转换失败：结果读取失败",
+  "convert.fail.workerUnavailable": "Worker 转换暂不可用，正在回退到本地转换。",
   "convert.fail.invalidSegment": "所选片段无效，请调整起点或长度。",
   "convert.segmentRange": "片段",
   "convert.audioDuration": "音频时长",

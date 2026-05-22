@@ -84,6 +84,7 @@
   "convert.fail.segmentExtract": "Conversion failed: audio segment extraction failed.",
   "convert.fail.basicPitch": "Conversion failed: transcription model failed.",
   "convert.fail.scoreFetch": "Conversion failed: could not read transcription result.",
+  "convert.fail.workerUnavailable": "Worker conversion is unavailable. Falling back to local conversion.",
   "convert.fail.invalidSegment": "Selected segment is invalid. Adjust start or length.",
   "convert.segmentRange": "Segment",
   "convert.audioDuration": "Audio duration",
