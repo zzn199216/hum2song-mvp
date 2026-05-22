@@ -328,12 +328,19 @@ class TaskManager:
         message: str,
         trace_id: Optional[str] = None,
         stage: Optional[Stage] = None,
+        error_code: Optional[str] = None,
+        phase: Optional[str] = None,
     ) -> None:
         """
         Finalizes task as FAILED.
         """
         tid = _ensure_uuid(task_id)
-        err = TaskError(message=message, trace_id=trace_id)
+        err = TaskError(
+            message=message,
+            trace_id=trace_id,
+            error_code=error_code,
+            phase=phase,
+        )
 
         with self._lock:
             rec = self._get_record_locked(tid)

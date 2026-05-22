@@ -255,14 +255,26 @@ async def generate_music(
                 seg_log_start = seg_start
                 seg_log_dur = seg_dur
         except SegmentValidationError as e:
-            task_manager.mark_failed(task_id, message=str(e), stage=Stage.preprocessing)
+            task_manager.mark_failed(
+                task_id,
+                message=str(e),
+                stage=Stage.preprocessing,
+                error_code="segment_invalid",
+                phase="segment_extract",
+            )
             _safe_unlink(input_path)
             if segment_sidecar is not None:
                 _safe_unlink(segment_sidecar)
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
             if seg_log_start is not None or segment_start_sec is not None or segment_duration_sec is not None or segment_end_sec is not None:
-                task_manager.mark_failed(task_id, message="segment extraction failed", stage=Stage.preprocessing)
+                task_manager.mark_failed(
+                    task_id,
+                    message="segment extraction failed",
+                    stage=Stage.preprocessing,
+                    error_code="segment_extract_failed",
+                    phase="segment_extract",
+                )
                 _safe_unlink(input_path)
                 if segment_sidecar is not None:
                     _safe_unlink(segment_sidecar)

@@ -79,6 +79,14 @@ class _ContractBaseModel(BaseModel):
 class TaskError(_ContractBaseModel):
     message: str = Field(..., min_length=1, description="Human readable error message")
     trace_id: Optional[str] = Field(default=None, description="Optional id for log correlation")
+    error_code: Optional[str] = Field(
+        default=None,
+        description="Stable machine-readable bucket (upload_failed, score_fetch_failed, ...)",
+    )
+    phase: Optional[str] = Field(
+        default=None,
+        description="Pipeline phase when failure occurred (preprocess, basic_pitch, score_fetch, ...)",
+    )
 
 
 class TaskResult(_ContractBaseModel):

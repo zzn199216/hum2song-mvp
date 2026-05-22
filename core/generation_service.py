@@ -195,6 +195,43 @@ class GenerationService:
             self._runner = self._load_pipeline_runner()
         return self._runner
 
+    def _run_contract_pipeline(
+        self, input_path: Path, output_format: str, task_id: UUID
+    ) -> Path:
+        """Run pipeline with contract task id (segment uploads use *_segment.wav sidecars)."""
+        try:
+            pipeline_mod = importlib.import_module("core.pipeline")
+            fn = getattr(pipeline_mod, "run_pipeline", None)
+            if callable(fn):
+                res = fn(
+                    input_path,
+                    output_format,
+                    contract_task_id=str(task_id),
+                )
+                return Path(res)
+        except Exception:
+            pass
+        runner = self._get_runner()
+        return runner(input_path, output_format)
+
+    def _attach_midi_artifact_if_present(self, task_id: UUID) -> None:
+        tid = str(task_id)
+        out_dir = Path(self.outputs_dir)
+        for name in (f"{tid}.mid", f"{tid}_segment.mid"):
+            midi_path = (out_dir / name).resolve()
+            if not midi_path.exists():
+                continue
+            try:
+                self.task_manager.attach_artifact(
+                    task_id,
+                    artifact_path=midi_path,
+                    file_type=FileType.midi,
+                )
+                logger.info("Attached MIDI artifact for task %s", tid)
+            except Exception as e:
+                logger.warning("Could not attach MIDI for task %s: %s", tid, e)
+            return
+
     def process_task(self, task_id: UUID, input_path: Path, output_format: str = "mp3") -> None:
         """
         Worker 主入口（BackgroundTasks 调用）。
@@ -216,8 +253,7 @@ class GenerationService:
             current_stage = Stage.converting
             self.task_manager.update_progress(task_id, progress=0.4, stage=current_stage)
 
-            runner = self._get_runner()
-            output_path = runner(input_path, output_format)
+            output_path = self._run_contract_pipeline(input_path, output_format, task_id)
 
             if not isinstance(output_path, Path):
                 output_path = Path(output_path)
@@ -241,6 +277,7 @@ class GenerationService:
                 file_type=FileType.audio,
                 output_format=None,  # 让 Manager 自动推断
             )
+            self._attach_midi_artifact_if_present(task_id)
             logger.info(f"✅ [Done] Task {task_id} finished.")
             _timing_status = "completed"
 

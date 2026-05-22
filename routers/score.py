@@ -61,15 +61,28 @@ def _ensure_task_completed(task_id: str) -> None:
     if info.status != TaskStatus.completed:
         raise HTTPException(status_code=409, detail="Task not completed")
 
+def _score_unavailable_http(task_id: str, *, error_code: str = "score_unavailable") -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "errorCode": error_code,
+            "errorMessage": "Score is not available for this task yet.",
+            "phase": "score_fetch",
+        },
+    )
+
+
 def _get_latest_midi_path(task_id: str) -> Path:
     try:
         return task_manager.get_artifact_path(task_id, FileType.midi)
     except Exception:
         pass
     out_dir = _resolve_output_dir()
-    p = (out_dir / f"{task_id}.mid").resolve()
-    if p.exists(): return p
-    raise HTTPException(status_code=409, detail="MIDI not available for this task")
+    for name in (f"{task_id}.mid", f"{task_id}_segment.mid"):
+        p = (out_dir / name).resolve()
+        if p.exists():
+            return p
+    raise _score_unavailable_http(task_id)
 
 
 def _score_note_count(doc: ScoreDoc) -> int:

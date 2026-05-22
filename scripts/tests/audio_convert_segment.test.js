@@ -41,6 +41,8 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   const genSrc = fs.readFileSync(path.join(repoRoot, 'routers', 'generation.py'), 'utf8');
   assert(genSrc.includes('segment_start_sec'), 'generate accepts segment_start_sec');
   assert(genSrc.includes('extract_audio_segment'), 'generate extracts segment');
+  const pipeSrc = fs.readFileSync(path.join(repoRoot, 'core', 'pipeline.py'), 'utf8');
+  assert(pipeSrc.includes('contract_task_id'), 'pipeline accepts contract task id');
   console.log('PASS generation segment API');
 })();
 

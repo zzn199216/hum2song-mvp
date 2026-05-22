@@ -16,6 +16,9 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   assert(/pollMaxMs = conversionClipId \? 600000 : 180000/.test(appSrc), 'longer poll for audio conversion');
   assert(appSrc.includes("'timed_out'"), 'timeout terminal phase');
   assert(appSrc.includes("errorBucket: 'missing_audio'"), 'missing audio bucket');
+  assert(appSrc.includes("'score_fetch_failed'"), 'score fetch bucket');
+  assert(appSrc.includes('_syncWaveformConvertStatus'), 'waveform status sync');
+  assert(appSrc.includes('convert.fail.scoreFetch'), 'score fetch i18n');
   assert(appSrc.includes('[H2S convert]'), 'safe conversion logging');
   assert(!/\[H2S convert\][^\n]*https?:\/\//.test(appSrc), 'conversion logs must not include URLs');
   console.log('PASS app conversion state helpers');
@@ -38,6 +41,8 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   const keys = [
     'convert.phase.timedOut',
     'convert.fail.needImportAudio',
+    'convert.fail.scoreFetch',
+    'convert.fail.segmentExtract',
     'convert.phase.processing',
     'convert.phase.failed',
   ];

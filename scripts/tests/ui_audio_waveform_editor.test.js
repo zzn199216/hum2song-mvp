@@ -61,5 +61,16 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   assert(en['audio.waveform.title'] === 'Audio segment editor');
   assert(zh['audio.waveform.title'] === '音频片段编辑');
   assert(zh['audio.waveform.missingFile'].includes('重新导入'));
+  assert(zh['convert.fail.scoreFetch'].includes('结果读取失败'));
   console.log('PASS waveform i18n');
+})();
+
+(function testWaveformConvertStatusUi(){
+  const wfSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'ui', 'audio_waveform_editor.js'), 'utf8');
+  assert(wfSrc.includes('setConvertStatus'), 'waveform editor exposes convert status');
+  assert(wfSrc.includes('data-act="waveRetry"'), 'retry button in modal');
+  assert(wfSrc.includes('retryConvert'), 'retry hook');
+  const appSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'app.js'), 'utf8');
+  assert(appSrc.includes('getConvertState'), 'app provides convert state to waveform');
+  console.log('PASS waveform convert status UI');
 })();

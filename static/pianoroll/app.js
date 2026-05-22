@@ -6025,9 +6025,21 @@ renderTimeline(){
         return out;
       }
       if (err && err.h2sKind === 'task_timeout'){
-        out.bucket = 'server_unreachable';
+        out.bucket = 'timed_out';
         out.statusText = _t('importFail.timeout.status', 'Server took too long. Check server and try again.');
         out.alertText = _t('importFail.timeout.alert', 'The server took too long to finish.\n\nMake sure the local app/server is still running, then try again with a shorter clip.');
+        return out;
+      }
+
+      if (http === 409 && (
+        msg.indexOf('midi not available') >= 0 ||
+        msg.indexOf('score_unavailable') >= 0 ||
+        msg.indexOf('score_fetch') >= 0 ||
+        msg.indexOf('score is not available') >= 0
+      )){
+        out.bucket = 'score_fetch_failed';
+        out.statusText = _t('convert.fail.scoreFetch', 'Conversion failed: could not read transcription result.');
+        out.alertText = _t('convert.fail.scoreFetch', 'Conversion failed: could not read transcription result.');
         return out;
       }
 
@@ -6191,8 +6203,27 @@ renderTimeline(){
       const prev = this.state.audioConvertByClipId[id] || {};
       const next = Object.assign({}, prev, patch || {}, { updatedAt: Date.now() });
       this.state.audioConvertByClipId[id] = next;
+      this._syncWaveformConvertStatus(id);
       if (typeof this.render === 'function') this.render();
       else if (this.libraryCtrl && typeof this.libraryCtrl.render === 'function') this.libraryCtrl.render();
+    },
+
+    _syncWaveformConvertStatus(clipId){
+      const ed = this._audioWaveformEditor;
+      if (!ed || typeof ed.setConvertStatus !== 'function') return;
+      const st = ed.getState && ed.getState();
+      if (!st || String(st.clipId) !== String(clipId)) return;
+      const entry = this._getAudioConvertEntry(clipId);
+      if (!entry) {
+        ed.setConvertStatus({ phase: 'idle' });
+        return;
+      }
+      ed.setConvertStatus({
+        phase: entry.phase || 'idle',
+        errorBucket: entry.errorBucket || null,
+        taskId: entry.taskId || null,
+        statusText: this._audioConvertStatusText(clipId),
+      });
     },
 
     _clearAudioConvertState(clipId, delayMs){
@@ -6231,9 +6262,13 @@ renderTimeline(){
       if (e.phase === 'uploading') return withSeg(_t('convert.phase.uploading', 'Uploading audio for conversion…'));
       if (e.phase === 'processing') return withTask(_t('convert.phase.processing', 'Converting selected segment…'));
       if (e.phase === 'completed') return _t('convert.phase.completed', 'Conversion complete.');
-      if (e.phase === 'timed_out') return _t('convert.phase.timedOut', 'Conversion took too long or timed out. Try again later.');
+      if (e.phase === 'timed_out') return _t('convert.phase.timedOut', 'Conversion timed out. Try again.');
       if (e.phase === 'failed'){
         if (e.errorBucket === 'missing_audio') return _t('convert.fail.needImportAudio', 'Import audio for this clip before converting.');
+        if (e.errorBucket === 'segment_extract_failed') return _t('convert.fail.segmentExtract', 'Conversion failed: audio segment extraction failed.');
+        if (e.errorBucket === 'basic_pitch_failed') return _t('convert.fail.basicPitch', 'Conversion failed: transcription model failed.');
+        if (e.errorBucket === 'score_fetch_failed') return _t('convert.fail.scoreFetch', 'Conversion failed: could not read transcription result.');
+        if (e.errorBucket === 'timed_out') return _t('convert.phase.timedOut', 'Conversion timed out. Try again.');
         if (e.errorBucket === 'task_failed') return _t('convert.fail.taskFailed', 'Conversion failed on server. Try again.');
         if (e.errorBucket === 'server_unreachable') return _t('convert.fail.serverUnreachable', 'Cannot reach conversion server. Check Studio service and retry.');
         return _t('convert.fail.generic', 'Conversion failed. Try again.');
@@ -6651,7 +6686,9 @@ renderTimeline(){
           const cls = this._classifyImportGenerateFailure(e);
           if (conversionClipId){
             const phase = (e && e.h2sKind === 'task_timeout') ? 'timed_out' : 'failed';
-            const bucket = phase === 'timed_out' ? 'timed_out' : cls.bucket;
+            const bucket = phase === 'timed_out'
+              ? 'timed_out'
+              : ((e && e.h2sErrorBucket) || cls.bucket);
             this._setAudioConvertState(conversionClipId, { phase, taskId: this.state.lastUploadTaskId || null, errorBucket: bucket });
             console.warn('[H2S convert] phase=' + phase + ' bucket=' + bucket + ' clip_id=' + conversionClipId);
             const convTxt = this._audioConvertStatusText(conversionClipId);
@@ -6786,9 +6823,27 @@ renderTimeline(){
           return self._resolveLocalAudioFileForClip(clipId);
         },
         convertToEditable(clipId, instanceId){
+          self._syncWaveformConvertStatus(clipId);
           return Promise.resolve(self.convertAudioClipToEditable(clipId, { sourceAudioInstanceId: instanceId })).catch((err) => {
             console.warn('[App] convertAudioClipToEditable (waveform) failed', err);
+            self._syncWaveformConvertStatus(clipId);
           });
+        },
+        retryConvert(clipId, instanceId){
+          return Promise.resolve(self.convertAudioClipToEditable(clipId, { sourceAudioInstanceId: instanceId })).catch((err) => {
+            console.warn('[App] convert retry failed', err);
+            self._syncWaveformConvertStatus(clipId);
+          });
+        },
+        getConvertState(clipId){
+          const entry = self._getAudioConvertEntry(clipId);
+          if (!entry || !entry.phase) return { phase: 'idle' };
+          return {
+            phase: entry.phase,
+            errorBucket: entry.errorBucket || null,
+            taskId: entry.taskId || null,
+            statusText: self._audioConvertStatusText(clipId),
+          };
         },
         extractSegment(clipId, instanceId, seg){
           return Promise.resolve(self.extractAudioClipSegmentAsNewClip(clipId, instanceId, seg)).catch((err) => {
@@ -7128,6 +7183,13 @@ renderTimeline(){
           const err = new Error(taskErr ? `Task failed: ${taskErr}` : `Task failed: ${JSON.stringify(data)}`);
           err.h2sKind = 'task_failed';
           err.h2sTask = data;
+          const code = data && data.error && data.error.error_code;
+          const phase = data && data.error && data.error.phase;
+          if (code === 'segment_extract_failed' || phase === 'segment_extract') {
+            err.h2sErrorBucket = 'segment_extract_failed';
+          } else if (code === 'basic_pitch_failed' || phase === 'basic_pitch') {
+            err.h2sErrorBucket = 'basic_pitch_failed';
+          }
           throw err;
         }
         if (performance.now() - start > maxWaitMs){

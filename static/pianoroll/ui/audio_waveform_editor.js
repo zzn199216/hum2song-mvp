@@ -174,6 +174,9 @@
     var previewActive = false;
     var dragMode = null;
     var objectUrl = null;
+    var convertPhase = 'idle';
+    var convertErrorBucket = null;
+    var convertTaskId = null;
 
     function t(key, fb) {
       return (typeof hooks.t === 'function') ? hooks.t(key, fb) : (fb != null ? fb : key);
@@ -347,10 +350,11 @@
           '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
             '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
             '<button type="button" class="btn mini primary" data-act="waveConvert"></button>' +
+            '<button type="button" class="btn mini" data-act="waveRetry" hidden></button>' +
             '<button type="button" class="btn mini" data-act="waveExtract"></button>' +
             '<button type="button" class="btn mini ghost" data-act="waveCloseBtn"></button>' +
           '</div>' +
-          '<div class="muted" data-role="wfStatus" style="margin-top:8px;font-size:11px;"></div>' +
+          '<div class="muted" data-role="wfStatus" style="margin-top:8px;font-size:11px;min-height:1.2em;"></div>' +
         '</div>';
       document.body.appendChild(overlay);
       panel = overlay.querySelector('.h2s-audio-waveform-panel');
@@ -378,6 +382,9 @@
         if (act === 'wavePreview') startPreview();
         if (act === 'waveConvert' && typeof hooks.convertToEditable === 'function') {
           hooks.convertToEditable(openCtx.clipId, openCtx.instanceId);
+        }
+        if (act === 'waveRetry' && typeof hooks.retryConvert === 'function') {
+          hooks.retryConvert(openCtx.clipId, openCtx.instanceId);
         }
         if (act === 'waveExtract' && typeof hooks.extractSegment === 'function') {
           var seg = clampSelection(audioDur, selStart, selEnd);
@@ -421,6 +428,7 @@
         ['waveLen60', 'convert.preset60', '60s'],
         ['wavePreview', 'audio.waveform.preview', 'Preview selection'],
         ['waveConvert', 'audio.waveform.convert', 'Convert to editable notes'],
+        ['waveRetry', 'audio.waveform.retry', 'Retry conversion'],
         ['waveExtract', 'audio.waveform.extract', 'Extract as new audio clip'],
         ['waveCloseBtn', 'common.cancel', 'Cancel'],
       ];
@@ -429,6 +437,51 @@
         if (btn) btn.textContent = t(row[1], row[2]);
       });
       updatePreviewButton();
+      updateConvertButtons();
+    }
+
+    function _isConvertBusy() {
+      return convertPhase === 'queued' || convertPhase === 'uploading' || convertPhase === 'processing';
+    }
+
+    function updateConvertButtons() {
+      if (!panel) return;
+      var convertBtn = panel.querySelector('[data-act="waveConvert"]');
+      var retryBtn = panel.querySelector('[data-act="waveRetry"]');
+      var busy = _isConvertBusy();
+      if (convertBtn) convertBtn.disabled = busy;
+      if (retryBtn) {
+        var showRetry = convertPhase === 'failed' || convertPhase === 'timed_out';
+        retryBtn.hidden = !showRetry;
+        retryBtn.disabled = busy;
+      }
+    }
+
+    function setConvertStatus(st) {
+      st = st || {};
+      convertPhase = st.phase || 'idle';
+      convertErrorBucket = st.errorBucket || null;
+      convertTaskId = st.taskId ? String(st.taskId) : null;
+      if (!statusEl) return;
+      var txt = st.statusText || '';
+      if (!txt && convertPhase === 'idle') {
+        statusEl.textContent = '';
+        updateConvertButtons();
+        return;
+      }
+      if (!txt) {
+        if (convertPhase === 'queued') txt = t('convert.phase.queued', 'Queued for conversion…');
+        else if (convertPhase === 'uploading') txt = t('convert.phase.uploading', 'Uploading audio for conversion…');
+        else if (convertPhase === 'processing') txt = t('convert.phase.processing', 'Converting selected segment…');
+        else if (convertPhase === 'completed') txt = t('convert.phase.completed', 'Conversion complete.');
+        else if (convertPhase === 'timed_out') txt = t('convert.phase.timedOut', 'Conversion timed out. Try again.');
+        else if (convertPhase === 'failed') txt = t('convert.fail.generic', 'Conversion failed. Try again.');
+      }
+      if (convertTaskId && convertTaskId.length >= 8) {
+        txt += ' (' + t('convert.taskShort', 'task') + ': ' + convertTaskId.slice(0, 8) + '…)';
+      }
+      statusEl.textContent = txt;
+      updateConvertButtons();
     }
 
     async function open(ctx) {
@@ -444,7 +497,11 @@
       audioBuffer = null;
       peaks = [];
       setFallbackVisible(false, '');
+      convertPhase = 'idle';
+      convertErrorBucket = null;
+      convertTaskId = null;
       if (statusEl) statusEl.textContent = t('common.loading', 'Loading...');
+      updateConvertButtons();
 
       var clipMeta = (typeof hooks.getClipMeta === 'function')
         ? hooks.getClipMeta(openCtx.clipId)
@@ -487,6 +544,10 @@
         peaks = computePeaksFromBuffer(audioBuffer, DEFAULT_PEAKS);
         setFallbackVisible(false, '');
         if (statusEl) statusEl.textContent = '';
+        if (openCtx && typeof hooks.getConvertState === 'function') {
+          var cs = hooks.getConvertState(openCtx.clipId);
+          if (cs) setConvertStatus(cs);
+        }
         redrawCanvas();
         try { await ac.close(); } catch (e2) {}
       } catch (decErr) {
@@ -523,6 +584,7 @@
       close: close,
       getState: getState,
       stopPreview: stopPreview,
+      setConvertStatus: setConvertStatus,
     };
   }
 

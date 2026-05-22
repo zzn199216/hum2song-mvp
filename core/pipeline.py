@@ -255,16 +255,20 @@ def run_pipeline(
     output_format: str = "mp3",
     gain: float = 0.8,
     keep_wav: bool = False,
+    contract_task_id: Optional[str] = None,
 ) -> Path:
     """
     GenerationService adapter:
     input: a local file path (usually uploads/{task_id}.wav)
     output: final audio path (mp3/wav)
+
+    contract_task_id: API task UUID. Required when input is a segment sidecar
+    ({uuid}_segment.wav) so outputs land at {uuid}.mid not {uuid}_segment.mid.
     """
     p = Path(input_path)
     s = get_settings()
 
-    # 保证文件在 upload_dir（你的旧 pipeline 大概率按 filename + upload_dir 找）
+    # 保证文件 in upload_dir
     upload_dir = Path(s.upload_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
     if p.parent.resolve() != upload_dir.resolve():
@@ -272,7 +276,7 @@ def run_pipeline(
         dst.write_bytes(p.read_bytes())
         p = dst
 
-    task_id = p.stem
+    task_id = str(contract_task_id).strip() if contract_task_id else p.stem
 
     # 复用你现有的 task-based pipeline
     run_pipeline_for_task(
