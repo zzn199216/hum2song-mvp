@@ -3406,6 +3406,11 @@ rollbackClipRevision(clipId){
     },
 
     init(){
+      try{
+        if (typeof window !== 'undefined' && window.H2SStartupPerf && typeof window.H2SStartupPerf.mark === 'function'){
+          window.H2SStartupPerf.mark('studio_runtime_init_start');
+        }
+      }catch(_perfInit){}
       const restored = restore();
 
       // Storage is beats-only (v2). Convert to a v1 (seconds) view for current UI/controllers.
@@ -4000,6 +4005,12 @@ try{
 
       this.render();
       log('UI ready.');
+      try{
+        if (typeof window !== 'undefined' && window.H2SStartupPerf){
+          if (typeof window.H2SStartupPerf.mark === 'function') window.H2SStartupPerf.mark('studio_runtime_ready');
+          if (typeof window.H2SStartupPerf.scheduleFirstInteractive === 'function') window.H2SStartupPerf.scheduleFirstInteractive();
+        }
+      }catch(_perfReady){}
 
       // Project Home MVP: toolbar entry + rare auto-open (avoid covering first-run beginner hint)
       const phModal = $('#projectHomeModal');
@@ -4611,6 +4622,10 @@ ensureTrackButtons(){
     openAiSettingsDrawer(){
       this.state.aiSettingsOpen = true;
       try{ localStorage.setItem(LS_KEY_AI_DRAWER_OPEN, '1'); }catch(e){}
+      if (typeof window !== 'undefined' && window.H2S_CLOUD_MODE){
+        if (typeof window.H2S_SCHEDULE_CLOUD_AI_STATUS === 'function') window.H2S_SCHEDULE_CLOUD_AI_STATUS();
+        else if (typeof window.H2S_REQUEST_CLOUD_AI_STATUS === 'function') window.H2S_REQUEST_CLOUD_AI_STATUS();
+      }
       this.render();
     },
     closeAiSettingsDrawer(){
@@ -4736,11 +4751,11 @@ ensureTrackButtons(){
         if (normalized.indexOf('bridge') >= 0 || normalized.indexOf('parent') >= 0 || normalized.indexOf('postmessage') >= 0) return _t('cloudAi.bridgeUnavailable');
         return _t('cloudAi.requestFailedRetry');
       };
-      const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : { loading: true };
-      const presetsBody = status.presets || {};
-      const presets = Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
-      const quota = (status.quota && typeof status.quota === 'object') ? status.quota : {};
-      const planCode = status.planCode || quota.planCode || presetsBody.planCode || '';
+      const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : null;
+      const presetsBody = status ? (status.presets || {}) : {};
+      const presets = status && Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
+      const quota = (status && status.quota && typeof status.quota === 'object') ? status.quota : {};
+      const planCode = (status && (status.planCode || quota.planCode || presetsBody.planCode)) || '';
       const used = quota.used != null ? quota.used : null;
       const limit = quota.limit != null ? quota.limit : null;
       const remaining = quota.remaining != null ? quota.remaining : null;
@@ -4830,7 +4845,9 @@ ensureTrackButtons(){
           '</div>';
       }
       let stateHtml = '';
-      if (status.loading || typeof window === 'undefined' || !window.H2S_CLOUD_AI_STATUS){
+      if (!status){
+        stateHtml = '';
+      } else if (status.loading){
         stateHtml = '<div class="muted" data-cloud-ai-state="loading">' + escapeHtml(_t('cloudAi.loading')) + '</div>';
       } else if (status.ok === false || status.error){
         stateHtml = '<div class="aiHint aiHintErr" data-cloud-ai-state="error">' + escapeHtml(_t('cloudAi.error')) + '</div>';
@@ -4901,8 +4918,11 @@ ensureTrackButtons(){
         }, '*');
         self.renderCloudAiSettingsPanel(container);
       });
-      if (typeof window !== 'undefined' && (status.loading || !window.H2S_CLOUD_AI_STATUS) && typeof window.H2S_REQUEST_CLOUD_AI_STATUS === 'function') {
-        window.H2S_REQUEST_CLOUD_AI_STATUS();
+      if (typeof window !== 'undefined' && window.H2S_CLOUD_MODE) {
+        if (!window.H2S_CLOUD_AI_STATUS || window.H2S_CLOUD_AI_STATUS.loading) {
+          if (typeof window.H2S_SCHEDULE_CLOUD_AI_STATUS === 'function') window.H2S_SCHEDULE_CLOUD_AI_STATUS();
+          else if (typeof window.H2S_REQUEST_CLOUD_AI_STATUS === 'function') window.H2S_REQUEST_CLOUD_AI_STATUS();
+        }
       }
     },
 
@@ -6781,6 +6801,28 @@ renderTimeline(){
       return !!(clip && clip.kind === 'audio');
     },
 
+    _audioWaveformScriptPromise: null,
+    loadAudioWaveformEditorScript(){
+      if (typeof window !== 'undefined' && window.H2SAudioWaveformEditor) return Promise.resolve();
+      if (this._audioWaveformScriptPromise) return this._audioWaveformScriptPromise;
+      const ver = (typeof window !== 'undefined' && window.H2S_STUDIO_ASSET_VERSION) ? window.H2S_STUDIO_ASSET_VERSION : 'startup-perf-v1';
+      const self = this;
+      this._audioWaveformScriptPromise = new Promise(function(resolve, reject){
+        try{
+          const s = document.createElement('script');
+          s.src = '/static/pianoroll/ui/audio_waveform_editor.js?v=' + encodeURIComponent(String(ver));
+          s.async = true;
+          s.onload = function(){ resolve(); };
+          s.onerror = function(){ self._audioWaveformScriptPromise = null; reject(new Error('waveform_script_load_failed')); };
+          (document.head || document.documentElement).appendChild(s);
+        }catch(e){
+          self._audioWaveformScriptPromise = null;
+          reject(e);
+        }
+      });
+      return this._audioWaveformScriptPromise;
+    },
+
     async _resolveLocalAudioFileForClip(clipId){
       const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
       const c = p2 && p2.clips && p2.clips[clipId];
@@ -6857,12 +6899,19 @@ renderTimeline(){
       return this._audioWaveformEditor;
     },
 
-    openAudioWaveformEditor(clipId){
+    async openAudioWaveformEditor(clipId){
+      try{
+        await this.loadAudioWaveformEditorScript();
+      }catch(_wfLoad){
+        const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+        try { alert(_t('audio.waveform.missingFile', 'This audio material cannot be opened right now. Please re-import it and try again.')); } catch (_e) {}
+        return { ok: false, reason: 'waveform_script_load_failed' };
+      }
       const ed = this._ensureAudioWaveformEditor();
       if (!ed) {
         const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
         try { alert(_t('audio.waveform.missingFile', 'This audio material cannot be opened right now. Please re-import it and try again.')); } catch (_e) {}
-        return Promise.resolve({ ok: false, reason: 'no_editor' });
+        return { ok: false, reason: 'no_editor' };
       }
       const instanceId = this.state && this.state.selectedInstanceId ? this.state.selectedInstanceId : null;
       return ed.open({ clipId, instanceId });
@@ -6873,6 +6922,11 @@ renderTimeline(){
      */
     async extractAudioClipSegmentAsNewClip(clipId, instanceId, seg){
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+      try{
+        await this.loadAudioWaveformEditorScript();
+      }catch(_wfLoad2){
+        return { ok: false, reason: 'waveform_script_load_failed' };
+      }
       const H2E = window.H2SAudioWaveformEditor;
       const P = window.H2SProject;
       if (!clipId || !seg || !H2E || typeof H2E.encodeWavFromAudioBuffer !== 'function') return { ok: false, reason: 'bad_args' };
@@ -7614,7 +7668,17 @@ renderTimeline(){
         Promise.all([
           I18N.loadManifest ? I18N.loadManifest().catch(() => {}) : Promise.resolve(),
           I18N.load(I18N.getLang()).catch(() => {})
-        ]).then(() => { populate(); this._updateI18nLabels(); if (typeof this._renderBackendReadinessStrip === 'function') this._renderBackendReadinessStrip(); this.render(); }).catch(() => { populate(); this._updateI18nLabels(); if (typeof this._renderBackendReadinessStrip === 'function') this._renderBackendReadinessStrip(); this.render(); });
+        ]).then(() => {
+          try{
+            if (window.H2SStartupPerf && typeof window.H2SStartupPerf.mark === 'function') window.H2SStartupPerf.mark('studio_i18n_ready');
+          }catch(_perfI18n){}
+          populate(); this._updateI18nLabels(); if (typeof this._renderBackendReadinessStrip === 'function') this._renderBackendReadinessStrip(); this.render();
+        }).catch(() => {
+          try{
+            if (window.H2SStartupPerf && typeof window.H2SStartupPerf.mark === 'function') window.H2SStartupPerf.mark('studio_i18n_ready');
+          }catch(_perfI18n2){}
+          populate(); this._updateI18nLabels(); if (typeof this._renderBackendReadinessStrip === 'function') this._renderBackendReadinessStrip(); this.render();
+        });
       }catch(e){ console.warn('[i18n] _initLangDropdown failed', e); }
     },
 

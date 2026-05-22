@@ -64,7 +64,13 @@
     local.style.display = 'none';
     panel.style.display = 'block';
 
-    var status = window.H2S_CLOUD_AI_STATUS || { loading: true };
+    var status = window.H2S_CLOUD_AI_STATUS;
+    if (!status) {
+      setText('editorCloudAiStatus', '');
+      setText('editorCloudAiQuota', '');
+      setText('editorCloudAiPresets', '');
+      return;
+    }
     if (status.loading) {
       setText('editorCloudAiStatus', '正在加载云端 AI 能力...');
       setText('editorCloudAiQuota', '');
@@ -88,8 +94,12 @@
     setText('editorCloudAiPresets', presets.length ? ('可用预设：' + presets.map(function (p) { return p.name || p.id; }).join(' / ')) : '暂无可用云端 AI 预设。');
   }
 
+  var _cloudAiStatusRequested = false;
+
   function requestCloudAiStatus() {
     if (!window.H2S_CLOUD_MODE || !window.parent || window.parent === window) return;
+    if (_cloudAiStatusRequested && window.H2S_CLOUD_AI_STATUS && !window.H2S_CLOUD_AI_STATUS.loading) return;
+    _cloudAiStatusRequested = true;
     var requestId = 'cloud-ai-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
     window.H2S_CLOUD_AI_STATUS_REQUEST_ID = requestId;
     window.H2S_CLOUD_AI_STATUS = { loading: true };
@@ -100,7 +110,14 @@
     }, '*');
   }
 
+  function scheduleCloudAiStatusRequest() {
+    if (!window.H2S_CLOUD_MODE) return;
+    if (_cloudAiStatusRequested) return;
+    requestCloudAiStatus();
+  }
+
   window.H2S_REQUEST_CLOUD_AI_STATUS = requestCloudAiStatus;
+  window.H2S_SCHEDULE_CLOUD_AI_STATUS = scheduleCloudAiStatusRequest;
 
   function postToCloudHost(payload) {
     if (!window.parent || window.parent === window) return false;
@@ -367,7 +384,13 @@
           return;
         }
         try {
+          if (window.H2SStartupPerf && typeof window.H2SStartupPerf.mark === 'function') {
+            window.H2SStartupPerf.mark('studio_project_load_start');
+          }
           var res = appLoad.setProjectFromV2(pd);
+          if (window.H2SStartupPerf && typeof window.H2SStartupPerf.mark === 'function') {
+            window.H2SStartupPerf.mark('studio_project_load_done');
+          }
           if (res && res.ok === false) {
             postBack(event.origin, {
               type: 'H2S_CLOUD_LOAD_RESULT',
@@ -400,20 +423,33 @@
 
   if (isCloudModeRequested()) {
     window.H2S_CLOUD_MODE = true;
-    window.H2S_CLOUD_AI_STATUS = { loading: true };
+    window.H2S_CLOUD_AI_STATUS = null;
     var onCloudBoot = function () {
       renderCloudAiStatus();
-      requestCloudAiStatus();
       rerenderAiSettingsDrawerIfOpen();
+      var app = getApp();
+      if (app && app.state && app.state.aiSettingsOpen && typeof window.H2S_REQUEST_CLOUD_AI_STATUS === 'function') {
+        window.H2S_REQUEST_CLOUD_AI_STATUS();
+      }
     };
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', onCloudBoot, { once: true });
     } else {
       onCloudBoot();
     }
+    if (window.H2SStartupPerf && typeof window.H2SStartupPerf.onFirstInteractive === 'function') {
+      window.H2SStartupPerf.onFirstInteractive(function () {
+        if (typeof window.H2S_SCHEDULE_CLOUD_AI_STATUS === 'function') {
+          window.H2S_SCHEDULE_CLOUD_AI_STATUS();
+        }
+      });
+    }
   }
 
   if (window.parent && window.parent !== window) {
+    if (window.H2SStartupPerf && typeof window.H2SStartupPerf.mark === 'function') {
+      window.H2SStartupPerf.mark('studio_bridge_ready');
+    }
     window.parent.postMessage({ type: 'H2S_STUDIO_BRIDGE_READY', version: 1 }, '*');
   }
 })();

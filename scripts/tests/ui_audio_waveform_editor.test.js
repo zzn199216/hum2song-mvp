@@ -37,14 +37,17 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   console.log('PASS editor_runtime audio guard');
 })();
 
-(function testIndexLoadsWaveformScript(){
+(function testIndexDefersWaveformScript(){
   const indexHtml = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'index.html'), 'utf8');
   const ver = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'studio_asset_version.js'), 'utf8').match(
     /H2S_STUDIO_ASSET_VERSION\s*=\s*'([^']+)'/,
   )[1];
-  assert(indexHtml.includes('audio_waveform_editor.js?v=' + ver), 'index loads waveform editor');
+  assert(!indexHtml.includes('audio_waveform_editor.js'), 'index should not eagerly load waveform editor');
   assert(indexHtml.includes('app.js?v=' + ver), 'index cache-busts app.js');
-  console.log('PASS index waveform script');
+  const appSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'app.js'), 'utf8');
+  assert(appSrc.includes('loadAudioWaveformEditorScript'), 'app lazy-loads waveform editor');
+  assert(appSrc.includes('audio_waveform_editor.js?v='), 'lazy loader references versioned waveform script');
+  console.log('PASS index defers waveform script');
 })();
 
 (function testSelectionAdvancedPanel(){

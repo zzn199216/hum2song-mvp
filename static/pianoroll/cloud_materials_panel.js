@@ -301,6 +301,11 @@
       }
       setStatus('', false);
       renderList(detail.materials || []);
+      try {
+        if (window.H2SStartupPerf && typeof window.H2SStartupPerf.mark === 'function') {
+          window.H2SStartupPerf.mark('studio_cloud_materials_ready');
+        }
+      } catch (_perf) {}
     } finally {
       listLoading = false;
       setRefreshDisabled(false);

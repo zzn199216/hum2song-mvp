@@ -32,5 +32,8 @@ assert(index.includes('hum2song\\.cn'), 'index.html bootstrap should detect Hum2
 assert(bridge.includes('function isCloudModeRequested'), 'bridge should centralize cloud mode detection');
 assert(bridge.includes('document.referrer'), 'bridge should detect Cloud embed via referrer');
 assert(bridge.includes('rerenderAiSettingsDrawerIfOpen'), 'bridge should refresh open AI Settings drawer on cloud boot');
+assert(bridge.includes('H2S_SCHEDULE_CLOUD_AI_STATUS'), 'bridge should defer cloud AI status until interactive or drawer');
+assert(bridge.includes('h2s_startup_perf.js') === false, 'bridge file should not embed perf script');
+assert(index.includes('h2s_startup_perf.js?v=' + ver), 'index should load startup perf helper');
 
 console.log('studio_cloud_ai_runtime.test.js ok');
