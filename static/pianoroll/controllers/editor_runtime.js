@@ -540,11 +540,6 @@
         ? (H2SProject.clipKind(cV2 || clip) === 'audio')
         : (clip.kind === 'audio');
       if (audioGuard){
-        try{
-          const msg = _t('msg.audioClipNoEditor') || 'Audio clips cannot be edited in the piano roll yet.';
-          if (typeof alert !== 'undefined') alert(msg);
-          else log(msg);
-        }catch(e){}
         return;
       }
 

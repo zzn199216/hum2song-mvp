@@ -23,8 +23,8 @@
     const preset60 = (opts.preset60Label != null) ? String(opts.preset60Label) : '60s';
     const convertActive = !!opts.convertActive;
     const convertLabel = (opts.convertLabel != null) ? String(opts.convertLabel) : 'Convert selected segment';
-    return (
-      `<div class="h2s-audio-segment-panel" style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;">` +
+    const advancedTitle = (opts.advancedSegmentTitle != null) ? String(opts.advancedSegmentTitle) : 'Advanced segment settings';
+    const inner =
         `<div class="kv"><b>${escapeHtml((opts.audioDurationTitle != null) ? opts.audioDurationTitle : 'Audio')}</b><span>${escapeHtml(audioDurLabel)}</span></div>` +
         `<div class="kv"><b>${escapeHtml(startLabel)}</b><span data-role="segStart">${escapeHtml(fmtSec(startSec))}</span></div>` +
         `<div class="kv"><b>${escapeHtml(lenLabel)}</b><span data-role="segLen">${escapeHtml(fmtSec(durationSec))}</span></div>` +
@@ -36,9 +36,13 @@
           `<button type="button" class="btn mini" data-act="segLen60" data-len="60"${convertActive ? ' disabled' : ''}>${escapeHtml(preset60)}</button>` +
         `</div>` +
         `<div class="row" style="margin-top:8px;">` +
-          `<button id="btnSelConvertAudio" class="btn mini primary" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}"${convertActive ? ' disabled' : ''}>${escapeHtml(convertLabel)}</button>` +
-        `</div>` +
-      `</div>`
+          `<button id="btnSelConvertAudio" class="btn mini" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}"${convertActive ? ' disabled' : ''}>${escapeHtml(convertLabel)}</button>` +
+        `</div>`;
+    return (
+      `<details class="h2s-audio-segment-advanced" style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;">` +
+        `<summary style="cursor:pointer;user-select:none;color:var(--muted);font-weight:500;">${escapeHtml(advancedTitle)}</summary>` +
+        `<div class="h2s-audio-segment-panel" style="margin-top:8px;">${inner}</div>` +
+      `</details>`
     );
   }
 
@@ -58,7 +62,7 @@
       ? ''
       : `<button id="btnSelEdit" class="btn mini" data-act="edit">Edit</button>`;
     const audioConvertBtn = (isAudio && !showAudioSegment)
-      ? `<button id="btnSelConvertAudio" class="btn mini primary" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}">${escapeHtml(convertLabel)}</button>`
+      ? `<button id="btnSelConvertAudio" class="btn mini" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}">${escapeHtml(convertLabel)}</button>`
       : '';
     const audioSegmentBlock = (isAudio && showAudioSegment && typeof audioSegmentPanelHTML === 'function')
       ? audioSegmentPanelHTML({

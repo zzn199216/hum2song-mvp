@@ -38,6 +38,7 @@ runOne('scripts/tests/studio_cloud_ai_runtime.test.js');
 runOne('scripts/tests/cloud_materials_panel.test.js');
 runOne('scripts/tests/audio_convert_status.test.js');
 runOne('scripts/tests/audio_convert_segment.test.js');
+runOne('scripts/tests/ui_audio_waveform_editor.test.js');
 runOne('scripts/tests/dark_select_styling.test.js');
 runOne('scripts/tests/ai_assist_dock.test.js');
 runOne('scripts/tests/selection_sync.test.js');

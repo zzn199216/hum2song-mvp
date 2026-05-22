@@ -3844,6 +3844,7 @@ $('#rngPitchCenter').addEventListener('input', () => {
                 preset15Label: _t('convert.preset15', '15s'),
                 preset30Label: _t('convert.preset30', '30s'),
                 preset60Label: _t('convert.preset60', '60s'),
+                advancedSegmentTitle: _t('convert.advancedSegmentSettings', 'Advanced segment settings'),
               };
             },
             onSegmentAtPlayhead: (clipId, instId) => this.setAudioConvertSegmentAtPlayhead(clipId, instId),
@@ -6733,6 +6734,138 @@ renderTimeline(){
       return { ok: true };
     },
 
+    _clipIsAudioForEditor(clipId){
+      const P = window.H2SProject;
+      if (!clipId || !P || typeof P.clipKind !== 'function') return false;
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      const c = p2 && p2.clips && p2.clips[clipId];
+      if (c) return P.clipKind(c) === 'audio';
+      const clip = (this.project && this.project.clips) ? this.project.clips.find((x) => x && x.id === clipId) : null;
+      return !!(clip && clip.kind === 'audio');
+    },
+
+    async _resolveLocalAudioFileForClip(clipId){
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      const c = p2 && p2.clips && p2.clips[clipId];
+      const assetRef = (c && c.audio && typeof c.audio.assetRef === 'string') ? c.audio.assetRef.trim() : '';
+      const LAS = (typeof window !== 'undefined') ? window.H2SLocalAudioAssets : null;
+      if (!LAS || typeof LAS.getFileForLocalAssetRef !== 'function') return null;
+      if (!assetRef || typeof LAS.isLocalImportedAudioRef !== 'function' || !LAS.isLocalImportedAudioRef(assetRef)) return null;
+      return LAS.getFileForLocalAssetRef(assetRef);
+    },
+
+    _ensureAudioWaveformEditor(){
+      if (this._audioWaveformEditor) return this._audioWaveformEditor;
+      const H2E = (typeof window !== 'undefined') ? window.H2SAudioWaveformEditor : null;
+      if (!H2E || typeof H2E.createController !== 'function') return null;
+      const self = this;
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+      this._audioWaveformEditor = H2E.createController({
+        t: _t,
+        fmtSec,
+        escapeHtml,
+        getClipMeta(clipId){
+          const p2 = self.getProjectV2();
+          const c = p2 && p2.clips && p2.clips[clipId];
+          if (!c) return null;
+          return { name: c.name || clipId, durationSec: (c.audio && c.audio.durationSec) || 0 };
+        },
+        getSegment(clipId, instanceId){
+          return self.getAudioConvertSegment(clipId, { sourceAudioInstanceId: instanceId });
+        },
+        setSegment(clipId, patch){
+          return self.setAudioConvertSegment(clipId, patch);
+        },
+        setSegmentAtPlayhead(clipId, instanceId){
+          return self.setAudioConvertSegmentAtPlayhead(clipId, instanceId);
+        },
+        setSegmentLength(clipId, len){
+          return self.setAudioConvertSegmentLength(clipId, len);
+        },
+        resolveAudioFile(clipId){
+          return self._resolveLocalAudioFileForClip(clipId);
+        },
+        convertToEditable(clipId, instanceId){
+          return Promise.resolve(self.convertAudioClipToEditable(clipId, { sourceAudioInstanceId: instanceId })).catch((err) => {
+            console.warn('[App] convertAudioClipToEditable (waveform) failed', err);
+          });
+        },
+        extractSegment(clipId, instanceId, seg){
+          return Promise.resolve(self.extractAudioClipSegmentAsNewClip(clipId, instanceId, seg)).catch((err) => {
+            console.warn('[App] extractAudioClipSegmentAsNewClip failed', err);
+          });
+        },
+        onClosed(){
+          if (self.selectionCtrl && typeof self.selectionCtrl.render === 'function') self.selectionCtrl.render();
+        },
+      });
+      return this._audioWaveformEditor;
+    },
+
+    openAudioWaveformEditor(clipId){
+      const ed = this._ensureAudioWaveformEditor();
+      if (!ed) {
+        const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+        try { alert(_t('audio.waveform.missingFile', 'This audio material cannot be opened right now. Please re-import it and try again.')); } catch (_e) {}
+        return Promise.resolve({ ok: false, reason: 'no_editor' });
+      }
+      const instanceId = this.state && this.state.selectedInstanceId ? this.state.selectedInstanceId : null;
+      return ed.open({ clipId, instanceId });
+    },
+
+    /**
+     * Non-destructive: encode selected source range as a new native audio clip (original unchanged).
+     */
+    async extractAudioClipSegmentAsNewClip(clipId, instanceId, seg){
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+      const H2E = window.H2SAudioWaveformEditor;
+      const P = window.H2SProject;
+      if (!clipId || !seg || !H2E || typeof H2E.encodeWavFromAudioBuffer !== 'function') return { ok: false, reason: 'bad_args' };
+      const file = await this._resolveLocalAudioFileForClip(clipId);
+      if (!file){
+        try { alert(_t('audio.waveform.missingFile', 'This audio material cannot be opened right now. Please re-import it and try again.')); } catch (_e) {}
+        return { ok: false, reason: 'no_file' };
+      }
+      let audioBuffer;
+      try{
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) throw new Error('no_audio_context');
+        const ac = new AC();
+        audioBuffer = await ac.decodeAudioData(await file.arrayBuffer());
+        try { await ac.close(); } catch (_e) {}
+      } catch (e){
+        console.warn('[App] extract segment decode failed', e);
+        try { alert(_t('audio.waveform.decodeFailed', 'Waveform preview unavailable. Use the numeric controls below.')); } catch (_e2) {}
+        return { ok: false, reason: 'decode_failed' };
+      }
+      const endSec = Number(seg.endSec != null ? seg.endSec : (Number(seg.startSec || 0) + Number(seg.durationSec || 30)));
+      const blob = H2E.encodeWavFromAudioBuffer(audioBuffer, seg.startSec, endSec);
+      if (!blob){
+        return { ok: false, reason: 'encode_failed' };
+      }
+      const p2 = this.getProjectV2();
+      const c = p2 && p2.clips && p2.clips[clipId];
+      const suffix = _t('audio.waveform.segmentSuffix', 'segment');
+      const baseName = ((c && c.name) ? String(c.name).trim() : 'Audio') + ' ' + suffix;
+      const wavFile = new File([blob], 'segment.wav', { type: 'audio/wav' });
+      const result = await this._commitNativeAudioFile(wavFile, { baseName, statusDoneKey: 'audio.waveform.extractDone' });
+      if (result && result.ok && instanceId && p2 && P && typeof P.secToBeat === 'function'){
+        const orig = (p2.instances || []).find((x) => x && String(x.id) === String(instanceId));
+        const newInst = (p2.instances || []).find((x) => x && x.clipId === result.clipId);
+        const src = p2.clips[clipId];
+        if (orig && newInst){
+          const bpm = (typeof p2.bpm === 'number' && isFinite(p2.bpm)) ? p2.bpm : 120;
+          const origStartBeat = Number(orig.startBeat || 0);
+          const spanSec = (src && src.audio && typeof src.audio.durationSec === 'number') ? src.audio.durationSec : Number(seg.durationSec || 30);
+          newInst.startBeat = Math.max(0, origStartBeat + P.secToBeat(spanSec, bpm));
+          newInst.trackId = orig.trackId || newInst.trackId;
+          if (typeof P.normalizeProjectV2 === 'function') P.normalizeProjectV2(p2);
+          this.setProjectFromV2(p2);
+        }
+      }
+      return result || { ok: false, reason: 'commit_failed' };
+    },
+
     /** PR-C5.3b: Reliable isPlaying for S button visibility. */
     _isPlaying(){
       if (this.audioCtrl && typeof this.audioCtrl.playing === 'boolean') return this.audioCtrl.playing;
@@ -8004,7 +8137,10 @@ renderTimeline(){
     },
 
         /* ---------------- Modal editor (delegated to EditorRuntime) ---------------- */
-    openClipEditor(clipId){ return this.editorRt && this.editorRt.openClipEditor ? this.editorRt.openClipEditor(clipId) : undefined; },
+    openClipEditor(clipId){
+      if (this._clipIsAudioForEditor(clipId)) return this.openAudioWaveformEditor(clipId);
+      return this.editorRt && this.editorRt.openClipEditor ? this.editorRt.openClipEditor(clipId) : undefined;
+    },
     closeModal(save){ return this.editorRt && this.editorRt.closeModal ? this.editorRt.closeModal(save) : undefined; },
     modalAdjustSnap(...args){ return this.editorRt && this.editorRt.modalAdjustSnap ? this.editorRt.modalAdjustSnap(...args) : undefined; },
     modalAllNotes(...args){ return this.editorRt && this.editorRt.modalAllNotes ? this.editorRt.modalAllNotes(...args) : undefined; },

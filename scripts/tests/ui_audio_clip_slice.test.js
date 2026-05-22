@@ -25,7 +25,7 @@ function testLibraryAudioVsNote(){
   assert(!/<button[^>]*data-act="edit"/.test(htmlA), 'audio card must not show edit');
   assert(!/<button[^>]*data-act="optimize"/.test(htmlA), 'audio card must not show optimize');
   assert(/data-act="convertToEditable"/.test(htmlA), 'audio card shows convert to editable');
-  assert(/Convert to editable/.test(htmlA), 'audio convert button label');
+  assert(/Convert selected segment|convertSegment|转换为/.test(htmlA), 'audio convert button label');
 
   const noteClip = { id: 'n1', name: 'Melody' };
   const noteStats = { count: 5, spanSec: 2 };
@@ -85,10 +85,10 @@ function testGuardsSource(){
 
   const edPath = path.join(repoRoot, 'static', 'pianoroll', 'controllers', 'editor_runtime.js');
   const edSrc = fs.readFileSync(edPath, 'utf8');
-  assert(
-    edSrc.includes('msg.audioClipNoEditor') || edSrc.includes('Audio clips cannot'),
-    'editor guard message'
-  );
+  assert(!edSrc.includes('msg.audioClipNoEditor'), 'editor must not alert raw audioClipNoEditor');
+
+  const appSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'app.js'), 'utf8');
+  assert(appSrc.includes('openAudioWaveformEditor'), 'app opens waveform for audio clips');
 
   const libPath = path.join(repoRoot, 'static', 'pianoroll', 'controllers', 'library_controller.js');
   const libSrc = fs.readFileSync(libPath, 'utf8');

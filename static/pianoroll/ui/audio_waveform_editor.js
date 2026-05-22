@@ -1,0 +1,547 @@
+/* Hum2Song Studio - audio_waveform_editor.js
+ * Waveform segment editor modal for original audio clips (v0).
+ */
+(function () {
+  'use strict';
+
+  var MIN_SELECT_SEC = 2;
+  var MAX_SELECT_SEC = 60;
+  var DEFAULT_PEAKS = 900;
+
+  function _num(x, fb) {
+    var n = Number(x);
+    return Number.isFinite(n) ? n : fb;
+  }
+
+  function clampSelection(audioDur, startSec, endSec) {
+    var total = Math.max(0, _num(audioDur, 0));
+    var start = Math.max(0, _num(startSec, 0));
+    var end = _num(endSec, start + MIN_SELECT_SEC);
+    if (total > 0) {
+      start = Math.min(start, Math.max(0, total - MIN_SELECT_SEC));
+      end = Math.min(Math.max(end, start + MIN_SELECT_SEC), total);
+    } else {
+      end = Math.max(end, start + MIN_SELECT_SEC);
+    }
+    var dur = end - start;
+    if (dur < MIN_SELECT_SEC) {
+      end = start + MIN_SELECT_SEC;
+      dur = MIN_SELECT_SEC;
+    }
+    if (dur > MAX_SELECT_SEC) {
+      end = start + MAX_SELECT_SEC;
+      dur = MAX_SELECT_SEC;
+      if (total > 0 && end > total) {
+        end = total;
+        start = Math.max(0, end - MAX_SELECT_SEC);
+        dur = end - start;
+      }
+    }
+    return { startSec: start, durationSec: dur, endSec: start + dur };
+  }
+
+  function computePeaksFromChannel(channel, numPeaks) {
+    var data = channel;
+    var len = data.length;
+    var peaks = new Array(numPeaks);
+    if (!len || numPeaks < 1) {
+      for (var i = 0; i < numPeaks; i++) peaks[i] = 0;
+      return peaks;
+    }
+    var block = len / numPeaks;
+    for (var p = 0; p < numPeaks; p++) {
+      var from = Math.floor(p * block);
+      var to = Math.min(len, Math.floor((p + 1) * block));
+      var max = 0;
+      for (var s = from; s < to; s++) {
+        var v = Math.abs(data[s]);
+        if (v > max) max = v;
+      }
+      peaks[p] = max;
+    }
+    return peaks;
+  }
+
+  function computePeaksFromBuffer(audioBuffer, numPeaks) {
+    numPeaks = numPeaks || DEFAULT_PEAKS;
+    if (!audioBuffer || !audioBuffer.numberOfChannels) return [];
+    var ch0 = audioBuffer.getChannelData(0);
+    var peaks = computePeaksFromChannel(ch0, numPeaks);
+    if (audioBuffer.numberOfChannels > 1) {
+      var ch1 = audioBuffer.getChannelData(1);
+      var p1 = computePeaksFromChannel(ch1, numPeaks);
+      for (var i = 0; i < numPeaks; i++) peaks[i] = Math.max(peaks[i], p1[i]);
+    }
+    var maxPeak = 0;
+    for (var j = 0; j < peaks.length; j++) if (peaks[j] > maxPeak) maxPeak = peaks[j];
+    if (maxPeak > 0) {
+      for (var k = 0; k < peaks.length; k++) peaks[k] = peaks[k] / maxPeak;
+    }
+    return peaks;
+  }
+
+  function encodeWavFromAudioBuffer(buffer, startSec, endSec) {
+    if (!buffer) return null;
+    var sampleRate = buffer.sampleRate;
+    var startSample = Math.max(0, Math.floor(_num(startSec, 0) * sampleRate));
+    var endSample = Math.min(buffer.length, Math.ceil(_num(endSec, buffer.duration) * sampleRate));
+    if (endSample <= startSample) endSample = Math.min(buffer.length, startSample + Math.floor(MIN_SELECT_SEC * sampleRate));
+    var numChannels = buffer.numberOfChannels;
+    var frameCount = endSample - startSample;
+    var bytesPerSample = 2;
+    var blockAlign = numChannels * bytesPerSample;
+    var byteRate = sampleRate * blockAlign;
+    var dataSize = frameCount * blockAlign;
+    var ab = new ArrayBuffer(44 + dataSize);
+    var view = new DataView(ab);
+    function wstr(off, str) {
+      for (var i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+    }
+    wstr(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    wstr(8, 'WAVE');
+    wstr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);
+    wstr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    var offset = 44;
+    for (var f = 0; f < frameCount; f++) {
+      for (var c = 0; c < numChannels; c++) {
+        var sample = buffer.getChannelData(c)[startSample + f] || 0;
+        sample = Math.max(-1, Math.min(1, sample));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+    }
+    return new Blob([ab], { type: 'audio/wav' });
+  }
+
+  function segmentFromHandles(audioDur, selStart, selEnd) {
+    return clampSelection(audioDur, selStart, selEnd);
+  }
+
+  function drawWaveformCanvas(ctx, width, height, peaks, selStartRatio, selEndRatio) {
+    if (!ctx || width < 2 || height < 2) return;
+    ctx.clearRect(0, 0, width, height);
+    var mid = height / 2;
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(0, 0, width, height);
+    if (!peaks || !peaks.length) return;
+    var n = peaks.length;
+    var barW = Math.max(1, width / n);
+    ctx.fillStyle = 'rgba(120,180,255,0.55)';
+    for (var i = 0; i < n; i++) {
+      var h = Math.max(1, peaks[i] * (height * 0.42));
+      var x = i * barW;
+      ctx.fillRect(x, mid - h, Math.max(1, barW - 0.25), h * 2);
+    }
+    var x0 = Math.max(0, Math.min(1, selStartRatio)) * width;
+    var x1 = Math.max(0, Math.min(1, selEndRatio)) * width;
+    ctx.fillStyle = 'rgba(80,160,255,0.22)';
+    ctx.fillRect(x0, 0, Math.max(1, x1 - x0), height);
+    ctx.strokeStyle = 'rgba(120,200,255,0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x0, 0);
+    ctx.lineTo(x0, height);
+    ctx.moveTo(x1, 0);
+    ctx.lineTo(x1, height);
+    ctx.stroke();
+  }
+
+  function createController(hooks) {
+    hooks = hooks || {};
+    var overlay = null;
+    var panel = null;
+    var canvas = null;
+    var ctx2d = null;
+    var fallbackEl = null;
+    var statusEl = null;
+    var openCtx = null;
+    var audioBuffer = null;
+    var peaks = [];
+    var selStart = 0;
+    var selEnd = 30;
+    var audioDur = 0;
+    var previewAudio = null;
+    var previewUrl = null;
+    var previewActive = false;
+    var dragMode = null;
+    var objectUrl = null;
+
+    function t(key, fb) {
+      return (typeof hooks.t === 'function') ? hooks.t(key, fb) : (fb != null ? fb : key);
+    }
+    function fmtSec(x) {
+      return (typeof hooks.fmtSec === 'function') ? hooks.fmtSec(x) : String(x);
+    }
+    function escapeHtml(s) {
+      return (typeof hooks.escapeHtml === 'function') ? hooks.escapeHtml(s) : String(s);
+    }
+
+    function stopPreview() {
+      previewActive = false;
+      if (previewAudio) {
+        try {
+          previewAudio.pause();
+          previewAudio.currentTime = 0;
+        } catch (e) {}
+      }
+      updatePreviewButton();
+    }
+
+    function updatePreviewButton() {
+      if (!panel) return;
+      var btn = panel.querySelector('[data-act="wavePreview"]');
+      if (!btn) return;
+      btn.textContent = previewActive
+        ? t('audio.waveform.previewStop', 'Stop preview')
+        : t('audio.waveform.preview', 'Preview selection');
+    }
+
+    function syncLabels() {
+      if (!panel) return;
+      var seg = clampSelection(audioDur, selStart, selEnd);
+      selStart = seg.startSec;
+      selEnd = seg.endSec;
+      var set = function (role, text) {
+        var el = panel.querySelector('[data-role="' + role + '"]');
+        if (el) el.textContent = text;
+      };
+      set('wfSelStart', fmtSec(seg.startSec));
+      set('wfSelEnd', fmtSec(seg.endSec));
+      set('wfSelDur', fmtSec(seg.durationSec));
+      if (typeof hooks.setSegment === 'function') {
+        hooks.setSegment(openCtx.clipId, { startSec: seg.startSec, durationSec: seg.durationSec });
+      }
+      redrawCanvas();
+    }
+
+    function redrawCanvas() {
+      if (!canvas || !ctx2d) return;
+      var w = canvas.clientWidth || 640;
+      var h = canvas.clientHeight || 96;
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      var ratio0 = audioDur > 0 ? selStart / audioDur : 0;
+      var ratio1 = audioDur > 0 ? selEnd / audioDur : 1;
+      drawWaveformCanvas(ctx2d, w, h, peaks, ratio0, ratio1);
+    }
+
+    function applySegmentFromHooks() {
+      if (!openCtx || typeof hooks.getSegment !== 'function') return;
+      var seg = hooks.getSegment(openCtx.clipId, openCtx.instanceId);
+      if (seg) {
+        selStart = _num(seg.startSec, 0);
+        selEnd = _num(seg.endSec, selStart + 30);
+      }
+      syncLabels();
+    }
+
+    function hitHandle(clientX) {
+      if (!canvas) return null;
+      var rect = canvas.getBoundingClientRect();
+      var x = clientX - rect.left;
+      var w = rect.width || 1;
+      var ratio = x / w;
+      var r0 = audioDur > 0 ? selStart / audioDur : 0;
+      var r1 = audioDur > 0 ? selEnd / audioDur : 1;
+      var tol = 10 / w;
+      if (Math.abs(ratio - r0) < tol) return 'start';
+      if (Math.abs(ratio - r1) < tol) return 'end';
+      if (ratio > r0 && ratio < r1) return 'move';
+      return null;
+    }
+
+    function onCanvasPointerDown(ev) {
+      dragMode = hitHandle(ev.clientX);
+      if (!dragMode) return;
+      try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+      ev.preventDefault();
+    }
+
+    function onCanvasPointerMove(ev) {
+      if (!dragMode || !canvas) return;
+      var rect = canvas.getBoundingClientRect();
+      var ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / (rect.width || 1)));
+      var tsec = audioDur > 0 ? ratio * audioDur : ratio * 120;
+      if (dragMode === 'start') {
+        selStart = Math.min(tsec, selEnd - MIN_SELECT_SEC);
+      } else if (dragMode === 'end') {
+        selEnd = Math.max(tsec, selStart + MIN_SELECT_SEC);
+      } else if (dragMode === 'move') {
+        var dur = selEnd - selStart;
+        selStart = Math.max(0, tsec - dur / 2);
+        selEnd = selStart + dur;
+      }
+      var seg = clampSelection(audioDur, selStart, selEnd);
+      selStart = seg.startSec;
+      selEnd = seg.endSec;
+      syncLabels();
+    }
+
+    function onCanvasPointerUp() {
+      dragMode = null;
+    }
+
+    async function startPreview() {
+      if (previewActive) {
+        stopPreview();
+        return;
+      }
+      if (!objectUrl) return;
+      stopPreview();
+      previewAudio = new Audio(objectUrl);
+      previewAudio.currentTime = selStart;
+      previewActive = true;
+      updatePreviewButton();
+      previewAudio.addEventListener('timeupdate', function () {
+        if (!previewActive || !previewAudio) return;
+        if (previewAudio.currentTime >= selEnd - 0.02) {
+          stopPreview();
+        }
+      });
+      previewAudio.addEventListener('ended', function () { stopPreview(); });
+      try {
+        await previewAudio.play();
+      } catch (e) {
+        stopPreview();
+      }
+    }
+
+    function ensureDom() {
+      if (overlay) return;
+      overlay = document.createElement('div');
+      overlay.className = 'h2s-audio-waveform-modal';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.hidden = true;
+      overlay.innerHTML =
+        '<div class="h2s-audio-waveform-backdrop" data-act="waveClose"></div>' +
+        '<div class="h2s-audio-waveform-panel">' +
+          '<div class="h2s-audio-waveform-header">' +
+            '<h3 data-role="wfTitle"></h3>' +
+            '<button type="button" class="btn mini ghost" data-act="waveClose" aria-label="Close">×</button>' +
+          '</div>' +
+          '<div class="h2s-audio-waveform-meta">' +
+            '<div class="kv"><b data-i18n-role="wfClipLabel"></b><span data-role="wfClipName"></span></div>' +
+            '<div class="kv"><b data-i18n-role="wfTotalLabel"></b><span data-role="wfTotalDur"></span></div>' +
+            '<div class="kv"><b data-i18n-role="wfStartLabel"></b><span data-role="wfSelStart"></span></div>' +
+            '<div class="kv"><b data-i18n-role="wfEndLabel"></b><span data-role="wfSelEnd"></span></div>' +
+            '<div class="kv"><b data-i18n-role="wfDurLabel"></b><span data-role="wfSelDur"></span></div>' +
+          '</div>' +
+          '<canvas class="h2s-audio-waveform-canvas" width="640" height="96"></canvas>' +
+          '<div class="h2s-audio-waveform-fallback" data-role="wfFallback" hidden></div>' +
+          '<div class="row h2s-audio-waveform-presets" style="flex-wrap:wrap;gap:4px;margin-top:8px;">' +
+            '<button type="button" class="btn mini" data-act="waveAtPlayhead"></button>' +
+            '<button type="button" class="btn mini" data-act="waveLen15" data-len="15"></button>' +
+            '<button type="button" class="btn mini" data-act="waveLen30" data-len="30"></button>' +
+            '<button type="button" class="btn mini" data-act="waveLen60" data-len="60"></button>' +
+          '</div>' +
+          '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
+            '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
+            '<button type="button" class="btn mini primary" data-act="waveConvert"></button>' +
+            '<button type="button" class="btn mini" data-act="waveExtract"></button>' +
+            '<button type="button" class="btn mini ghost" data-act="waveCloseBtn"></button>' +
+          '</div>' +
+          '<div class="muted" data-role="wfStatus" style="margin-top:8px;font-size:11px;"></div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      panel = overlay.querySelector('.h2s-audio-waveform-panel');
+      canvas = overlay.querySelector('canvas');
+      ctx2d = canvas.getContext('2d');
+      fallbackEl = overlay.querySelector('[data-role="wfFallback"]');
+      statusEl = overlay.querySelector('[data-role="wfStatus"]');
+      canvas.addEventListener('pointerdown', onCanvasPointerDown);
+      canvas.addEventListener('pointermove', onCanvasPointerMove);
+      canvas.addEventListener('pointerup', onCanvasPointerUp);
+      canvas.addEventListener('pointercancel', onCanvasPointerUp);
+      overlay.addEventListener('click', function (ev) {
+        var act = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-act');
+        if (!act) return;
+        if (act === 'waveClose' || act === 'waveCloseBtn') close();
+        if (act === 'waveAtPlayhead' && typeof hooks.setSegmentAtPlayhead === 'function') {
+          hooks.setSegmentAtPlayhead(openCtx.clipId, openCtx.instanceId);
+          applySegmentFromHooks();
+        }
+        if (act === 'waveLen15' || act === 'waveLen30' || act === 'waveLen60') {
+          var len = Number(ev.target.getAttribute('data-len') || 30);
+          if (typeof hooks.setSegmentLength === 'function') hooks.setSegmentLength(openCtx.clipId, len);
+          applySegmentFromHooks();
+        }
+        if (act === 'wavePreview') startPreview();
+        if (act === 'waveConvert' && typeof hooks.convertToEditable === 'function') {
+          hooks.convertToEditable(openCtx.clipId, openCtx.instanceId);
+        }
+        if (act === 'waveExtract' && typeof hooks.extractSegment === 'function') {
+          var seg = clampSelection(audioDur, selStart, selEnd);
+          hooks.extractSegment(openCtx.clipId, openCtx.instanceId, seg);
+        }
+      });
+      window.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape' && overlay && !overlay.hidden) close();
+      });
+      window.addEventListener('resize', function () {
+        if (overlay && !overlay.hidden) redrawCanvas();
+      });
+    }
+
+    function setFallbackVisible(show, msg) {
+      if (!fallbackEl || !canvas) return;
+      fallbackEl.hidden = !show;
+      canvas.style.display = show ? 'none' : 'block';
+      if (show) fallbackEl.textContent = msg || '';
+    }
+
+    function applyI18nLabels() {
+      if (!panel) return;
+      var titleEl = panel.querySelector('[data-role="wfTitle"]');
+      if (titleEl) titleEl.textContent = t('audio.waveform.title', 'Audio segment editor');
+      var map = [
+        ['wfClipLabel', 'audio.waveform.clip', 'Clip'],
+        ['wfTotalLabel', 'audio.waveform.totalDuration', 'Total duration'],
+        ['wfStartLabel', 'convert.segmentStart', 'Segment start'],
+        ['wfEndLabel', 'convert.segmentEnd', 'Segment end'],
+        ['wfDurLabel', 'audio.waveform.selectedDuration', 'Selected duration'],
+      ];
+      map.forEach(function (row) {
+        var el = panel.querySelector('[data-i18n-role="' + row[0] + '"]');
+        if (el) el.textContent = t(row[1], row[2]);
+      });
+      var btnMap = [
+        ['waveAtPlayhead', 'convert.atPlayhead', 'Start at playhead'],
+        ['waveLen15', 'convert.preset15', '15s'],
+        ['waveLen30', 'convert.preset30', '30s'],
+        ['waveLen60', 'convert.preset60', '60s'],
+        ['wavePreview', 'audio.waveform.preview', 'Preview selection'],
+        ['waveConvert', 'audio.waveform.convert', 'Convert to editable notes'],
+        ['waveExtract', 'audio.waveform.extract', 'Extract as new audio clip'],
+        ['waveCloseBtn', 'common.cancel', 'Cancel'],
+      ];
+      btnMap.forEach(function (row) {
+        var btn = panel.querySelector('[data-act="' + row[0] + '"]');
+        if (btn) btn.textContent = t(row[1], row[2]);
+      });
+      updatePreviewButton();
+    }
+
+    async function open(ctx) {
+      ctx = ctx || {};
+      ensureDom();
+      openCtx = { clipId: String(ctx.clipId || ''), instanceId: ctx.instanceId || null };
+      applyI18nLabels();
+      stopPreview();
+      if (objectUrl) {
+        try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+        objectUrl = null;
+      }
+      audioBuffer = null;
+      peaks = [];
+      setFallbackVisible(false, '');
+      if (statusEl) statusEl.textContent = t('common.loading', 'Loading...');
+
+      var clipMeta = (typeof hooks.getClipMeta === 'function')
+        ? hooks.getClipMeta(openCtx.clipId)
+        : null;
+      if (!clipMeta) {
+        try { alert(t('audio.waveform.missingFile', 'This audio material cannot be opened right now. Please re-import it and try again.')); } catch (e) {}
+        return { ok: false, reason: 'no_clip' };
+      }
+
+      audioDur = _num(clipMeta.durationSec, 0);
+      panel.querySelector('[data-role="wfClipName"]').textContent = escapeHtml(clipMeta.name || openCtx.clipId);
+      panel.querySelector('[data-role="wfTotalDur"]').textContent = fmtSec(audioDur);
+
+      applySegmentFromHooks();
+      overlay.hidden = false;
+
+      var file = null;
+      if (typeof hooks.resolveAudioFile === 'function') {
+        file = await hooks.resolveAudioFile(openCtx.clipId);
+      }
+      if (!file) {
+        overlay.hidden = true;
+        try { alert(t('audio.waveform.missingFile', 'This audio material cannot be opened right now. Please re-import it and try again.')); } catch (e) {}
+        return { ok: false, reason: 'missing_file' };
+      }
+
+      try {
+        objectUrl = URL.createObjectURL(file);
+      } catch (e) {
+        objectUrl = null;
+      }
+
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) throw new Error('no_audio_context');
+        var ac = new AC();
+        var ab = await file.arrayBuffer();
+        audioBuffer = await ac.decodeAudioData(ab.slice(0));
+        if (audioDur <= 0 && audioBuffer) audioDur = audioBuffer.duration;
+        peaks = computePeaksFromBuffer(audioBuffer, DEFAULT_PEAKS);
+        setFallbackVisible(false, '');
+        if (statusEl) statusEl.textContent = '';
+        redrawCanvas();
+        try { await ac.close(); } catch (e2) {}
+      } catch (decErr) {
+        setFallbackVisible(true, t('audio.waveform.decodeFailed', 'Waveform preview unavailable. Use the numeric controls below.'));
+        if (statusEl) statusEl.textContent = '';
+      }
+
+      return { ok: true };
+    }
+
+    function close() {
+      stopPreview();
+      if (overlay) overlay.hidden = true;
+      if (objectUrl) {
+        try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+        objectUrl = null;
+      }
+      openCtx = null;
+      if (typeof hooks.onClosed === 'function') hooks.onClosed();
+    }
+
+    function getState() {
+      return {
+        clipId: openCtx && openCtx.clipId,
+        selStart: selStart,
+        selEnd: selEnd,
+        previewActive: previewActive,
+        audioDur: audioDur,
+      };
+    }
+
+    return {
+      open: open,
+      close: close,
+      getState: getState,
+      stopPreview: stopPreview,
+    };
+  }
+
+  var api = {
+    MIN_SELECT_SEC: MIN_SELECT_SEC,
+    MAX_SELECT_SEC: MAX_SELECT_SEC,
+    clampSelection: clampSelection,
+    computePeaksFromChannel: computePeaksFromChannel,
+    computePeaksFromBuffer: computePeaksFromBuffer,
+    encodeWavFromAudioBuffer: encodeWavFromAudioBuffer,
+    drawWaveformCanvas: drawWaveformCanvas,
+    segmentFromHandles: segmentFromHandles,
+    createController: createController,
+  };
+
+  if (typeof window !== 'undefined') {
+    window.H2SAudioWaveformEditor = api;
+  }
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = api;
+  }
+})();
