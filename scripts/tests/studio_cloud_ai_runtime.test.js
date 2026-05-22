@@ -20,6 +20,7 @@ const ver = verMatch[1];
 assert(index.includes('studio_asset_version.js?v=' + ver), 'index.html should cache-bust studio_asset_version.js');
 assert(index.includes('app.js?v=' + ver), 'index.html should cache-bust app.js');
 assert(index.includes('cloud_project_bridge.js?v=' + ver), 'index.html should cache-bust cloud_project_bridge.js');
+assert(index.includes('cloud_materials_panel.js?v=' + ver), 'index.html should cache-bust cloud_materials_panel.js');
 assert(index.indexOf('studio_asset_version.js') < index.indexOf('app.js?v=' + ver), 'asset version should load before app.js');
 assert(index.includes('params.get(\'cloudMode\') === \'1\''), 'index.html should bootstrap cloudMode before app.js');
 assert(index.includes('hum2song\\.cn'), 'index.html bootstrap should detect Hum2Song Cloud embed referrer');

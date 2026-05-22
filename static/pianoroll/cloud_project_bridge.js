@@ -102,6 +102,44 @@
 
   window.H2S_REQUEST_CLOUD_AI_STATUS = requestCloudAiStatus;
 
+  function postToCloudHost(payload) {
+    if (!window.parent || window.parent === window) return false;
+    window.parent.postMessage(payload, '*');
+    return true;
+  }
+
+  function newCloudRequestId(prefix) {
+    return (prefix || 'cloud') + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+  }
+
+  function requestCloudMaterialsList() {
+    if (!window.H2S_CLOUD_MODE && !isCloudModeRequested()) return false;
+    window.H2S_CLOUD_MODE = true;
+    var requestId = newCloudRequestId('cloud-materials-list');
+    window.H2S_CLOUD_MATERIALS_LIST_REQUEST_ID = requestId;
+    window.H2S_CLOUD_MATERIALS_LIST_RESULT = { loading: true, requestId: requestId };
+    return postToCloudHost({ type: 'H2S_CLOUD_MATERIALS_LIST_REQUEST', requestId: requestId });
+  }
+
+  function requestCloudMaterialContent(assetId, title) {
+    if (!window.H2S_CLOUD_MODE && !isCloudModeRequested()) return false;
+    var id = typeof assetId === 'string' ? assetId.trim() : '';
+    if (!id) return false;
+    window.H2S_CLOUD_MODE = true;
+    var requestId = newCloudRequestId('cloud-material-content');
+    window.H2S_CLOUD_MATERIAL_CONTENT_REQUEST_ID = requestId;
+    window.H2S_CLOUD_MATERIAL_CONTENT_RESULT = { loading: true, requestId: requestId, id: id };
+    return postToCloudHost({
+      type: 'H2S_CLOUD_MATERIAL_CONTENT_REQUEST',
+      requestId: requestId,
+      assetId: id,
+      title: typeof title === 'string' ? title : '',
+    });
+  }
+
+  window.H2S_REQUEST_CLOUD_MATERIALS_LIST = requestCloudMaterialsList;
+  window.H2S_REQUEST_CLOUD_MATERIAL_CONTENT = requestCloudMaterialContent;
+
   function isProjectDocLikely(projectDoc) {
     if (!projectDoc || typeof projectDoc !== 'object' || Array.isArray(projectDoc)) return false;
     if (projectDoc.version === 2) return true;
@@ -264,6 +302,37 @@
           }, 60);
         };
         tryApply(0);
+        return;
+      }
+
+      case 'H2S_CLOUD_MATERIALS_LIST_RESPONSE': {
+        if (!data.requestId || data.requestId !== window.H2S_CLOUD_MATERIALS_LIST_REQUEST_ID) return;
+        window.H2S_CLOUD_MODE = true;
+        window.H2S_CLOUD_MATERIALS_LIST_RESULT = {
+          loading: false,
+          requestId: data.requestId,
+          ok: data.ok === true,
+          materials: Array.isArray(data.materials) ? data.materials : [],
+          error: typeof data.error === 'string' ? data.error : null,
+        };
+        window.dispatchEvent(new CustomEvent('h2s-cloud-materials-list', { detail: window.H2S_CLOUD_MATERIALS_LIST_RESULT }));
+        return;
+      }
+
+      case 'H2S_CLOUD_MATERIAL_CONTENT_RESPONSE': {
+        if (!data.requestId || data.requestId !== window.H2S_CLOUD_MATERIAL_CONTENT_REQUEST_ID) return;
+        window.H2S_CLOUD_MODE = true;
+        window.H2S_CLOUD_MATERIAL_CONTENT_RESULT = {
+          loading: false,
+          requestId: data.requestId,
+          ok: data.ok === true,
+          id: typeof data.id === 'string' ? data.id : '',
+          title: typeof data.title === 'string' ? data.title : '',
+          mimeType: typeof data.mimeType === 'string' ? data.mimeType : 'application/octet-stream',
+          audioBuffer: data.audioBuffer instanceof ArrayBuffer ? data.audioBuffer : null,
+          error: typeof data.error === 'string' ? data.error : null,
+        };
+        window.dispatchEvent(new CustomEvent('h2s-cloud-material-content', { detail: window.H2S_CLOUD_MATERIAL_CONTENT_RESULT }));
         return;
       }
 
