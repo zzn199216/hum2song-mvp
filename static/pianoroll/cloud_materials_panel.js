@@ -46,6 +46,17 @@
     return m > 0 ? m + ':' + String(s).padStart(2, '0') : totalSec + 's';
   }
 
+  function formatCreatedAt(iso) {
+    if (!iso) return '';
+    try {
+      var d = new Date(iso);
+      if (!Number.isFinite(d.getTime())) return '';
+      return d.toLocaleString();
+    } catch (_e) {
+      return '';
+    }
+  }
+
   function kindLabel(kind) {
     var map = {
       generated_music: t('cloudMaterials.kindGenerated', 'Generated music'),
@@ -73,6 +84,25 @@
     el.style.color = isError ? '#fca5a5' : '';
   }
 
+  function getModal() {
+    return document.getElementById('cloudMaterialsModal');
+  }
+
+  function openModal() {
+    var modal = getModal();
+    if (!modal) return;
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    void refreshList();
+  }
+
+  function closeModal() {
+    var modal = getModal();
+    if (!modal) return;
+    modal.hidden = true;
+    document.body.style.overflow = '';
+  }
+
   function renderList(materials) {
     var list = document.getElementById('cloudMaterialsList');
     if (!list) return;
@@ -80,37 +110,37 @@
     if (!materials || !materials.length) {
       var empty = document.createElement('p');
       empty.className = 'muted';
-      empty.style.fontSize = '12px';
+      empty.style.cssText = 'grid-column:1/-1;font-size:13px;margin:0;';
       empty.textContent = t('cloudMaterials.empty', 'No cloud audio materials yet.');
       list.appendChild(empty);
       return;
     }
     materials.forEach(function (item) {
-      var row = document.createElement('div');
-      row.className = 'cloudMaterialsRow';
-      row.style.cssText =
-        'border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px;margin-bottom:8px;background:rgba(0,0,0,.15);';
+      var card = document.createElement('article');
+      card.className = 'cloudMaterialsCard';
       var title = escapeHtml(item.title || item.id);
-      var meta =
-        escapeHtml(kindLabel(item.materialKind)) +
-        ' · ' +
-        escapeHtml(formatDurationMs(item.durationMs)) +
-        ' · ' +
-        escapeHtml(sourceLabel(item.sourceChannel));
+      var metaParts = [
+        kindLabel(item.materialKind),
+        formatDurationMs(item.durationMs),
+        sourceLabel(item.sourceChannel),
+      ];
+      var created = formatCreatedAt(item.createdAt || item.created_at);
+      if (created) metaParts.push(created);
+      var meta = escapeHtml(metaParts.join(' · '));
       var prompt =
         item.promptText && String(item.promptText).trim()
-          ? '<div class="muted" style="font-size:11px;margin-top:4px;">' + escapeHtml(item.promptText) + '</div>'
+          ? '<div class="cloudMaterialsCardPrompt">' + escapeHtml(item.promptText) + '</div>'
           : '';
       var importDisabled = !item.playable;
-      row.innerHTML =
-        '<div style="font-weight:700;font-size:13px;">' +
+      card.innerHTML =
+        '<div class="cloudMaterialsCardTitle">' +
         title +
         '</div>' +
-        '<div class="muted" style="font-size:11px;margin-top:2px;">' +
+        '<div class="cloudMaterialsCardMeta">' +
         meta +
         '</div>' +
         prompt +
-        '<div style="margin-top:8px;">' +
+        '<div class="cloudMaterialsCardActions">' +
         '<button type="button" class="btn mini cloudMaterialsImportBtn" data-asset-id="' +
         escapeHtml(item.id) +
         '" data-title="' +
@@ -118,15 +148,15 @@
         '"' +
         (importDisabled ? ' disabled' : '') +
         '>' +
-        escapeHtml(t('cloudMaterials.import', 'Import')) +
+        escapeHtml(t('cloudMaterials.importToTimeline', 'Import to timeline')) +
         '</button>' +
         (importDisabled
-          ? '<span class="muted" style="font-size:11px;margin-left:8px;">' +
+          ? '<span class="muted" style="font-size:11px;">' +
             escapeHtml(t('cloudMaterials.notPlayable', 'Not playable')) +
             '</span>'
           : '') +
         '</div>';
-      list.appendChild(row);
+      list.appendChild(card);
     });
     list.querySelectorAll('.cloudMaterialsImportBtn').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -253,38 +283,51 @@
   function applyCloudModeUi() {
     var section = document.getElementById('cloudMaterialsSection');
     var standalone = document.getElementById('cloudMaterialsStandalone');
+    var toggle = document.getElementById('btnCloudMaterials');
     var refresh = document.getElementById('btnCloudMaterialsRefresh');
     if (!section) return;
     if (isCloudEmbed()) {
       window.H2S_CLOUD_MODE = true;
       section.style.display = 'block';
       if (standalone) standalone.style.display = 'none';
+      if (toggle) {
+        toggle.disabled = false;
+        toggle.title = '';
+      }
       if (refresh) refresh.style.display = 'inline-block';
     } else {
       section.style.display = 'block';
       if (standalone) standalone.style.display = 'block';
+      if (toggle) {
+        toggle.disabled = true;
+        toggle.title = t('cloudMaterials.standaloneHint', 'Cloud materials are available when opened from Hum2Song Cloud.');
+      }
       if (refresh) refresh.style.display = 'none';
-      var panel = document.getElementById('cloudMaterialsPanel');
-      if (panel) panel.style.display = 'none';
     }
   }
 
   function bindUi() {
     var toggle = document.getElementById('btnCloudMaterials');
-    var panel = document.getElementById('cloudMaterialsPanel');
+    var closeBtn = document.getElementById('btnCloudMaterialsModalClose');
     var refresh = document.getElementById('btnCloudMaterialsRefresh');
-    if (toggle && panel) {
+    var modal = getModal();
+    if (toggle) {
       toggle.addEventListener('click', function () {
-        var open = panel.style.display !== 'none';
-        panel.style.display = open ? 'none' : 'block';
-        if (!open && isCloudEmbed()) void refreshList();
+        if (!isCloudEmbed()) return;
+        openModal();
       });
     }
-    if (refresh) {
-      refresh.addEventListener('click', function () {
-        void refreshList();
-      });
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (refresh) refresh.addEventListener('click', function () { void refreshList(); });
+    if (modal) {
+      var backdrop = modal.querySelector('[data-act="closeCloudMaterials"]');
+      if (backdrop) backdrop.addEventListener('click', closeModal);
     }
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape') return;
+      var m = getModal();
+      if (m && !m.hidden) closeModal();
+    });
   }
 
   function boot() {

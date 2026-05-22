@@ -3357,6 +3357,8 @@ rollbackClipRevision(clipId){
       transportPlaying: false,
       transportStartPerf: 0,
       lastUploadTaskId: null,
+      /** @type {Record<string, { phase: string, taskId?: string, errorBucket?: string, updatedAt: number }>} */
+      audioConvertByClipId: {},
       recordingActive: false,
       lastRecordedFile: null,
       importCancelled: false,
@@ -6052,16 +6054,88 @@ renderTimeline(){
       return opts.autoOpen ? 2500 : 6000;
     },
 
+    _getAudioConvertEntry(clipId){
+      const id = String(clipId || '').trim();
+      if (!id) return null;
+      const map = this.state && this.state.audioConvertByClipId;
+      if (!map || typeof map !== 'object') return null;
+      return map[id] || null;
+    },
+
+    _setAudioConvertState(clipId, patch){
+      const id = String(clipId || '').trim();
+      if (!id) return;
+      if (!this.state.audioConvertByClipId || typeof this.state.audioConvertByClipId !== 'object'){
+        this.state.audioConvertByClipId = {};
+      }
+      const prev = this.state.audioConvertByClipId[id] || {};
+      const next = Object.assign({}, prev, patch || {}, { updatedAt: Date.now() });
+      this.state.audioConvertByClipId[id] = next;
+      if (typeof this.render === 'function') this.render();
+      else if (this.libraryCtrl && typeof this.libraryCtrl.render === 'function') this.libraryCtrl.render();
+    },
+
+    _clearAudioConvertState(clipId, delayMs){
+      const id = String(clipId || '').trim();
+      if (!id) return;
+      const clear = () => {
+        if (this.state.audioConvertByClipId && this.state.audioConvertByClipId[id]){
+          delete this.state.audioConvertByClipId[id];
+          if (typeof this.render === 'function') this.render();
+        }
+      };
+      if (delayMs && delayMs > 0) setTimeout(clear, delayMs);
+      else clear();
+    },
+
+    _isAudioConvertActive(clipId){
+      const e = this._getAudioConvertEntry(clipId);
+      if (!e || !e.phase) return false;
+      return e.phase === 'queued' || e.phase === 'uploading' || e.phase === 'processing';
+    },
+
+    _audioConvertStatusText(clipId){
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+      const e = this._getAudioConvertEntry(clipId);
+      if (!e || !e.phase) return '';
+      const tid = e.taskId ? String(e.taskId).slice(0, 8) : '';
+      const withTask = (base) => tid ? (base + ' (' + _t('convert.taskShort', 'task') + ': ' + tid + '…)') : base;
+      if (e.phase === 'queued') return withTask(_t('convert.phase.queued', 'Queued for conversion…'));
+      if (e.phase === 'uploading') return _t('convert.phase.uploading', 'Uploading audio for conversion…');
+      if (e.phase === 'processing') return withTask(_t('convert.phase.processing', 'Converting to editable notes…'));
+      if (e.phase === 'completed') return _t('convert.phase.completed', 'Conversion complete.');
+      if (e.phase === 'timed_out') return _t('convert.phase.timedOut', 'Conversion took too long or timed out. Try again later.');
+      if (e.phase === 'failed'){
+        if (e.errorBucket === 'missing_audio') return _t('convert.fail.needImportAudio', 'Import audio for this clip before converting.');
+        if (e.errorBucket === 'task_failed') return _t('convert.fail.taskFailed', 'Conversion failed on server. Try again.');
+        if (e.errorBucket === 'server_unreachable') return _t('convert.fail.serverUnreachable', 'Cannot reach conversion server. Check Studio service and retry.');
+        return _t('convert.fail.generic', 'Conversion failed. Try again.');
+      }
+      return '';
+    },
+
+    getAudioConvertStateForClip(clipId){
+      return this._getAudioConvertEntry(clipId);
+    },
+
     /** PR-C1: Shared upload/generate pipeline — used by Upload WAV and Use last recording.
      * @param {Blob|File} f
-     * @param {{ sourceAudioClipId?: string, sourceAudioInstanceId?: string }} [opts] When `sourceAudioClipId` is set (audio→editable conversion), simple-import placement uses H2SProject.resolveAudioConvertPlacementV1; optional `sourceAudioInstanceId` pins placement to that timeline instance. Bar-segment / explode paths unchanged.
+     * @param {{ sourceAudioClipId?: string, sourceAudioInstanceId?: string, conversionClipId?: string }} [opts] When `sourceAudioClipId` is set (audio→editable conversion), simple-import placement uses H2SProject.resolveAudioConvertPlacementV1; optional `sourceAudioInstanceId` pins placement to that timeline instance. `conversionClipId` enables conversion status UI. Bar-segment / explode paths unchanged.
      */
     async uploadFileAndGenerate(f, opts){
       opts = opts || {};
       if (!f || !(f instanceof Blob)) return;
+      const conversionClipId = (typeof opts.conversionClipId === 'string' && opts.conversionClipId.trim())
+        ? opts.conversionClipId.trim()
+        : (typeof opts.sourceAudioClipId === 'string' ? opts.sourceAudioClipId.trim() : '');
       const file = f instanceof File ? f : new File([f], (f.name || 'recording.webm'), { type: (f.type || 'audio/webm') });
       this.state.importCancelled = false;
-      this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.uploading') : 'Uploading audio...', true);
+      if (conversionClipId) this._setAudioConvertState(conversionClipId, { phase: 'uploading', taskId: null, errorBucket: null });
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+      const statusUpload = conversionClipId
+        ? _t('convert.phase.uploading', 'Uploading audio for conversion…')
+        : _t('io.uploading', 'Uploading audio...');
+      this.setImportStatus(statusUpload, true);
       log(`Uploading ${file.name} ...`);
       const tImport0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
       let uploadMs = 0;
@@ -6085,10 +6159,30 @@ renderTimeline(){
         }
         this.state.lastUploadTaskId = tid;
         log(`Generate queued: ${tid}`);
-        this.setImportStatus(((window.I18N && window.I18N.t) ? window.I18N.t('io.processing') : 'Processing...') + ' (task: ' + String(tid).slice(0, 8) + '...)', true);
+        if (conversionClipId){
+          this._setAudioConvertState(conversionClipId, { phase: 'queued', taskId: tid, errorBucket: null });
+          console.info('[H2S convert] phase=queued task_id=' + String(tid).slice(0, 8) + ' clip_id=' + conversionClipId);
+        }
+        const procLabel = conversionClipId
+          ? (_t('convert.phase.processing', 'Converting to editable notes…') + ' (' + _t('convert.taskShort', 'task') + ': ' + String(tid).slice(0, 8) + '…)')
+          : (_t('io.processing', 'Processing...') + ' (task: ' + String(tid).slice(0, 8) + '...)');
+        this.setImportStatus(procLabel, true);
+        if (conversionClipId){
+          this._setAudioConvertState(conversionClipId, { phase: 'processing', taskId: tid, errorBucket: null });
+          console.info('[H2S convert] phase=processing task_id=' + String(tid).slice(0, 8) + ' clip_id=' + conversionClipId);
+        }
         const pollStats = { attempts: 0 };
         const tPoll0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
-        await this.pollTaskUntilDone(tid, pollStats);
+        const pollMaxMs = conversionClipId ? 600000 : 180000;
+        await this.pollTaskUntilDone(tid, pollStats, {
+          maxWaitMs: pollMaxMs,
+          onPoll: (st) => {
+            if (!conversionClipId) return;
+            this._setAudioConvertState(conversionClipId, { phase: 'processing', taskId: tid, errorBucket: null });
+            const txt = this._audioConvertStatusText(conversionClipId);
+            if (txt) this.setImportStatus(txt, true);
+          },
+        });
         pollMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tPoll0;
         pollAttempts = pollStats.attempts || 0;
         if (this.state.importCancelled){
@@ -6396,6 +6490,12 @@ renderTimeline(){
           setTimeout(() => this.setImportStatus('', false), this._importSuccessStatusClearMs({ autoOpen: shouldAutoOpen }));
           materializeMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tMat0;
         }
+        if (conversionClipId){
+          this._setAudioConvertState(conversionClipId, { phase: 'completed', taskId: tid, errorBucket: null });
+          console.info('[H2S convert] phase=completed task_id=' + String(tid).slice(0, 8) + ' clip_id=' + conversionClipId);
+          this.setImportStatus(this._audioConvertStatusText(conversionClipId), false);
+          this._clearAudioConvertState(conversionClipId, 4000);
+        }
         const tImport1 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
         _h2sTimingLog('client import_flow', {
           task_id: this.state.lastUploadTaskId,
@@ -6410,13 +6510,24 @@ renderTimeline(){
         if (this.state.importCancelled){
           this.setImportStatus((window.I18N && window.I18N.t) ? window.I18N.t('io.cancelled') : 'Cancelled.', false);
           log('Import cancelled by user');
+          if (conversionClipId) this._clearAudioConvertState(conversionClipId);
         }else{
           const msg = (e && e.message) ? String(e.message) : String(e || '');
           const cls = this._classifyImportGenerateFailure(e);
-          this.setImportStatus(cls.statusText, false);
-          log('Upload/generate error [' + cls.bucket + ']: ' + msg);
-          console.error('[Studio] uploadFileAndGenerate error', e);
-          alert(cls.alertText);
+          if (conversionClipId){
+            const phase = (e && e.h2sKind === 'task_timeout') ? 'timed_out' : 'failed';
+            const bucket = phase === 'timed_out' ? 'timed_out' : cls.bucket;
+            this._setAudioConvertState(conversionClipId, { phase, taskId: this.state.lastUploadTaskId || null, errorBucket: bucket });
+            console.warn('[H2S convert] phase=' + phase + ' bucket=' + bucket + ' clip_id=' + conversionClipId);
+            const convTxt = this._audioConvertStatusText(conversionClipId);
+            this.setImportStatus(convTxt || cls.statusText, false);
+            try { alert(convTxt || cls.statusText); } catch (_al) {}
+          } else {
+            this.setImportStatus(cls.statusText, false);
+            log('Upload/generate error [' + cls.bucket + ']: ' + msg);
+            console.error('[Studio] uploadFileAndGenerate error', e);
+            alert(cls.alertText);
+          }
         }
       }
     },
@@ -6432,8 +6543,13 @@ renderTimeline(){
     async convertAudioClipToEditable(clipId, opts){
       opts = opts || {};
       const P = window.H2SProject;
-      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
       if (!clipId || !P || typeof P.clipKind !== 'function') return { ok: false, reason: 'bad_args' };
+      if (this._isAudioConvertActive(clipId)){
+        const busy = this._audioConvertStatusText(clipId);
+        if (busy) this.setImportStatus(busy, true);
+        return { ok: false, reason: 'already_active' };
+      }
       const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
       const c = p2 && p2.clips && p2.clips[clipId];
       if (!c || P.clipKind(c) !== 'audio'){
@@ -6443,19 +6559,31 @@ renderTimeline(){
       const assetRef = (c.audio && typeof c.audio.assetRef === 'string') ? c.audio.assetRef.trim() : '';
       const LAS = (typeof window !== 'undefined') ? window.H2SLocalAudioAssets : null;
       if (!LAS || typeof LAS.getFileForLocalAssetRef !== 'function'){
-        try { alert(_t('io.convertAudioBlobMissing')); } catch (_e) {}
+        this._setAudioConvertState(clipId, { phase: 'failed', errorBucket: 'missing_audio' });
+        const txt = this._audioConvertStatusText(clipId);
+        this.setImportStatus(txt, false);
+        try { alert(txt); } catch (_e) {}
+        this._clearAudioConvertState(clipId, 8000);
         return { ok: false, reason: 'no_local_assets_api' };
       }
-      if (typeof LAS.isLocalImportedAudioRef !== 'function' || !LAS.isLocalImportedAudioRef(assetRef)){
-        try { alert(_t('io.convertAudioOnlyLocal')); } catch (_e) {}
+      if (!assetRef || typeof LAS.isLocalImportedAudioRef !== 'function' || !LAS.isLocalImportedAudioRef(assetRef)){
+        this._setAudioConvertState(clipId, { phase: 'failed', errorBucket: 'missing_audio' });
+        const txt = this._audioConvertStatusText(clipId);
+        this.setImportStatus(txt, false);
+        try { alert(txt); } catch (_e) {}
+        this._clearAudioConvertState(clipId, 8000);
         return { ok: false, reason: 'not_localidb' };
       }
       const file = await LAS.getFileForLocalAssetRef(assetRef);
       if (!file){
-        try { alert(_t('io.convertAudioBlobMissing')); } catch (_e) {}
+        this._setAudioConvertState(clipId, { phase: 'failed', errorBucket: 'missing_audio' });
+        const txt = this._audioConvertStatusText(clipId);
+        this.setImportStatus(txt, false);
+        try { alert(txt); } catch (_e) {}
+        this._clearAudioConvertState(clipId, 8000);
         return { ok: false, reason: 'no_file' };
       }
-      const uploadOpts = { sourceAudioClipId: clipId };
+      const uploadOpts = { sourceAudioClipId: clipId, conversionClipId: clipId };
       if (opts.sourceAudioInstanceId) uploadOpts.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
       await this.uploadFileAndGenerate(file, uploadOpts);
       return { ok: true };
@@ -6695,8 +6823,9 @@ renderTimeline(){
       }catch(e){ /* minimal safe failure: do not break recording or generation flow */ }
     },
 
-    async pollTaskUntilDone(taskId, pollStats){
-      const maxWaitMs = 180000;
+    async pollTaskUntilDone(taskId, pollStats, pollOpts){
+      pollOpts = pollOpts || {};
+      const maxWaitMs = Number.isFinite(Number(pollOpts.maxWaitMs)) ? Number(pollOpts.maxWaitMs) : 180000;
       const start = performance.now();
       while (true){
         if (this.state.importCancelled) throw new Error('Cancelled by user');
@@ -6705,6 +6834,9 @@ renderTimeline(){
         }
         const data = await fetchJson(API.task(taskId));
         const status = String((data.status || data.state || data.task_status || data.taskStatus || '')).toLowerCase();
+        if (typeof pollOpts.onPoll === 'function'){
+          try { pollOpts.onPoll(status, data); } catch (_cb) {}
+        }
         if (status.includes('completed') || status.includes('done') || status === 'success'){
           log(`Task completed: ${taskId}`);
           return;

@@ -71,7 +71,7 @@
     }
   }
 
-function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId){
+function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId, audioConvertState){
     clip = clip || {};
     stats = stats || {};
     fmtSec = (typeof fmtSec === 'function') ? fmtSec : _defaultFmtSec;
@@ -202,11 +202,25 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
         `</div>` +
       `</details>`;
 
+    const convPhase = (audioConvertState && audioConvertState.phase) ? String(audioConvertState.phase) : '';
+    const convActive = convPhase === 'queued' || convPhase === 'uploading' || convPhase === 'processing';
+    const convFailed = convPhase === 'failed' || convPhase === 'timed_out';
+    let convStatusHtml = '';
+    if (isAudio && convPhase){
+      const convKey = convPhase === 'failed' && audioConvertState.errorBucket === 'missing_audio'
+        ? 'convert.fail.needImportAudio'
+        : (convPhase === 'timed_out' ? 'convert.phase.timedOut' : ('convert.phase.' + convPhase));
+      const convFallback = convPhase === 'timed_out'
+        ? 'Conversion took too long or timed out. Try again later.'
+        : (convPhase === 'failed' ? 'Conversion failed. Try again.' : ('Converting (' + convPhase + ')…'));
+      const convMsg = t(convKey, convFallback);
+      convStatusHtml = `<div class="clip-convert-status muted" style="font-size:11px;margin-top:4px;word-break:break-word;">${escapeHtml(convMsg)}</div>`;
+    }
     const primaryActions = isAudio
       ? (
           `<button class="btn" data-act="play" data-id="${id}">${escapeHtml(t('cliplib.play'))}</button>` +
           `<button class="btn" data-act="add" data-id="${id}">${escapeHtml(t('cliplib.addToSong'))}</button>` +
-          `<button class="btn primary" data-act="convertToEditable" data-id="${id}" title="${escapeHtml(t('cliplib.convertToEditableTitle'))}">${escapeHtml(t('cliplib.convertToEditable'))}</button>`
+          `<button class="btn primary" data-act="convertToEditable" data-id="${id}" title="${escapeHtml(t('cliplib.convertToEditableTitle'))}"${convActive ? ' disabled' : ''}>${escapeHtml(t('cliplib.convertToEditable'))}</button>`
         )
       : (
           `<button class="btn" data-act="play" data-id="${id}">${escapeHtml(t('cliplib.play'))}</button>` +
@@ -224,6 +238,7 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
         `<div class="clip-actions" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; align-items:center;">` +
           primaryActions +
         `</div>` +
+        convStatusHtml +
         advancedHtml +
       `</div>`
     );

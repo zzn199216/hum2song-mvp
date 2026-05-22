@@ -1215,15 +1215,8 @@
           </label>
           <div class="hr"></div>
           <div id="cloudMaterialsSection" style="display:none;">
-            <div class="row" style="justify-content:space-between; align-items:center;">
-              <button type="button" id="btnCloudMaterials" class="btn mini" data-i18n="cloudMaterials.open">Cloud Materials</button>
-              <button type="button" id="btnCloudMaterialsRefresh" class="btn mini ghost" data-i18n="cloudMaterials.refresh" style="display:none;">Refresh</button>
-            </div>
+            <button type="button" id="btnCloudMaterials" class="btn mini" data-i18n="cloudMaterials.open">Cloud Materials</button>
             <p id="cloudMaterialsStandalone" class="muted" style="display:none; font-size:11px; margin:6px 0 0;" data-i18n="cloudMaterials.standaloneHint">Cloud materials are available when opened from Hum2Song Cloud.</p>
-            <div id="cloudMaterialsPanel" style="display:none; margin-top:8px;">
-              <div id="cloudMaterialsStatus" class="muted" style="font-size:11px; min-height:16px;"></div>
-              <div id="cloudMaterialsList" class="col" style="max-height:220px; overflow:auto; margin-top:6px;"></div>
-            </div>
           </div>
           <div class="hr"></div>
           <div id="clipList" class="col"></div>
@@ -1657,7 +1650,121 @@
   <script src="/static/pianoroll/core/score_heuristic_split.js"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
-  <script src="/static/pianoroll/studio_asset_version.js?v=cloud-materials-v0-20260522"></script>
+  <div id="cloudMaterialsModal" class="cloudMaterialsModal" role="dialog" aria-modal="true" aria-labelledby="cloudMaterialsModalTitle" hidden>
+    <div class="cloudMaterialsModalBackdrop" data-act="closeCloudMaterials" tabindex="-1" aria-hidden="true"></div>
+    <div class="cloudMaterialsModalPanel" role="document">
+      <div class="cloudMaterialsModalHeader">
+        <h3 id="cloudMaterialsModalTitle" data-i18n="cloudMaterials.title">Cloud Materials</h3>
+        <div class="cloudMaterialsModalHeaderActions">
+          <button type="button" id="btnCloudMaterialsRefresh" class="btn mini ghost" data-i18n="cloudMaterials.refresh">Refresh</button>
+          <button type="button" id="btnCloudMaterialsModalClose" class="btn mini ghost" data-i18n="cloudMaterials.close" aria-label="Close">Close</button>
+        </div>
+      </div>
+      <div id="cloudMaterialsStatus" class="cloudMaterialsModalStatus muted"></div>
+      <div id="cloudMaterialsList" class="cloudMaterialsModalList"></div>
+    </div>
+  </div>
+  <style>
+    .cloudMaterialsModal[hidden] { display: none !important; }
+    .cloudMaterialsModal {
+      position: fixed;
+      inset: 0;
+      z-index: 12000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      box-sizing: border-box;
+    }
+    .cloudMaterialsModalBackdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.62);
+    }
+    .cloudMaterialsModalPanel {
+      position: relative;
+      z-index: 1;
+      width: min(920px, 96vw);
+      max-height: min(82vh, 760px);
+      display: flex;
+      flex-direction: column;
+      background: #1a1816;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 14px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+    }
+    .cloudMaterialsModalHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .cloudMaterialsModalHeader h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .cloudMaterialsModalHeaderActions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .cloudMaterialsModalStatus {
+      flex: 0 0 auto;
+      min-height: 18px;
+      padding: 8px 16px 0;
+      font-size: 12px;
+    }
+    .cloudMaterialsModalList {
+      flex: 1 1 auto;
+      overflow: auto;
+      padding: 12px 16px 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      align-content: start;
+    }
+    .cloudMaterialsCard {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .cloudMaterialsCardTitle {
+      font-weight: 700;
+      font-size: 14px;
+      line-height: 1.35;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .cloudMaterialsCardMeta {
+      font-size: 11px;
+      opacity: 0.78;
+      line-height: 1.4;
+    }
+    .cloudMaterialsCardPrompt {
+      font-size: 11px;
+      opacity: 0.72;
+      line-height: 1.45;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .cloudMaterialsCardActions {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+  </style>
+  <script src="/static/pianoroll/studio_asset_version.js?v=convert-modal-v0-20260522"></script>
   <script>
   (function () {
     try {
@@ -1675,8 +1782,8 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=cloud-materials-v0-20260522"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=cloud-materials-v0-20260522"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=cloud-materials-v0-20260522"></script>
+  <script src="/static/pianoroll/app.js?v=convert-modal-v0-20260522"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=convert-modal-v0-20260522"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=convert-modal-v0-20260522"></script>
 </body>
 </html>

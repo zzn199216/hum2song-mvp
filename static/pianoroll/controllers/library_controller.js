@@ -132,7 +132,10 @@
         const stats = _clipStats(project, clip);
         const revInfo = (P && typeof P.listClipRevisions === 'function') ? P.listClipRevisions(clip) : null;
         const selectedPreset = getPresetForClip ? getPresetForClip(clip.id) : null;
-        html += view.clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId);
+        const convertSt = (app && typeof app.getAudioConvertStateForClip === 'function')
+          ? app.getAudioConvertStateForClip(clip.id)
+          : null;
+        html += view.clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId, convertSt);
       }
       rootEl.innerHTML = html;
     }
@@ -170,6 +173,7 @@
         return;
       }
       if (act === 'convertToEditable'){
+        if (app && typeof app._isAudioConvertActive === 'function' && app._isAudioConvertActive(clipId)) return;
         if (P && projectV2 && projectV2.clips && projectV2.clips[clipId] && typeof P.clipKind === 'function' && P.clipKind(projectV2.clips[clipId]) === 'audio'){
           const fn = (app && typeof app.convertAudioClipToEditable === 'function') ? app.convertAudioClipToEditable.bind(app) : null;
           if (fn){
