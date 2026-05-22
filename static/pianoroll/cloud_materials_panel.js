@@ -88,6 +88,9 @@
     return document.getElementById('cloudMaterialsModal');
   }
 
+  var listLoading = false;
+  var importingAssetId = null;
+
   function openModal() {
     var modal = getModal();
     if (!modal) return;
@@ -169,15 +172,24 @@
 
   async function importMaterial(assetId, title, btn) {
     if (!assetId) return;
+    if (importingAssetId === assetId) return;
     if (typeof window.H2S_REQUEST_CLOUD_MATERIAL_CONTENT !== 'function') {
       setStatus(t('cloudMaterials.bridgeMissing', 'Cloud bridge unavailable.'), true);
       return;
     }
+    importingAssetId = assetId;
     if (btn) btn.disabled = true;
-    setStatus(t('cloudMaterials.importing', 'Importing from cloud…'), false);
+    document.querySelectorAll('.cloudMaterialsImportBtn').forEach(function (b) {
+      if (b.getAttribute('data-asset-id') === assetId) b.disabled = true;
+    });
+    setStatus(t('cloudMaterials.importing', 'Importing…'), false);
     window.H2S_REQUEST_CLOUD_MATERIAL_CONTENT(assetId, title);
     var detail = await waitForContentResponse();
+    importingAssetId = null;
     if (btn) btn.disabled = false;
+    document.querySelectorAll('.cloudMaterialsImportBtn').forEach(function (b) {
+      if (b.getAttribute('data-asset-id') === assetId) b.disabled = false;
+    });
     if (!detail || !detail.ok || !(detail.audioBuffer instanceof ArrayBuffer)) {
       setStatus(mapContentError(detail && detail.error), true);
       return;
@@ -263,21 +275,37 @@
     });
   }
 
+  function setRefreshDisabled(disabled) {
+    var refresh = document.getElementById('btnCloudMaterialsRefresh');
+    if (refresh) refresh.disabled = !!disabled;
+  }
+
   async function refreshList() {
+    if (listLoading) return;
     if (typeof window.H2S_REQUEST_CLOUD_MATERIALS_LIST !== 'function') {
       setStatus(t('cloudMaterials.bridgeMissing', 'Cloud bridge unavailable.'), true);
       return;
     }
+    listLoading = true;
+    setRefreshDisabled(true);
     setStatus(t('cloudMaterials.loading', 'Loading cloud materials…'), false);
-    window.H2S_REQUEST_CLOUD_MATERIALS_LIST();
-    var detail = await waitForListResponse();
-    if (!detail || detail.ok !== true) {
-      setStatus(mapListError(detail && detail.error), true);
-      renderList([]);
-      return;
+    var list = document.getElementById('cloudMaterialsList');
+    if (list) list.setAttribute('aria-busy', 'true');
+    try {
+      window.H2S_REQUEST_CLOUD_MATERIALS_LIST();
+      var detail = await waitForListResponse();
+      if (!detail || detail.ok !== true) {
+        setStatus(mapListError(detail && detail.error), true);
+        renderList([]);
+        return;
+      }
+      setStatus('', false);
+      renderList(detail.materials || []);
+    } finally {
+      listLoading = false;
+      setRefreshDisabled(false);
+      if (list) list.removeAttribute('aria-busy');
     }
-    setStatus('', false);
-    renderList(detail.materials || []);
   }
 
   function applyCloudModeUi() {

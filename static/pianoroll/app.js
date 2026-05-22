@@ -7,10 +7,14 @@
   'use strict';
 
   const API = {
-    /** @param {string} fmt */
-    generate: (fmt) => {
+    /** @param {string} fmt @param {{ startSec?: number, durationSec?: number }} [segment] */
+    generate: (fmt, segment) => {
       const q = new URLSearchParams();
       q.set('output_format', fmt || 'mp3');
+      if (segment && typeof segment.startSec === 'number' && typeof segment.durationSec === 'number'){
+        q.set('segment_start_sec', String(segment.startSec));
+        q.set('segment_duration_sec', String(segment.durationSec));
+      }
       return `/generate?${q.toString()}`;
     },
     task: (id) => `/tasks/${encodeURIComponent(id)}`,
@@ -3359,6 +3363,7 @@ rollbackClipRevision(clipId){
       lastUploadTaskId: null,
       /** @type {Record<string, { phase: string, taskId?: string, errorBucket?: string, updatedAt: number }>} */
       audioConvertByClipId: {},
+      audioConvertSegmentByClipId: {},
       recordingActive: false,
       lastRecordedFile: null,
       importCancelled: false,
@@ -3815,7 +3820,34 @@ $('#rngPitchCenter').addEventListener('input', () => {
             getHasArrangementDetails: () => !!this._lastArrangementSnapshot,
             onDuplicateInstance: (instId) => this.duplicateInstance(instId),
             onRemoveInstance: (instId) => this.deleteInstance(instId),
-            getConvertLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('cliplib.convertToEditable') : 'Convert to editable'),
+            getConvertLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('cliplib.convertSegment') : 'Convert selected segment'),
+            getAudioSegmentPanelOpts: (inst) => {
+              if (!inst) return null;
+              const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+              const c = p2 && p2.clips && p2.clips[inst.clipId];
+              const P = window.H2SProject;
+              if (!c || !P || typeof P.clipKind !== 'function' || P.clipKind(c) !== 'audio') return null;
+              const seg = this.getAudioConvertSegment(inst.clipId, { sourceAudioInstanceId: inst.id });
+              const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+              const convActive = this._isAudioConvertActive(inst.clipId);
+              return {
+                showAudioSegment: true,
+                audioDurationSec: c.audio && c.audio.durationSec,
+                segmentStartSec: seg ? seg.startSec : 0,
+                segmentDurationSec: seg ? seg.durationSec : 30,
+                convertActive: convActive,
+                audioDurationTitle: _t('convert.audioDuration', 'Audio duration'),
+                segmentStartLabel: _t('convert.segmentStart', 'Segment start'),
+                segmentLengthLabel: _t('convert.segmentLength', 'Segment length'),
+                segmentEndLabel: _t('convert.segmentEnd', 'Segment end'),
+                atPlayheadLabel: _t('convert.atPlayhead', 'Start at playhead'),
+                preset15Label: _t('convert.preset15', '15s'),
+                preset30Label: _t('convert.preset30', '30s'),
+                preset60Label: _t('convert.preset60', '60s'),
+              };
+            },
+            onSegmentAtPlayhead: (clipId, instId) => this.setAudioConvertSegmentAtPlayhead(clipId, instId),
+            onSegmentLength: (clipId, len) => this.setAudioConvertSegmentLength(clipId, len),
             getAddBassLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addBass') : 'Add Bass'),
             getAddAccompanimentLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addAccompaniment') : 'Add accompaniment'),
             getAddAccompanimentMoreInstructionsLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addAccompanimentMoreInstructions') : 'More instructions (optional)'),
@@ -5488,7 +5520,7 @@ renderTimeline(){
       const P = window.H2SProject;
       const isAudio = !!(clip && P && typeof P.clipKind === 'function' && P.clipKind(clip) === 'audio');
       const editOrConv = isAudio
-        ? `<button id="btnSelConvertAudio" class="btn mini primary" type="button">${escapeHtml(_t2('cliplib.convertToEditable'))}</button>`
+        ? `<button id="btnSelConvertAudio" class="btn mini primary" type="button">${escapeHtml(_t2('cliplib.convertSegment'))}</button>`
         : `<button id="btnSelEdit" class="btn mini">${escapeHtml(_t2('actions.edit'))}</button>`;
       box.innerHTML = `
         <div class="kv"><b>Clip</b><span>${escapeHtml(clip ? clip.name : inst.clipId)}</span></div>
@@ -6054,6 +6086,93 @@ renderTimeline(){
       return opts.autoOpen ? 2500 : 6000;
     },
 
+    _segmentApi(){
+      return (typeof window !== 'undefined' && window.H2SAudioConvertSegment) ? window.H2SAudioConvertSegment : null;
+    },
+
+    getAudioConvertSegment(clipId, opts){
+      opts = opts || {};
+      const id = String(clipId || '').trim();
+      if (!id) return null;
+      const map = this.state.audioConvertSegmentByClipId;
+      if (map && map[id]) return map[id];
+      const P = window.H2SProject;
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      const c = p2 && p2.clips && p2.clips[id];
+      const audioDur = (c && c.audio && typeof c.audio.durationSec === 'number') ? c.audio.durationSec : 0;
+      let instanceStart = null;
+      const instId = opts.sourceAudioInstanceId || this.state.selectedInstanceId;
+      if (instId && p2 && Array.isArray(p2.instances)){
+        const inst = p2.instances.find((x) => x && String(x.id) === String(instId));
+        if (inst && String(inst.clipId) === id && typeof inst.startSec === 'number') instanceStart = inst.startSec;
+      }
+      const Seg = this._segmentApi();
+      const playhead = (this.project && this.project.ui) ? (this.project.ui.playheadSec || 0) : 0;
+      const seg = Seg && typeof Seg.defaultSegmentForAudioClip === 'function'
+        ? Seg.defaultSegmentForAudioClip({ audioDurationSec: audioDur, playheadSec: playhead, instanceStartSec: instanceStart })
+        : { startSec: 0, durationSec: 30, endSec: 30 };
+      if (!this.state.audioConvertSegmentByClipId) this.state.audioConvertSegmentByClipId = {};
+      this.state.audioConvertSegmentByClipId[id] = seg;
+      return seg;
+    },
+
+    setAudioConvertSegment(clipId, patch){
+      const id = String(clipId || '').trim();
+      if (!id) return null;
+      const prev = this.getAudioConvertSegment(id) || { startSec: 0, durationSec: 30, endSec: 30 };
+      const P = window.H2SProject;
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      const c = p2 && p2.clips && p2.clips[id];
+      const audioDur = (c && c.audio && typeof c.audio.durationSec === 'number') ? c.audio.durationSec : 0;
+      const Seg = this._segmentApi();
+      let next = Object.assign({}, prev, patch || {});
+      if (Seg && typeof Seg.clampSegment === 'function'){
+        const clamped = Seg.clampSegment(audioDur, next.startSec, next.durationSec);
+        if (!clamped) return prev;
+        next = clamped;
+      } else {
+        next.endSec = (Number(next.startSec) || 0) + (Number(next.durationSec) || 30);
+      }
+      if (!this.state.audioConvertSegmentByClipId) this.state.audioConvertSegmentByClipId = {};
+      this.state.audioConvertSegmentByClipId[id] = next;
+      if (this.selectionCtrl && typeof this.selectionCtrl.render === 'function') this.selectionCtrl.render();
+      return next;
+    },
+
+    setAudioConvertSegmentAtPlayhead(clipId, instanceId){
+      const id = String(clipId || '').trim();
+      const P = window.H2SProject;
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      const c = p2 && p2.clips && p2.clips[id];
+      const audioDur = (c && c.audio && typeof c.audio.durationSec === 'number') ? c.audio.durationSec : 0;
+      let instanceStart = 0;
+      if (instanceId && p2 && Array.isArray(p2.instances)){
+        const inst = p2.instances.find((x) => x && String(x.id) === String(instanceId));
+        if (inst && typeof inst.startSec === 'number') instanceStart = inst.startSec;
+      }
+      const playhead = (this.project && this.project.ui) ? (this.project.ui.playheadSec || 0) : 0;
+      const start = Math.max(0, playhead - instanceStart);
+      const Seg = this._segmentApi();
+      const dur = Seg ? Seg.DEFAULT_SEGMENT_LEN : 30;
+      return this.setAudioConvertSegment(id, { startSec: start, durationSec: dur });
+    },
+
+    setAudioConvertSegmentLength(clipId, lenSec){
+      const seg = this.getAudioConvertSegment(clipId);
+      return this.setAudioConvertSegment(clipId, { startSec: seg ? seg.startSec : 0, durationSec: lenSec });
+    },
+
+    _formatConvertSegmentSuffix(clipId){
+      const seg = this.getAudioConvertSegment(clipId);
+      const Seg = this._segmentApi();
+      if (!seg) return '';
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+      const range = Seg && typeof Seg.formatSegmentRange === 'function'
+        ? Seg.formatSegmentRange(seg, fmtSec)
+        : (fmtSec(seg.startSec) + '–' + fmtSec(seg.endSec));
+      return _t('convert.segmentRange', 'Segment') + ': ' + range;
+    },
+
     _getAudioConvertEntry(clipId){
       const id = String(clipId || '').trim();
       if (!id) return null;
@@ -6099,10 +6218,17 @@ renderTimeline(){
       const e = this._getAudioConvertEntry(clipId);
       if (!e || !e.phase) return '';
       const tid = e.taskId ? String(e.taskId).slice(0, 8) : '';
-      const withTask = (base) => tid ? (base + ' (' + _t('convert.taskShort', 'task') + ': ' + tid + '…)') : base;
+      const segSuffix = (e.segmentStartSec != null && e.segmentDurationSec != null)
+        ? (' · ' + _t('convert.segmentRange', 'Segment') + ': ' + fmtSec(e.segmentStartSec) + '–' + fmtSec(e.segmentStartSec + e.segmentDurationSec))
+        : this._formatConvertSegmentSuffix(clipId);
+      const withSeg = (base) => segSuffix ? (base + ' · ' + segSuffix) : base;
+      const withTask = (base) => {
+        const b = withSeg(base);
+        return tid ? (b + ' (' + _t('convert.taskShort', 'task') + ': ' + tid + '…)') : b;
+      };
       if (e.phase === 'queued') return withTask(_t('convert.phase.queued', 'Queued for conversion…'));
-      if (e.phase === 'uploading') return _t('convert.phase.uploading', 'Uploading audio for conversion…');
-      if (e.phase === 'processing') return withTask(_t('convert.phase.processing', 'Converting to editable notes…'));
+      if (e.phase === 'uploading') return withSeg(_t('convert.phase.uploading', 'Uploading audio for conversion…'));
+      if (e.phase === 'processing') return withTask(_t('convert.phase.processing', 'Converting selected segment…'));
       if (e.phase === 'completed') return _t('convert.phase.completed', 'Conversion complete.');
       if (e.phase === 'timed_out') return _t('convert.phase.timedOut', 'Conversion took too long or timed out. Try again later.');
       if (e.phase === 'failed'){
@@ -6130,10 +6256,18 @@ renderTimeline(){
         : (typeof opts.sourceAudioClipId === 'string' ? opts.sourceAudioClipId.trim() : '');
       const file = f instanceof File ? f : new File([f], (f.name || 'recording.webm'), { type: (f.type || 'audio/webm') });
       this.state.importCancelled = false;
-      if (conversionClipId) this._setAudioConvertState(conversionClipId, { phase: 'uploading', taskId: null, errorBucket: null });
+      const segForUpload = (opts.segmentStartSec != null && opts.segmentDurationSec != null)
+        ? { startSec: Number(opts.segmentStartSec), durationSec: Number(opts.segmentDurationSec) }
+        : (opts.sourceAudioClipId ? this.getAudioConvertSegment(opts.sourceAudioClipId, { sourceAudioInstanceId: opts.sourceAudioInstanceId }) : null);
+      if (conversionClipId){
+        const segPatch = segForUpload
+          ? { segmentStartSec: segForUpload.startSec, segmentDurationSec: segForUpload.durationSec }
+          : {};
+        this._setAudioConvertState(conversionClipId, Object.assign({ phase: 'uploading', taskId: null, errorBucket: null }, segPatch));
+      }
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
       const statusUpload = conversionClipId
-        ? _t('convert.phase.uploading', 'Uploading audio for conversion…')
+        ? (this._audioConvertStatusText(conversionClipId) || _t('convert.phase.uploading', 'Uploading audio for conversion…'))
         : _t('io.uploading', 'Uploading audio...');
       this.setImportStatus(statusUpload, true);
       log(`Uploading ${file.name} ...`);
@@ -6147,7 +6281,7 @@ renderTimeline(){
         const fd = new FormData();
         fd.append('file', file, file.name);
         const tUp0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
-        const res = await fetchJson(API.generate('mp3'), { method:'POST', body:fd });
+        const res = await fetchJson(API.generate('mp3', segForUpload), { method:'POST', body:fd });
         uploadMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tUp0;
         const tid = res.task_id || res.id || res.taskId || res.task || null;
         if (!tid){
@@ -6583,7 +6717,17 @@ renderTimeline(){
         this._clearAudioConvertState(clipId, 8000);
         return { ok: false, reason: 'no_file' };
       }
-      const uploadOpts = { sourceAudioClipId: clipId, conversionClipId: clipId };
+      const seg = this.getAudioConvertSegment(clipId, { sourceAudioInstanceId: opts.sourceAudioInstanceId });
+      if (!seg){
+        try { alert(_t('convert.fail.invalidSegment', 'Selected segment is invalid. Adjust start or length.')); } catch (_e) {}
+        return { ok: false, reason: 'invalid_segment' };
+      }
+      const uploadOpts = {
+        sourceAudioClipId: clipId,
+        conversionClipId: clipId,
+        segmentStartSec: seg.startSec,
+        segmentDurationSec: seg.durationSec,
+      };
       if (opts.sourceAudioInstanceId) uploadOpts.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
       await this.uploadFileAndGenerate(file, uploadOpts);
       return { ok: true };

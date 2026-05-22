@@ -93,7 +93,13 @@ def run_pipeline_for_task(
         from core.audio_preprocess import preprocess_audio, prepare_separation_input_audio
 
         t_pre0 = perf_counter()
-        out_clean = preprocess_audio(raw_path, output_dir=settings.upload_dir)
+        seg = contract_task_manager.get_transcription_segment(task_id)
+        load_max = seg[1] if seg else None
+        out_clean = preprocess_audio(
+            raw_path,
+            output_dir=settings.upload_dir,
+            load_max_sec=load_max,
+        )
         clean_wav_path = Path(out_clean)
         pre_ms = (perf_counter() - t_pre0) * 1000.0
         logger.info("[H2S timing] task_id=%s pipeline_preprocess_ms=%.1f", task_id, pre_ms)

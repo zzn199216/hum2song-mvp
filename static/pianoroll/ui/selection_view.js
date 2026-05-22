@@ -6,6 +6,42 @@
 (function(){
   'use strict';
 
+  function audioSegmentPanelHTML(opts){
+    const escapeHtml = opts.escapeHtml || ((s)=>String(s));
+    const fmtSec = opts.fmtSec || ((x)=>String(x));
+    const audioDur = Number(opts.audioDurationSec || 0);
+    const startSec = Number(opts.segmentStartSec || 0);
+    const durationSec = Number(opts.segmentDurationSec || 30);
+    const endSec = startSec + durationSec;
+    const audioDurLabel = (opts.audioDurationLabel != null) ? String(opts.audioDurationLabel) : fmtSec(audioDur);
+    const startLabel = (opts.segmentStartLabel != null) ? String(opts.segmentStartLabel) : 'Start';
+    const lenLabel = (opts.segmentLengthLabel != null) ? String(opts.segmentLengthLabel) : 'Length';
+    const endLabel = (opts.segmentEndLabel != null) ? String(opts.segmentEndLabel) : 'End';
+    const atPlayheadLabel = (opts.atPlayheadLabel != null) ? String(opts.atPlayheadLabel) : 'Start at playhead';
+    const preset15 = (opts.preset15Label != null) ? String(opts.preset15Label) : '15s';
+    const preset30 = (opts.preset30Label != null) ? String(opts.preset30Label) : '30s';
+    const preset60 = (opts.preset60Label != null) ? String(opts.preset60Label) : '60s';
+    const convertActive = !!opts.convertActive;
+    const convertLabel = (opts.convertLabel != null) ? String(opts.convertLabel) : 'Convert selected segment';
+    return (
+      `<div class="h2s-audio-segment-panel" style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;">` +
+        `<div class="kv"><b>${escapeHtml((opts.audioDurationTitle != null) ? opts.audioDurationTitle : 'Audio')}</b><span>${escapeHtml(audioDurLabel)}</span></div>` +
+        `<div class="kv"><b>${escapeHtml(startLabel)}</b><span data-role="segStart">${escapeHtml(fmtSec(startSec))}</span></div>` +
+        `<div class="kv"><b>${escapeHtml(lenLabel)}</b><span data-role="segLen">${escapeHtml(fmtSec(durationSec))}</span></div>` +
+        `<div class="kv"><b>${escapeHtml(endLabel)}</b><span data-role="segEnd">${escapeHtml(fmtSec(endSec))}</span></div>` +
+        `<div class="row" style="margin-top:6px;flex-wrap:wrap;gap:4px;">` +
+          `<button type="button" class="btn mini" data-act="segAtPlayhead"${convertActive ? ' disabled' : ''}>${escapeHtml(atPlayheadLabel)}</button>` +
+          `<button type="button" class="btn mini" data-act="segLen15" data-len="15"${convertActive ? ' disabled' : ''}>${escapeHtml(preset15)}</button>` +
+          `<button type="button" class="btn mini" data-act="segLen30" data-len="30"${convertActive ? ' disabled' : ''}>${escapeHtml(preset30)}</button>` +
+          `<button type="button" class="btn mini" data-act="segLen60" data-len="60"${convertActive ? ' disabled' : ''}>${escapeHtml(preset60)}</button>` +
+        `</div>` +
+        `<div class="row" style="margin-top:8px;">` +
+          `<button id="btnSelConvertAudio" class="btn mini primary" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}"${convertActive ? ' disabled' : ''}>${escapeHtml(convertLabel)}</button>` +
+        `</div>` +
+      `</div>`
+    );
+  }
+
   function selectionBoxInnerHTML(opts){
     const clipName = opts.clipName || opts.clipId || '—';
     const startSec = Number(opts.startSec || 0);
@@ -13,15 +49,36 @@
     const fmtSec = opts.fmtSec || ((x)=>String(x));
     const escapeHtml = opts.escapeHtml || ((s)=>String(s));
     const isAudio = !!opts.isAudio;
-    const convertLabel = (opts.convertLabel != null && String(opts.convertLabel)) ? String(opts.convertLabel) : 'Convert to editable';
+    const convertLabel = (opts.convertLabel != null && String(opts.convertLabel)) ? String(opts.convertLabel) : 'Convert selected segment';
+    const showAudioSegment = !!opts.showAudioSegment;
     const addBassLabel = (opts.addBassLabel != null && String(opts.addBassLabel)) ? String(opts.addBassLabel) : 'Add Bass';
     const addAccompLabel = (opts.addAccompanimentLabel != null && String(opts.addAccompanimentLabel)) ? String(opts.addAccompanimentLabel) : 'Add accompaniment';
     const addAccompBadge = (opts.addAccompanimentBadgeLabel != null && String(opts.addAccompanimentBadgeLabel)) ? String(opts.addAccompanimentBadgeLabel) : 'Experimental';
     const editBtn = isAudio
       ? ''
       : `<button id="btnSelEdit" class="btn mini" data-act="edit">Edit</button>`;
-    const audioConvertBtn = isAudio
+    const audioConvertBtn = (isAudio && !showAudioSegment)
       ? `<button id="btnSelConvertAudio" class="btn mini primary" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}">${escapeHtml(convertLabel)}</button>`
+      : '';
+    const audioSegmentBlock = (isAudio && showAudioSegment && typeof audioSegmentPanelHTML === 'function')
+      ? audioSegmentPanelHTML({
+          escapeHtml,
+          fmtSec,
+          audioDurationSec: opts.audioDurationSec,
+          segmentStartSec: opts.segmentStartSec,
+          segmentDurationSec: opts.segmentDurationSec,
+          audioDurationTitle: opts.audioDurationTitle,
+          audioDurationLabel: opts.audioDurationLabel,
+          segmentStartLabel: opts.segmentStartLabel,
+          segmentLengthLabel: opts.segmentLengthLabel,
+          segmentEndLabel: opts.segmentEndLabel,
+          atPlayheadLabel: opts.atPlayheadLabel,
+          preset15Label: opts.preset15Label,
+          preset30Label: opts.preset30Label,
+          preset60Label: opts.preset60Label,
+          convertLabel,
+          convertActive: opts.convertActive,
+        })
       : '';
     const addBassBtn = isAudio
       ? ''
@@ -58,10 +115,11 @@
       </div>
       ${addAccompInstrBlock}
       ${arrangementDetailsRow}
+      ${audioSegmentBlock}
     `;
   }
 
-  const api = { selectionBoxInnerHTML };
+  const api = { selectionBoxInnerHTML, audioSegmentPanelHTML };
 
   // Browser global
   if (typeof window !== 'undefined'){

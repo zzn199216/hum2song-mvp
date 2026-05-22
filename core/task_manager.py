@@ -68,6 +68,10 @@ class _TaskRecord:
     # Per-upload: run 2-stem vocal separation before transcription (Studio checkbox).
     request_two_stem_separation: bool = False
 
+    # Per-upload: transcribe only this window (seconds); preprocess loads full extracted segment.
+    transcription_segment_start_sec: Optional[float] = None
+    transcription_segment_duration_sec: Optional[float] = None
+
 
 class TaskManager:
     """
@@ -115,6 +119,41 @@ class TaskManager:
             if rec is None:
                 return False
             return bool(rec.request_two_stem_separation)
+
+    def set_transcription_segment(
+        self,
+        task_id: Union[str, UUID],
+        *,
+        start_sec: float,
+        duration_sec: float,
+    ) -> None:
+        tid = _ensure_uuid(task_id)
+        with self._lock:
+            rec = self._get_record_locked(tid)
+            rec.transcription_segment_start_sec = float(start_sec)
+            rec.transcription_segment_duration_sec = float(duration_sec)
+            rec.updated_at = _utcnow()
+
+    def get_transcription_segment(
+        self, task_id: Union[str, UUID]
+    ) -> Optional[tuple[float, float]]:
+        try:
+            tid = _ensure_uuid(task_id)
+        except Exception:
+            return None
+        with self._lock:
+            rec = self._tasks.get(tid)
+            if rec is None:
+                return None
+            if (
+                rec.transcription_segment_start_sec is None
+                or rec.transcription_segment_duration_sec is None
+            ):
+                return None
+            return (
+                float(rec.transcription_segment_start_sec),
+                float(rec.transcription_segment_duration_sec),
+            )
 
     def get_task_info(self, task_id: Union[str, UUID]) -> TaskInfoResponse:
         """

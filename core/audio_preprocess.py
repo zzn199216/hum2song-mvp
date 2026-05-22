@@ -32,6 +32,8 @@ logging.basicConfig(level=logging.INFO)
 def preprocess_audio(
     input_path: Union[str, Path],
     output_dir: Optional[Union[str, Path]] = None,
+    *,
+    load_max_sec: Optional[float] = None,
 ) -> Path:
     """
     标准化音频预处理入口。
@@ -72,7 +74,12 @@ def preprocess_audio(
         pass
 
     target_sr = settings.target_sample_rate
-    max_sec = settings.max_audio_seconds if settings.max_audio_seconds > 0 else 20
+    if load_max_sec is not None and load_max_sec > 0:
+        max_sec = float(load_max_sec)
+        load_duration = max_sec
+    else:
+        max_sec = settings.max_audio_seconds if settings.max_audio_seconds > 0 else 20
+        load_duration = max_sec
 
     logger.info(
         "🔊 [Preprocess] 加载音频: %s (sr -> %d, 只读前 %.1fs, mono=True)",
@@ -88,7 +95,7 @@ def preprocess_audio(
             str(in_path),
             sr=target_sr,
             mono=True,
-            duration=max_sec,
+            duration=load_duration,
         )
         load_ms = (perf_counter() - t_load0) * 1000.0
     except Exception as e:

@@ -35,6 +35,9 @@ assert(panel.includes('H2S_REQUEST_CLOUD_MATERIALS_LIST'), 'panel should request
 assert(panel.includes('H2S_REQUEST_CLOUD_MATERIAL_CONTENT'), 'panel should request material content via bridge');
 assert(panel.includes('_commitNativeAudioFile'), 'panel should import via native audio commit path');
 assert(panel.includes('openModal'), 'panel opens modal overlay');
+assert(panel.includes('listLoading'), 'tracks list loading state');
+assert(panel.includes('setRefreshDisabled'), 'refresh disabled while loading');
+assert(panel.includes('importingAssetId'), 'tracks per-item import');
 assert(panel.includes('cloudMaterialsCardTitle'), 'card layout for readable titles');
 assert(panel.includes('importToTimeline') || panel.includes('cloudMaterials.importToTimeline'), 'import to timeline action');
 assert(

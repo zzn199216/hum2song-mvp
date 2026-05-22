@@ -37,6 +37,9 @@
     const getAddAccompanimentBadgeLabel = opts.getAddAccompanimentBadgeLabel || function(){ return 'Experimental'; };
     const getArrangementDetailsLabel = opts.getArrangementDetailsLabel || function(){ return 'Arrangement Details'; };
     const onConvertAudioToEditable = opts.onConvertAudioToEditable || function(){};
+    const getAudioSegmentPanelOpts = opts.getAudioSegmentPanelOpts || function(){ return null; };
+    const onSegmentAtPlayhead = opts.onSegmentAtPlayhead || function(){};
+    const onSegmentLength = opts.onSegmentLength || opts.onSegmentSetLength || function(){};
     const onLog = opts.onLog || null;
 
     const view = (window.H2SSelectionView && window.H2SSelectionView.selectionBoxInnerHTML)
@@ -83,6 +86,20 @@
           onConvertAudioToEditable(inst.clipId, inst.id);
         });
       }
+      const btnSegPlayhead = rootEl.querySelector('[data-act="segAtPlayhead"]');
+      if (btnSegPlayhead){
+        btnSegPlayhead.addEventListener('click', (e) => {
+          e.preventDefault();
+          onSegmentAtPlayhead(inst.clipId, inst.id);
+        });
+      }
+      rootEl.querySelectorAll('[data-act^="segLen"]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const len = Number(btn.getAttribute('data-len') || btn.getAttribute('data-act').replace('segLen', ''));
+          if (Number.isFinite(len) && len > 0) onSegmentLength(inst.clipId, len);
+        });
+      });
       if (btnAddBass){
         btnAddBass.addEventListener('click', (e) => {
           e.preventDefault();
@@ -135,7 +152,10 @@
       const isAudio = !!(sel.clip && P && typeof P.clipKind === 'function' && P.clipKind(sel.clip) === 'audio');
       rootEl.className = '';
       if (view){
-        rootEl.innerHTML = view.selectionBoxInnerHTML({
+        const segOpts = isAudio && typeof getAudioSegmentPanelOpts === 'function'
+          ? (getAudioSegmentPanelOpts(inst) || {})
+          : {};
+        rootEl.innerHTML = view.selectionBoxInnerHTML(Object.assign({
           clipName,
           clipId: inst.clipId,
           startSec: inst.startSec,
@@ -150,7 +170,7 @@
           addAccompanimentBadgeLabel: getAddAccompanimentBadgeLabel(),
           showArrangementDetails: !!getHasArrangementDetails(),
           arrangementDetailsLabel: getArrangementDetailsLabel(),
-        });
+        }, segOpts));
       } else {
         // Fallback markup (should not happen in normal builds)
         const editOrConv = isAudio

@@ -13,6 +13,12 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Uplo
 from fastapi.responses import FileResponse
 
 # --- New contract stack ---
+from core.audio_segment import (
+    SegmentValidationError,
+    extract_audio_segment,
+    probe_audio_duration_sec,
+    resolve_segment_params,
+)
 from core.generation_service import generation_service
 from core.models import FileType, Stage, TaskCreateResponse, TaskInfoResponse, TaskStatus
 from core.task_manager import task_manager
@@ -168,6 +174,22 @@ async def generate_music(
         False,
         description="Experimental: 2-stem vocal separation before transcription for this upload only.",
     ),
+    segment_start_sec: Optional[float] = Query(
+        None,
+        ge=0,
+        description="Transcribe only this window: start time in seconds (Studio segment convert).",
+    ),
+    segment_duration_sec: Optional[float] = Query(
+        None,
+        gt=0,
+        le=60,
+        description="Transcribe window length in seconds (1–60).",
+    ),
+    segment_end_sec: Optional[float] = Query(
+        None,
+        gt=0,
+        description="Alternative to segment_duration_sec: end time in seconds.",
+    ),
 ) -> TaskCreateResponse:
     """
     Contract: 202 Accepted -> TaskCreateResponse
@@ -208,9 +230,47 @@ async def generate_music(
             input_path.name,
             bool(vocal_separation),
         )
+        seg_log_start = None
+        seg_log_dur = None
+        segment_input_path = input_path
+        segment_sidecar: Optional[Path] = None
+        try:
+            src_dur = probe_audio_duration_sec(input_path)
+            seg = resolve_segment_params(
+                source_duration_sec=src_dur,
+                segment_start_sec=segment_start_sec,
+                segment_duration_sec=segment_duration_sec,
+                segment_end_sec=segment_end_sec,
+            )
+            if seg is not None:
+                seg_start, seg_dur = seg
+                segment_sidecar = (upload_dir / f"{task_id}_segment.wav").resolve()
+                extract_audio_segment(input_path, segment_sidecar, seg_start, seg_dur)
+                segment_input_path = segment_sidecar
+                task_manager.set_transcription_segment(
+                    task_id,
+                    start_sec=seg_start,
+                    duration_sec=seg_dur,
+                )
+                seg_log_start = seg_start
+                seg_log_dur = seg_dur
+        except SegmentValidationError as e:
+            task_manager.mark_failed(task_id, message=str(e), stage=Stage.preprocessing)
+            _safe_unlink(input_path)
+            if segment_sidecar is not None:
+                _safe_unlink(segment_sidecar)
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            if seg_log_start is not None or segment_start_sec is not None or segment_duration_sec is not None or segment_end_sec is not None:
+                task_manager.mark_failed(task_id, message="segment extraction failed", stage=Stage.preprocessing)
+                _safe_unlink(input_path)
+                if segment_sidecar is not None:
+                    _safe_unlink(segment_sidecar)
+                raise HTTPException(status_code=400, detail="segment extraction failed") from e
+
         logger.info(
             "[H2S timing] POST /generate task_id=%s upload_receive_save_ms=%.1f input_ext=%s input_bytes=%s "
-            "output_format=%s ai_mode_hint=%s vocal_separation=%s",
+            "output_format=%s ai_mode_hint=%s vocal_separation=%s segment_start=%s segment_duration=%s",
             task_id,
             _upload_ms,
             original_ext,
@@ -218,14 +278,22 @@ async def generate_music(
             output_format,
             _ai_mode_hint_for_timing(),
             bool(vocal_separation),
+            seg_log_start,
+            seg_log_dur,
         )
 
-        background_tasks.add_task(
-            generation_service.process_task,
-            UUID(str(task_id)),
-            input_path,
-            output_format,
-        )
+        def _process_and_cleanup_segment() -> None:
+            try:
+                generation_service.process_task(
+                    UUID(str(task_id)),
+                    segment_input_path,
+                    output_format,
+                )
+            finally:
+                if segment_sidecar is not None:
+                    _safe_unlink(segment_sidecar)
+
+        background_tasks.add_task(_process_and_cleanup_segment)
 
     except HTTPException:
         try:
