@@ -75,6 +75,7 @@
     if (!fetchFn) throw new Error('i18n.load: fetch unavailable and opts.fetchFn not provided');
     var base = (opts.baseUrl != null) ? opts.baseUrl : '/static/i18n/locales';
     var url = base.replace(/\/+$/, '') + '/' + String(lang).trim().toLowerCase().slice(0, 8) + '.json';
+    if (G.H2S_STUDIO_ASSET_VERSION) url += '?v=' + encodeURIComponent(String(G.H2S_STUDIO_ASSET_VERSION));
     return fetchFn(url).then(function(r){ if (!r.ok) throw new Error('i18n.load: ' + r.status); return r.json(); }).then(function(d){ register(lang, d); return d; });
   }
 

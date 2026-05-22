@@ -31,11 +31,28 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   console.log('PASS selection segment panel');
 })();
 
+(function testI18nLocaleCacheBust(){
+  const i18nSrc = fs.readFileSync(path.join(repoRoot, 'static', 'i18n', 'i18n.js'), 'utf8');
+  assert(i18nSrc.includes('H2S_STUDIO_ASSET_VERSION'), 'i18n load appends asset version to locale json');
+  console.log('PASS i18n locale cache-bust');
+})();
+
 (function testGenerationRouterSegmentParams(){
   const genSrc = fs.readFileSync(path.join(repoRoot, 'routers', 'generation.py'), 'utf8');
   assert(genSrc.includes('segment_start_sec'), 'generate accepts segment_start_sec');
   assert(genSrc.includes('extract_audio_segment'), 'generate extracts segment');
   console.log('PASS generation segment API');
+})();
+
+(function testIndexCacheBustsSegmentUiScripts(){
+  const indexHtml = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'index.html'), 'utf8');
+  const ver = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'studio_asset_version.js'), 'utf8').match(
+    /H2S_STUDIO_ASSET_VERSION\s*=\s*'([^']+)'/,
+  )[1];
+  assert(indexHtml.includes('library_view.js?v=' + ver), 'index cache-busts library_view');
+  assert(indexHtml.includes('selection_view.js?v=' + ver), 'index cache-busts selection_view');
+  assert(indexHtml.includes('selection_controller.js?v=' + ver), 'index cache-busts selection_controller');
+  console.log('PASS index segment UI cache-bust');
 })();
 
 (function testSegmentI18n(){
