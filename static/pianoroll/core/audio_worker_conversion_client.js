@@ -24,16 +24,19 @@
       if (window.location && window.location.search) {
         var params = new URLSearchParams(window.location.search);
         var q = params.get(FLAG) || params.get('workerConversion');
+        if (q === '0' || q === 'false') return false;
         if (q === '1' || q === 'true') return true;
       }
       var g = window[FLAG];
+      if (g === false || g === '0' || g === 0 || g === 'false') return false;
       if (g === true || g === '1' || g === 1 || g === 'true') return true;
       if (typeof localStorage !== 'undefined') {
         var v = localStorage.getItem(FLAG);
+        if (v === '0' || v === 'false') return false;
         return v === '1' || v === 'true';
       }
     } catch (_e) {}
-    return false;
+    return isCloudMode();
   }
 
   function isCloudMode() {
