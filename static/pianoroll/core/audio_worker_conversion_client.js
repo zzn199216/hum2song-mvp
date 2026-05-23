@@ -33,10 +33,10 @@
       if (typeof localStorage !== 'undefined') {
         var v = localStorage.getItem(FLAG);
         if (v === '0' || v === 'false') return false;
-        return v === '1' || v === 'true';
+        if (v === '1' || v === 'true') return true;
       }
     } catch (_e) {}
-    return isCloudMode();
+    return true;
   }
 
   function isCloudMode() {

@@ -11,7 +11,8 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   const clientSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'core', 'audio_worker_conversion_client.js'), 'utf8');
   assert(clientSrc.includes('H2S_STUDIO_WORKER_CONVERSION_ENABLED'), 'feature flag is checked');
   assert(clientSrc.includes("params.get('workerConversion')"), 'worker conversion can be enabled by iframe query param');
-  assert(clientSrc.includes('return isCloudMode();'), 'worker conversion defaults on in Cloud iframe mode');
+  assert(clientSrc.includes('return true;'), 'worker conversion defaults on when no override is set');
+  assert(clientSrc.includes("if (v === '1' || v === 'true') return true"), 'localStorage enable override is explicit');
   assert(clientSrc.includes("q === '0' || q === 'false'"), 'worker conversion can be explicitly disabled');
   assert(clientSrc.includes('H2S_CLOUD_AUDIO_TO_MIDI_JOB_CREATE'), 'create bridge request');
   assert(clientSrc.includes('H2S_CLOUD_AUDIO_TO_MIDI_JOB_STATUS'), 'status bridge request');
@@ -34,7 +35,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 (function testIndexLoadsWorkerClientBeforeApp(){
   const indexHtml = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'index.html'), 'utf8');
   assert(indexHtml.includes('core/audio_worker_conversion_client.js'), 'index loads worker conversion client');
-  assert(indexHtml.includes('worker-default-v0'), 'index cache-busts worker default release');
+  assert(indexHtml.includes('worker-default-v1'), 'index cache-busts worker default release');
   assert(indexHtml.indexOf('core/audio_worker_conversion_client.js') < indexHtml.indexOf('app.js?v='), 'worker client loads before app');
   console.log('PASS index worker conversion client load order');
 })();

@@ -6279,7 +6279,10 @@ renderTimeline(){
         return tid ? (b + ' (' + _t('convert.taskShort', 'task') + ': ' + tid + '…)') : b;
       };
       if (e.phase === 'queued') return withTask(_t('convert.phase.queued', 'Queued for conversion…'));
-      if (e.phase === 'uploading') return withSeg(_t('convert.phase.uploading', 'Uploading audio for conversion…'));
+      if (e.phase === 'uploading') {
+        if (e.workerRoute === true) return withSeg(_t('convert.phase.workerSubmitting', 'Sending to background worker…'));
+        return withSeg(_t('convert.phase.uploading', 'Uploading audio for conversion…'));
+      }
       if (e.phase === 'processing') return withTask(_t('convert.phase.processing', 'Converting selected segment…'));
       if (e.phase === 'completed') return _t('convert.phase.completed', 'Conversion complete.');
       if (e.phase === 'timed_out') return _t('convert.phase.timedOut', 'Conversion timed out. Try again.');
@@ -6288,7 +6291,8 @@ renderTimeline(){
         if (e.errorBucket === 'segment_extract_failed') return _t('convert.fail.segmentExtract', 'Conversion failed: audio segment extraction failed.');
         if (e.errorBucket === 'basic_pitch_failed') return _t('convert.fail.basicPitch', 'Conversion failed: transcription model failed.');
         if (e.errorBucket === 'score_fetch_failed') return _t('convert.fail.scoreFetch', 'Conversion failed: could not read transcription result.');
-        if (e.errorBucket === 'worker_unavailable') return _t('convert.fail.workerUnavailable', 'Worker conversion is unavailable. Falling back to local conversion.');
+        if (e.errorBucket === 'worker_unavailable') return _t('convert.fail.workerUnavailable', 'Background conversion is unavailable. Switched to fallback conversion.');
+        if (e.errorBucket === 'worker_job_failed') return _t('convert.fail.workerJobFailed', 'Background conversion failed. You can retry or use fallback conversion.');
         if (e.errorBucket === 'timed_out') return _t('convert.phase.timedOut', 'Conversion timed out. Try again.');
         if (e.errorBucket === 'task_failed') return _t('convert.fail.taskFailed', 'Conversion failed on server. Try again.');
         if (e.errorBucket === 'server_unreachable') return _t('convert.fail.serverUnreachable', 'Cannot reach conversion server. Check Studio service and retry.');
@@ -6782,6 +6786,7 @@ renderTimeline(){
       try{
         this._setAudioConvertState(clipId, {
           phase: 'uploading',
+          workerRoute: true,
           taskId: null,
           errorBucket: null,
           segmentStartSec: seg.startSec,
@@ -6819,16 +6824,21 @@ renderTimeline(){
         return { ok: true, workerJobId: workerJobId };
       }catch(e){
         const reason = (e && e.message) ? String(e.message) : 'worker_unavailable';
+        const postAcceptFailure = reason === 'task_failed' || reason === 'score_fetch_failed' || reason === 'worker_timeout';
+        const errorBucket = postAcceptFailure
+          ? (reason === 'worker_timeout' ? 'timed_out' : 'worker_job_failed')
+          : 'worker_unavailable';
         this._setAudioConvertState(clipId, {
           phase: 'failed',
           taskId: null,
           workerJobId: null,
-          errorBucket: reason === 'worker_timeout' ? 'timed_out' : 'worker_unavailable',
+          workerRoute: true,
+          errorBucket: errorBucket,
           segmentStartSec: seg.startSec,
           segmentDurationSec: seg.durationSec,
         });
-        console.warn('[H2S convert] worker phase=failed bucket=worker_unavailable clip_id=' + clipId);
-        return { ok: false, reason: reason };
+        console.warn('[H2S convert] worker phase=failed bucket=' + errorBucket + ' clip_id=' + clipId);
+        return { ok: false, reason: postAcceptFailure ? reason : 'worker_unavailable' };
       }
     },
 
@@ -6889,6 +6899,13 @@ renderTimeline(){
       if (opts.sourceAudioInstanceId) uploadOpts.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
       const workerTry = await this._tryWorkerConvertAudioClipToEditable(clipId, file, seg, opts);
       if (workerTry && workerTry.ok) return { ok: true, workerJobId: workerTry.workerJobId || null };
+      if (workerTry && workerTry.reason && workerTry.reason !== 'worker_unavailable'){
+        const txt = this._audioConvertStatusText(clipId);
+        this.setImportStatus(txt, false);
+        try { alert(txt); } catch (_e) {}
+        this._clearAudioConvertState(clipId, 8000);
+        return { ok: false, reason: workerTry.reason };
+      }
       if (workerTry && workerTry.reason === 'worker_unavailable'){
         this._setAudioConvertState(clipId, {
           phase: 'failed',
@@ -6896,6 +6913,8 @@ renderTimeline(){
           segmentStartSec: seg.startSec,
           segmentDurationSec: seg.durationSec,
         });
+        const fallbackTxt = this._audioConvertStatusText(clipId);
+        if (fallbackTxt) this.setImportStatus(fallbackTxt, true);
       }
       await this.uploadFileAndGenerate(file, uploadOpts);
       return { ok: true };
