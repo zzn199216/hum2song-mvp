@@ -1,2 +1,2 @@
 /** Bumped when pianoroll app.js / cloud_project_bridge.js behavior changes (cache bust). */
-window.H2S_STUDIO_ASSET_VERSION = 'startup-perf-v1';
+window.H2S_STUDIO_ASSET_VERSION = 'worker-conversion-v0';

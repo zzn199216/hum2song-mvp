@@ -21,6 +21,11 @@
 
   function isEnabled() {
     try {
+      if (window.location && window.location.search) {
+        var params = new URLSearchParams(window.location.search);
+        var q = params.get(FLAG) || params.get('workerConversion');
+        if (q === '1' || q === 'true') return true;
+      }
       var g = window[FLAG];
       if (g === true || g === '1' || g === 1 || g === 'true') return true;
       if (typeof localStorage !== 'undefined') {
