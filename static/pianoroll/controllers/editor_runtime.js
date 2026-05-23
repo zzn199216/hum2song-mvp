@@ -1757,13 +1757,6 @@
         const el = doc.getElementById('editorOptStatus');
         if (el) el.textContent = text || '';
       };
-      const shouldBlockCloudLlmOptimize = (opts) => {
-        const g = typeof window !== 'undefined' ? window : null;
-        return !!(g && g.H2S_CLOUD_MODE && opts && opts.requestedPresetId === 'llm_v0');
-      };
-      const showCloudLlmPendingMessage = () => {
-        setEditorOptStatus('云端 AI 优化即将接入；当前可先使用本地确定性优化功能。');
-      };
       const setEditorOptimizeDetailsVisible = (visible) => {
         if (typeof document === 'undefined') return;
         const btns = [
@@ -1838,8 +1831,10 @@
       const llmFriendlyReason = (reason) => {
         const r = (reason != null && typeof reason === 'string') ? reason : '';
         if (/llm_config_missing|llm_client_not_loaded/i.test(r)) return 'Please configure Base URL and Model in Advanced → LLM Settings.';
+        if (/unsupported_request/i.test(r)) return 'This optimize request is not supported here.';
         if (/llm_no_valid_json/i.test(r)) return 'LLM response did not contain a valid JSON patch.';
         if (/quality_velocity_only/i.test(r)) return getQualityGateFailureMessage(true);
+        if (/request input is too large|request is too large|413/i.test(r)) return 'The AI request is too large. Try selecting a shorter clip or clearing assistant history.';
         if (/patch_rejected|ops_not_array|op\[/.test(r)) return 'Patch validation failed (LLM output not accepted).';
         if (/timeout|request timeout/i.test(r)) return 'LLM request timed out.';
         if (/401|403|Unauthorized/i.test(r)) return 'Unauthorized (check token).';
@@ -1964,10 +1959,6 @@
               const app = g.H2SApp;
               if (!app || typeof app.optimizeClip !== 'function') return;
               const opts = readOptimizeOptionsFromUI();
-              if (shouldBlockCloudLlmOptimize(opts)) {
-                showCloudLlmPendingMessage();
-                return;
-              }
               if (app.setOptimizeOptions) app.setOptimizeOptions(opts, clipId);
               const presetId = opts.requestedPresetId;
               setEditorOptStatus('running...');
@@ -2223,10 +2214,6 @@
               const app = g.H2SApp;
               if (!app || typeof app.optimizeClip !== 'function') return;
               const opts = readOptimizeOptionsFromUI();
-              if (shouldBlockCloudLlmOptimize(opts)) {
-                showCloudLlmPendingMessage();
-                return;
-              }
               if (app.setOptimizeOptions) app.setOptimizeOptions(opts, clipId);
               const presetId = opts.requestedPresetId;
               setEditorOptStatus('running...');

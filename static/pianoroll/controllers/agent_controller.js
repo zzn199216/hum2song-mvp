@@ -36,6 +36,77 @@
 
   /** PR-6a: default user prompt when none provided (frontend-only, node-safe). */
   const DEFAULT_OPTIMIZE_USER_PROMPT = 'Apply safe dynamics and timing improvements.';
+  const LLM_V0_MAX_PROMPT_NOTE_ROWS = 80;
+  const LLM_V0_REPAIR_RESPONSE_MAX_CHARS = 800;
+
+  function _chatMessageStats(messages){
+    const arr = Array.isArray(messages) ? messages : [];
+    let totalChars = 0;
+    let maxMessageChars = 0;
+    let assistantMessages = 0;
+    for (let i = 0; i < arr.length; i++){
+      const msg = arr[i] || {};
+      const len = typeof msg.content === 'string' ? msg.content.length : 0;
+      totalChars += len;
+      if (len > maxMessageChars) maxMessageChars = len;
+      if (msg.role === 'assistant') assistantMessages += 1;
+    }
+    return {
+      messagesCount: arr.length,
+      totalChars: totalChars,
+      maxMessageChars: maxMessageChars,
+      historyIncluded: assistantMessages > 0 || arr.length > 2,
+    };
+  }
+
+  function _containsJsonFence(text){
+    return /```(?:json)?\s*[\s\S]*?```/i.test(String(text || ''));
+  }
+
+  function _invalidJsonDiagnostics(text, extractionOutcome, retryAttempted){
+    const s = typeof text === 'string' ? text : '';
+    return {
+      responseChars: s.length,
+      containsJsonFence: _containsJsonFence(s),
+      extractionOutcome: extractionOutcome || 'no_json',
+      retryAttempted: !!retryAttempted,
+    };
+  }
+
+  function _stripThinkBlocks(text){
+    const s = typeof text === 'string' ? text : '';
+    if (!s) return '';
+    return s.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '').replace(/<think\b[^>]*>[\s\S]*$/i, '').trim();
+  }
+
+  function _finishReasonFromResponse(res){
+    if (!res || typeof res !== 'object') return '';
+    if (typeof res.finishReason === 'string') return res.finishReason;
+    const raw = res.raw && typeof res.raw === 'object' ? res.raw : null;
+    if (raw && typeof raw.finish_reason === 'string') return raw.finish_reason;
+    const choices = raw && Array.isArray(raw.choices) ? raw.choices : null;
+    const first = choices && choices[0] && typeof choices[0] === 'object' ? choices[0] : null;
+    if (first && typeof first.finish_reason === 'string') return first.finish_reason;
+    return '';
+  }
+
+  function _boundedModelResponse(text){
+    const s = typeof text === 'string' ? text : '';
+    if (s.length <= LLM_V0_REPAIR_RESPONSE_MAX_CHARS) return s;
+    return s.slice(0, LLM_V0_REPAIR_RESPONSE_MAX_CHARS) + '\n[truncated]';
+  }
+
+  function _buildRepairUserContent(previousText, clipId, safeMode, noteIds){
+    let schema = '{"version":1,"clipId":"' + String(clipId || '<clipId>') + '","ops":[...]}';
+    if (safeMode) schema = '{"version":1,"clipId":"' + String(clipId || '<clipId>') + '","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}';
+    const ids = Array.isArray(noteIds) && noteIds.length ? noteIds.slice(0, LLM_V0_MAX_PROMPT_NOTE_ROWS).join(', ') : '';
+    let body = 'Convert this into exactly one valid Hum2Song patch JSON object in a ```json``` block. No <think>, no hidden reasoning, no prose.\n';
+    body += 'Schema: ' + schema + '\n';
+    if (safeMode) body += 'Only setNote velocity edits are allowed.\n';
+    if (ids) body += 'Allowed noteIds: ' + ids + '\n';
+    body += 'Previous model response:\n<<<\n' + _boundedModelResponse(previousText) + '\n>>>';
+    return body;
+  }
 
   /** llm_v0: bounded outcome marker for patchSummary (never merged into phase1Deterministic). */
   function _llmOutcomeExtra(outcome, extra){
@@ -722,6 +793,7 @@
             examples: [],
           }, _llmOutcomeExtra(oc, { reasonCode: String(reason) }), summaryExtras || {}),
         };
+        if (summaryExtras && summaryExtras.detail != null) o.detail = String(summaryExtras.detail);
         if (o.patchSummary && o.patchSummary.llm) o.llmOutcome = String(o.patchSummary.llm.outcome);
         if (promptTraceCapture.lastAttempt) o.llmPromptTrace = promptTraceCapture.lastAttempt;
         if (failOpts && failOpts.preRequest){
@@ -730,10 +802,15 @@
         return o;
       }
 
-      const cfg = (ROOT.H2S_LLM_CONFIG && typeof ROOT.H2S_LLM_CONFIG.loadLlmConfig === 'function')
-        ? ROOT.H2S_LLM_CONFIG.loadLlmConfig()
+      const cloudClient = (ROOT.H2S_CLOUD_MODE && ROOT.H2S_CLOUD_LLM_CLIENT && typeof ROOT.H2S_CLOUD_LLM_CLIENT.callChatCompletions === 'function')
+        ? ROOT.H2S_CLOUD_LLM_CLIENT
         : null;
-      if (!cfg || typeof cfg.baseUrl !== 'string' || !cfg.baseUrl.trim() || typeof cfg.model !== 'string' || !cfg.model.trim()){
+      const cfg = cloudClient
+        ? { baseUrl: 'cloud-ai-bridge', model: 'cloud-ai', authToken: '', velocityOnly: true }
+        : (ROOT.H2S_LLM_CONFIG && typeof ROOT.H2S_LLM_CONFIG.loadLlmConfig === 'function')
+          ? ROOT.H2S_LLM_CONFIG.loadLlmConfig()
+          : null;
+      if (!cloudClient && (!cfg || typeof cfg.baseUrl !== 'string' || !cfg.baseUrl.trim() || typeof cfg.model !== 'string' || !cfg.model.trim())){
         return Promise.resolve(fail('llm_config_missing', { reason: 'llm_config_missing' }, undefined, { preRequest: true }));
       }
 
@@ -753,7 +830,7 @@
       const noteRows = collectClipNoteRowsForLlm(tracks);
       let noteCount = noteRows.length;
       const noteIds = [];
-      for (let ni = 0; ni < noteRows.length && noteIds.length < 80; ni++){
+      for (let ni = 0; ni < noteRows.length && noteIds.length < LLM_V0_MAX_PROMPT_NOTE_ROWS; ni++){
         noteIds.push(noteRows[ni].noteId);
       }
       let pitchMin = null;
@@ -782,73 +859,17 @@
       let systemMsg;
       if (safeMode){
         // Safe mode: ONLY setNote ops, ONLY velocity field allowed
-        systemMsg = 'You are a music patch generator. Output EXACTLY ONE JSON object wrapped in a single ```json ... ``` code block. No other text before or after the code block.\n\n' +
-          'SAFE MODE (Velocity-only): You MUST output ONLY setNote operations that change ONLY velocity. No other op types or fields are allowed.\n\n' +
-          'Required patch structure:\n' +
-          '{\n' +
-          '  "version": 1,\n' +
-          '  "clipId": "<string>",\n' +
-          '  "ops": [\n' +
-          '    {\n' +
-          '      "op": "setNote",\n' +
-          '      "noteId": "<string>",\n' +
-          '      "velocity": <1-127>\n' +
-          '    }\n' +
-          '  ]\n' +
-          '}\n\n' +
-          'Allowed op type (ONLY):\n' +
-          '- setNote: REQUIRED: op (string, must be "setNote"), noteId (string), velocity (1-127)\n' +
-          '  FORBIDDEN: Do NOT include pitch, startBeat, or durationBeat fields\n' +
-          '  FORBIDDEN: Do NOT use addNote, deleteNote, or moveNote op types\n\n' +
-          'All numeric fields must be finite numbers within stated ranges.\n\n' +
-          'Example (setNote with velocity only):\n' +
-          '{\n' +
-          '  "version": 1,\n' +
-          '  "clipId": "clip_abc123",\n' +
-          '  "ops": [\n' +
-          '    {\n' +
-          '      "op": "setNote",\n' +
-          '      "noteId": "note_xyz",\n' +
-          '      "velocity": 90\n' +
-          '    }\n' +
-          '  ]\n' +
-          '}';
+        systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in a single ```json ... ``` block. No <think>, no hidden reasoning, no explanation, no prose before or after. ' +
+          'Schema: {"version":1,"clipId":"<clipId>","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}. ' +
+          'Safe mode: only setNote velocity edits are allowed. Do not include pitch,startBeat,durationBeat,addNote,deleteNote,moveNote. ' +
+          'Use only noteIds from the prompt.';
       } else {
         // Normal mode: all 4 op types allowed (PR-8B-1 contract)
-        systemMsg = 'You are a music patch generator. Output EXACTLY ONE JSON object wrapped in a single ```json ... ``` code block. No other text before or after the code block.\n\n' +
-          'Required patch structure:\n' +
-          '{\n' +
-          '  "version": 1,\n' +
-          '  "clipId": "<string>",\n' +
-          '  "ops": [\n' +
-          '    {\n' +
-          '      "op": "setNote",\n' +
-          '      "noteId": "<string>",\n' +
-          '      "pitch": <0-127>,\n' +
-          '      "startBeat": <number >= 0>,\n' +
-          '      "durationBeat": <number > 0>,\n' +
-          '      "velocity": <1-127>\n' +
-          '    }\n' +
-          '  ]\n' +
-          '}\n\n' +
-          'Allowed op types (field names must match exactly):\n' +
-          '- setNote: REQUIRED: op (string), noteId (string). At least ONE of: pitch (0-127), velocity (1-127), startBeat (>=0), durationBeat (>0)\n' +
-          '- addNote: REQUIRED: op (string), trackId (string), note (object with: pitch 0-127, startBeat >=0, durationBeat >0, velocity 1-127). Optional: note.id (string)\n' +
-          '- deleteNote: REQUIRED: op (string), noteId (string)\n' +
-          '- moveNote: REQUIRED: op (string), noteId (string), deltaBeat (number)\n\n' +
-          'All numeric fields must be finite numbers within stated ranges.\n\n' +
-          'Example (setNote):\n' +
-          '{\n' +
-          '  "version": 1,\n' +
-          '  "clipId": "clip_abc123",\n' +
-          '  "ops": [\n' +
-          '    {\n' +
-          '      "op": "setNote",\n' +
-          '      "noteId": "note_xyz",\n' +
-          '      "velocity": 90\n' +
-          '    }\n' +
-          '  ]\n' +
-          '}';
+        systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in a single ```json ... ``` block. No <think>, no hidden reasoning, no explanation, no prose before or after. ' +
+          'Schema: {"version":1,"clipId":"<clipId>","ops":[...]}. ' +
+          'Allowed ops: setNote(noteId plus one or more of pitch 0-127,velocity 1-127,startBeat >=0,durationBeat >0), ' +
+          'moveNote(noteId,deltaBeat), deleteNote(noteId), addNote(trackId,note{pitch,startBeat,durationBeat,velocity,id?}). ' +
+          'All numbers must be finite. Use only listed noteIds for setNote/moveNote/deleteNote.';
       }
 
       // PR-8B-1: User message with structured clip hint including allowed noteIds
@@ -866,29 +887,31 @@
         clipHint += '- span: unknown\n';
       }
       clipHint += '- bpm: ' + String(bpm) + '\n';
-      clipHint += '\nNOTE TABLE (beats-only, all editable notes):\n';
+      const promptNoteRows = noteRows.slice(0, LLM_V0_MAX_PROMPT_NOTE_ROWS);
+      clipHint += '\nNOTE TABLE CSV (beats-only';
+      if (noteRows.length > promptNoteRows.length) clipHint += ', first ' + String(promptNoteRows.length) + ' editable notes';
+      clipHint += '):\n';
       if (noteRows.length === 0){
         clipHint += '(none)\n';
       } else {
-        for (let ri = 0; ri < noteRows.length; ri++){
-          const r = noteRows[ri];
-          clipHint += '- trackId=' + r.trackId + ' noteId=' + r.noteId +
-            ' pitch=' + String(r.pitch) + ' startBeat=' + String(r.startBeat) +
-            ' durationBeat=' + String(r.durationBeat) + ' velocity=' + String(r.velocity) + '\n';
+        clipHint += 'trackId,noteId,pitch,startBeat,durationBeat,velocity\n';
+        for (let ri = 0; ri < promptNoteRows.length; ri++){
+          const r = promptNoteRows[ri];
+          clipHint += r.trackId + ',' + r.noteId + ',' + String(r.pitch) + ',' + String(r.startBeat) + ',' + String(r.durationBeat) + ',' + String(r.velocity) + '\n';
         }
       }
       if (noteIds.length > 0){
         clipHint += '\nAllowed noteIds (use ONLY these for setNote/moveNote/deleteNote):\n';
-        clipHint += noteIds.slice(0, 80).join(', ') + '\n';
-        if (finalNoteCount > 80){
-          clipHint += '\n(Clip has ' + String(finalNoteCount) + ' notes total; NOTE TABLE above lists every note. Allowed noteIds line shows first 80 only; do not invent ids.)\n';
+        clipHint += noteIds.slice(0, LLM_V0_MAX_PROMPT_NOTE_ROWS).join(', ') + '\n';
+        if (finalNoteCount > LLM_V0_MAX_PROMPT_NOTE_ROWS){
+          clipHint += '\n(Clip has ' + String(finalNoteCount) + ' notes total; context is bounded to the listed editable notes. Do not invent ids.)\n';
         } else {
           clipHint += '\nIf you use setNote/moveNote/deleteNote, noteId MUST be chosen from the Allowed noteIds list above.\n';
         }
       } else {
         clipHint += '\nNo notes found in clip. Use addNote to create new notes.\n';
       }
-      clipHint += '\nOutput only the patch JSON in a ```json ... ``` block.';
+      clipHint += '\nOutput only final patch JSON in a ```json ... ``` block. Do not include <think>, reasoning, or explanation.';
 
       // PR-B2-min / PR-E3: Goals and Directives from intent + template
       const hasGoals = intent.fixPitch || intent.tightenRhythm || intent.reduceOutliers || !!template;
@@ -908,30 +931,41 @@
       if (!safeMode){
         baseUserContent = 'User prompt may require pitch/timing changes; do not respond with velocity-only unless explicitly requested.\n\n' + baseUserContent;
       }
-      const client = ROOT.H2S_LLM_CLIENT;
+      const client = cloudClient || ROOT.H2S_LLM_CLIENT;
       if (!client || typeof client.callChatCompletions !== 'function' || typeof client.extractJsonObject !== 'function'){
         return Promise.resolve(fail('llm_client_not_loaded', { reason: 'llm_client_not_loaded' }, undefined, { preRequest: true }));
       }
 
+      const repairSystemMsg = 'You repair Hum2Song patch JSON. Output exactly one final JSON patch object in a single ```json ... ``` block. No <think>, no hidden reasoning, no explanation, no prose before or after.';
+
       // PR-8B-2: Inner async function for one attempt (with optional fix hint for retry)
       // PR-8C: Capture debug data (rawText, extractedJson, validateErrors) for final attempt
-      async function attemptOnce(attemptIndex, extraFixHint, debugCapture){
+      async function attemptOnce(attemptIndex, extraFixHint, debugCapture, repairFromText){
         let userContent = baseUserContent;
-        if (attemptIndex === 2 && extraFixHint){
-          const fixPrefix = 'The previous output was invalid for this reason: ' + extraFixHint + '\n\nFix the JSON patch ONLY.\nOutput EXACTLY ONE JSON object in a single ```json``` block. No commentary.\nEnsure it matches the required schema and uses only Allowed noteIds.\n\n---\n\n';
+        let attemptSystemMsg = systemMsg;
+        if (repairFromText != null){
+          attemptSystemMsg = repairSystemMsg;
+          userContent = _buildRepairUserContent(repairFromText, clip && clip.id, safeMode, noteIds);
+        } else if (attemptIndex === 2 && extraFixHint){
+          const fixPrefix = 'The previous output was invalid for this reason: ' + extraFixHint + '\n\nFix the JSON patch ONLY.\nOutput EXACTLY ONE final JSON object in a single ```json``` block. No <think>, no hidden reasoning, no commentary.\nEnsure it matches the required schema and uses only Allowed noteIds.\n\n---\n\n';
           userContent = fixPrefix + baseUserContent;
         }
         const messages = [
-          { role: 'system', content: systemMsg },
+          { role: 'system', content: attemptSystemMsg },
           { role: 'user', content: userContent },
         ];
+        const requestStats = Object.assign(_chatMessageStats(messages), {
+          noteRowsTotal: noteRows.length,
+          noteRowsSent: Math.min(noteRows.length, LLM_V0_MAX_PROMPT_NOTE_ROWS),
+        });
 
         try {
           const pm = patchSummaryBase.promptMeta && typeof patchSummaryBase.promptMeta === 'object' ? patchSummaryBase.promptMeta : null;
+          const traceUserContent = repairFromText != null ? '[repair retry prompt omitted: previous model response not stored]' : userContent;
           promptTraceCapture.lastAttempt = {
             attemptIndex: attemptIndex,
-            finalSystemPrompt: systemMsg,
-            finalUserPrompt: userContent,
+            finalSystemPrompt: attemptSystemMsg,
+            finalUserPrompt: traceUserContent,
             blocks: {
               resolvedTemplateId: template ? template.id : null,
               resolvedIntent: { fixPitch: !!intent.fixPitch, tightenRhythm: !!intent.tightenRhythm, reduceOutliers: !!intent.reduceOutliers },
@@ -940,13 +974,35 @@
               directivesBlock: directivesBlock || '',
               userBody: (effectivePromptInfo && typeof effectivePromptInfo.prompt === 'string') ? effectivePromptInfo.prompt : '',
             },
+            requestStats: requestStats,
           };
+          if (ROOT.H2S_CLOUD_MODE && typeof console !== 'undefined' && console && typeof console.info === 'function'){
+            console.info('[h2s-llm-v0] cloud request', requestStats);
+          }
           const res = await client.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 20000 });
           const text = (res && typeof res.text === 'string') ? res.text : '';
+          const extractionText = _stripThinkBlocks(text);
+          const finishReason = _finishReasonFromResponse(res);
           if (debugCapture) debugCapture.rawText = text;
-          const patchObj = client.extractJsonObject(text);
+          const patchObj = client.extractJsonObject(extractionText);
           if (!patchObj || typeof patchObj !== 'object'){
             if (debugCapture) debugCapture.extractedJson = null;
+            if (debugCapture) debugCapture.invalidJsonDiagnostics = _invalidJsonDiagnostics(text, 'no_json', false);
+            if (String(finishReason).toLowerCase() === 'length'){
+              return {
+                ok: false,
+                reason: 'truncated_generation',
+                detail: 'finish_reason_length',
+                patchSummary: Object.assign({}, patchSummaryBase, {
+                  status: 'failed',
+                  reason: 'truncated_generation',
+                  ops: 0,
+                  byOp: {},
+                  examples: [],
+                  detail: 'finish_reason_length',
+                }, _llmOutcomeExtra('truncated_generation', { detail: 'finish_reason_length' })),
+              };
+            }
             return {
               ok: false,
               reason: 'llm_no_valid_json',
@@ -1172,7 +1228,7 @@
 
       // PR-8B-2: Retry logic - only retry for JSON extraction or validation failures
       // PR-8C: Capture debug data for final attempt (incl. safeModeResolved for console-friendly verification)
-      const debugCapture = { rawText: '', extractedJson: null, validateErrors: [] };
+      const debugCapture = { rawText: '', extractedJson: null, validateErrors: [], invalidJsonDiagnostics: null };
       const attemptLog = [];
       return attemptOnce(1, null, debugCapture).then(function(res1){
         if (res1.ok){
@@ -1184,7 +1240,9 @@
             rawText: debugCapture.rawText || '',
             extractedJson: debugCapture.extractedJson || null,
             errors: debugCapture.validateErrors || [],
+            invalidJsonDiagnostics: debugCapture.invalidJsonDiagnostics || null,
             safeModeResolved: safeMode,
+            requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
           };
           _attachLlmRetryFields(out, attemptLog);
           if (promptTraceCapture.lastAttempt) out.llmPromptTrace = promptTraceCapture.lastAttempt;
@@ -1197,6 +1255,10 @@
           || (res1.reason === 'patch_rejected' && res1LlmOutcome !== 'rejected_quality');
         if (shouldRetry){
           let fixDetail = '';
+          const firstInvalidJsonDiagnostics = debugCapture.invalidJsonDiagnostics
+            ? Object.assign({}, debugCapture.invalidJsonDiagnostics, { retryAttempted: true })
+            : null;
+          const firstRawTextForRepair = debugCapture.rawText || '';
           if (res1.reason === 'llm_no_valid_json'){
             fixDetail = 'no valid JSON object found';
           } else if (res1.reason === 'patch_rejected' && (res1.detail === 'quality_velocity_only' || res1.detail === 'missing pitch change for Fix Pitch' || res1.detail === 'missing timing change for Tighten Rhythm')){
@@ -1218,9 +1280,14 @@
           debugCapture.rawText = '';
           debugCapture.extractedJson = null;
           debugCapture.validateErrors = [];
+          debugCapture.invalidJsonDiagnostics = null;
           attemptLog.push(_llmAttemptSnapshot(1, res1));
-          return attemptOnce(2, fixDetail, debugCapture).then(function(res2){
+          const repairFromText = res1.reason === 'llm_no_valid_json' ? firstRawTextForRepair : null;
+          return attemptOnce(2, fixDetail, debugCapture, repairFromText).then(function(res2){
             attemptLog.push(_llmAttemptSnapshot(2, res2));
+            const finalInvalidJsonDiagnostics = debugCapture.invalidJsonDiagnostics
+              ? Object.assign({}, debugCapture.invalidJsonDiagnostics, { retryAttempted: true })
+              : firstInvalidJsonDiagnostics;
             const out = Object.assign({}, res2);
             out.executionPath = 'llm';
             out.llmDebug = {
@@ -1228,7 +1295,9 @@
               rawText: debugCapture.rawText || '',
               extractedJson: debugCapture.extractedJson || null,
               errors: debugCapture.validateErrors || [],
+              invalidJsonDiagnostics: finalInvalidJsonDiagnostics || null,
               safeModeResolved: safeMode,
+              requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
             };
             _attachLlmRetryFields(out, attemptLog);
             if (promptTraceCapture.lastAttempt) out.llmPromptTrace = promptTraceCapture.lastAttempt;
@@ -1244,7 +1313,9 @@
           rawText: debugCapture.rawText || '',
           extractedJson: debugCapture.extractedJson || null,
           errors: debugCapture.validateErrors || [],
+          invalidJsonDiagnostics: debugCapture.invalidJsonDiagnostics || null,
           safeModeResolved: safeMode,
+          requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
         };
         _attachLlmRetryFields(out, attemptLog);
         if (promptTraceCapture.lastAttempt) out.llmPromptTrace = promptTraceCapture.lastAttempt;

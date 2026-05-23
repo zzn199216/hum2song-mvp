@@ -67,6 +67,8 @@ function makeControllerHarness(seed){
 }
 
 function setMockLlm(mock){
+  globalThis.H2S_CLOUD_MODE = false;
+  globalThis.H2S_CLOUD_LLM_CLIENT = null;
   globalThis.H2S_LLM_CONFIG = {
     loadLlmConfig: () => ({
       baseUrl: mock.baseUrl || 'https://unit.test/v1',
@@ -75,6 +77,25 @@ function setMockLlm(mock){
     }),
   };
   globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: mock.callChatCompletions,
+    extractJsonObject: mock.extractJsonObject,
+  };
+}
+
+function setMockCloudLlm(mock){
+  globalThis.H2S_CLOUD_MODE = true;
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({
+      baseUrl: '',
+      model: '',
+      authToken: 'LOCAL_TOKEN_SHOULD_NOT_BE_USED',
+    }),
+  };
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => { throw new Error('local_llm_should_not_be_used'); },
+    extractJsonObject: () => null,
+  };
+  globalThis.H2S_CLOUD_LLM_CLIENT = {
     callChatCompletions: mock.callChatCompletions,
     extractJsonObject: mock.extractJsonObject,
   };
@@ -248,6 +269,17 @@ async function testPromptIncludesRequiredContext(){
   assert(/large silent tail/i.test(up), 'avoid large silent tail');
   assert(/repeat or continue the pattern until near selectedClip\.spanBeat/i.test(up), 'repeat/continue pattern near spanBeat');
   assert(/both should roughly cover the selected clip unless one is explicitly a short fill/i.test(up), 'two-track rough coverage unless short fill');
+
+  assert(res.llmDebug && res.llmDebug.request, 'safe request diagnostics included');
+  assert(res.llmDebug.request.messagesCount === 2, 'diagnostics messagesCount');
+  assert(res.llmDebug.request.totalChars > 0, 'diagnostics totalChars');
+  assert(res.llmDebug.request.maxMessageChars > 0, 'diagnostics maxMessageChars');
+  assert(res.llmDebug.request.noteRowsTotal === 2, 'diagnostics noteRowsTotal');
+  assert(res.llmDebug.request.noteRowsSent === 2, 'diagnostics noteRowsSent');
+  const safeDiag = JSON.stringify(res.llmDebug.request);
+  assert(safeDiag.indexOf('simple chords') < 0, 'diagnostics do not include user prompt text');
+  assert(safeDiag.indexOf('melodyNoteTableBeat') < 0, 'diagnostics do not include prompt/schema text');
+  assert(res.llmDebug.request.totalChars < 50_000, 'typical arrangement prompt fits free_basic input cap');
 }
 
 async function testRejectsMissingOrAudioSelection(){
@@ -296,6 +328,35 @@ async function testPromptTraceSanitized(){
   assert(res.llmDebug && res.llmDebug.baseUrl, 'safe llm debug fields present');
 }
 
+async function testCloudModeUsesCloudLlmBridge(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  let cloudCalls = 0;
+  const patch = { kind: 'arrangement_patch_v0', version: 1, ops: [] };
+  setMockCloudLlm({
+    callChatCompletions: async (cfg, _messages, opts) => {
+      cloudCalls += 1;
+      assert(cfg && cfg.baseUrl === 'cloud-ai-bridge', 'cloud bridge cfg baseUrl');
+      assert(cfg && cfg.model === 'cloud-ai', 'cloud bridge cfg model');
+      assert(opts && opts.timeoutMs >= 180000, 'arrangement cloud LLM timeout should allow long patch generation');
+      return { text: '```json\n' + JSON.stringify(patch) + '\n```' };
+    },
+    extractJsonObject: (txt) => {
+      const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  });
+  try {
+    const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add chords' });
+    assert(res.ok === true, 'cloud bridge arrangement succeeds');
+    assert(cloudCalls === 1, 'cloud LLM bridge called once');
+    assert(res.llmDebug && res.llmDebug.baseUrl === 'cloud-ai-bridge', 'safe cloud debug baseUrl');
+  } finally {
+    globalThis.H2S_CLOUD_MODE = false;
+    globalThis.H2S_CLOUD_LLM_CLIENT = null;
+  }
+}
+
 async function main(){
   await testValidPatchOneCommit();
   await testInvalidPatchNoCommit();
@@ -304,6 +365,7 @@ async function main(){
   await testPromptIncludesRequiredContext();
   await testRejectsMissingOrAudioSelection();
   await testPromptTraceSanitized();
+  await testCloudModeUsesCloudLlmBridge();
   console.log('PASS arrangement_llm_v0.test.js');
 }
 

@@ -129,6 +129,182 @@
     return (prefix || 'cloud') + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
   }
 
+  function availableCloudAiPresets() {
+    var status = window.H2S_CLOUD_AI_STATUS;
+    var raw = status && status.presets;
+    var presets = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.presets) ? raw.presets : []);
+    return presets.filter(function (p) {
+      return p && typeof p === 'object' && p.id && p.available !== false && p.enabled !== false;
+    });
+  }
+
+  function selectedCloudAiPresetId(cfg) {
+    if (cfg && typeof cfg.presetId === 'string' && cfg.presetId.trim()) return cfg.presetId.trim();
+    var stored = '';
+    try { stored = String(localStorage.getItem('h2s_cloud_ai_selected_preset_id') || '').trim(); } catch (_e) {}
+    var presets = availableCloudAiPresets();
+    if (stored && presets.some(function (p) { return p.id === stored; })) return stored;
+    var preferred = presets.find(function (p) { return p.id === 'pro_quality' || p.id === 'preview_standard' || p.id === 'free_basic'; });
+    return (preferred || presets[0] || {}).id || '';
+  }
+
+  function chatMessageStats(messages) {
+    var arr = Array.isArray(messages) ? messages : [];
+    var totalChars = 0;
+    var maxMessageChars = 0;
+    var assistantMessages = 0;
+    for (var i = 0; i < arr.length; i++) {
+      var m = arr[i] || {};
+      var len = typeof m.content === 'string' ? m.content.length : 0;
+      totalChars += len;
+      if (len > maxMessageChars) maxMessageChars = len;
+      if (m.role === 'assistant') assistantMessages += 1;
+    }
+    return {
+      messagesCount: arr.length,
+      totalChars: totalChars,
+      maxMessageChars: maxMessageChars,
+      historyIncluded: assistantMessages > 0 || arr.length > 2,
+    };
+  }
+
+  function friendlyCloudAiError(error) {
+    var msg = typeof error === 'string' ? error : '';
+    if (/request input is too large|request is too large|413/i.test(msg)) {
+      return 'AI arrangement request is too large for the current plan limit. Try a shorter clip.';
+    }
+    return msg || 'cloud_ai_request_failed';
+  }
+
+  function callCloudChatCompletions(cfg, messages, opts) {
+    if (!window.H2S_CLOUD_MODE && !isCloudModeRequested()) {
+      return Promise.reject(new Error('cloud_ai_bridge_unavailable'));
+    }
+    if (!window.parent || window.parent === window) {
+      return Promise.reject(new Error('cloud_ai_parent_unavailable'));
+    }
+    var presetId = selectedCloudAiPresetId(cfg);
+    if (!presetId) return Promise.reject(new Error('cloud_ai_preset_missing'));
+    var safeMessages = Array.isArray(messages) ? messages.map(function (m) {
+      if (!m || typeof m !== 'object') return null;
+      var role = m.role === 'system' || m.role === 'user' || m.role === 'assistant' ? m.role : null;
+      var content = typeof m.content === 'string' ? m.content : '';
+      return role && content ? { role: role, content: content } : null;
+    }).filter(Boolean) : [];
+    if (!safeMessages.length) return Promise.reject(new Error('cloud_ai_messages_missing'));
+    var diagnostics = chatMessageStats(safeMessages);
+
+    return new Promise(function (resolve, reject) {
+      var requestId = newCloudRequestId('cloud-ai-llm');
+      var timeoutMs = opts && typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0 ? opts.timeoutMs : 180000;
+      var done = false;
+      var timer = null;
+      function cleanup() {
+        if (timer) clearTimeout(timer);
+        window.removeEventListener('h2s-cloud-ai-chat-response', onResponse);
+      }
+      function finish(fn, value) {
+        if (done) return;
+        done = true;
+        cleanup();
+        fn(value);
+      }
+      function onResponse(ev) {
+        var detail = ev && ev.detail ? ev.detail : null;
+        if (!detail || detail.requestId !== requestId) return;
+        if (detail.ok === true) {
+          finish(resolve, {
+            text: typeof detail.text === 'string' ? detail.text : '',
+            raw: {
+              usage: detail.usage || null,
+              finish_reason: detail.finishReason || '',
+              requestId: detail.requestId,
+            },
+          });
+          return;
+        }
+        finish(reject, new Error(friendlyCloudAiError(detail.error || 'cloud_ai_request_failed')));
+      }
+      timer = setTimeout(function () {
+        finish(reject, new Error('cloud_ai_request_timeout'));
+      }, timeoutMs);
+      window.addEventListener('h2s-cloud-ai-chat-response', onResponse);
+      window.H2S_CLOUD_MODE = true;
+      window.H2S_CLOUD_AI_CHAT_REQUEST_ID = requestId;
+      window.H2S_CLOUD_AI_CHAT_RESULT = { loading: true, requestId: requestId };
+      if (typeof console !== 'undefined' && console && typeof console.info === 'function') {
+        console.info('[h2s-cloud-ai] chat request', {
+          requestId: requestId,
+          presetId: presetId,
+          messagesCount: diagnostics.messagesCount,
+          totalChars: diagnostics.totalChars,
+          maxMessageChars: diagnostics.maxMessageChars,
+          historyIncluded: diagnostics.historyIncluded,
+        });
+      }
+      window.parent.postMessage({
+        type: 'H2S_CLOUD_AI_CHAT_REQUEST',
+        requestId: requestId,
+        presetId: presetId,
+        messages: safeMessages,
+        diagnostics: diagnostics,
+      }, '*');
+    });
+  }
+
+  function stripThinkBlocks(text) {
+    var s = typeof text === 'string' ? text : '';
+    if (!s) return '';
+    return s.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '').replace(/<think\b[^>]*>[\s\S]*$/i, '').trim();
+  }
+
+  function extractCloudJsonObject(text) {
+    if (text == null || typeof text !== 'string') return null;
+    var s = stripThinkBlocks(text);
+    if (!s) return null;
+    try {
+      var parsed = JSON.parse(s);
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch (_e1) {}
+    try {
+      var match = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (match && match[1]) {
+        var block = match[1].trim();
+        var p = JSON.parse(block);
+        if (p !== null && typeof p === 'object' && !Array.isArray(p)) return p;
+      }
+    } catch (_e2) {}
+    try {
+      var first = s.indexOf('{');
+      if (first < 0) return null;
+      var depth = 0;
+      var end = -1;
+      for (var i = first; i < s.length; i++) {
+        var ch = s[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            end = i;
+            break;
+          }
+        }
+      }
+      if (end >= first) {
+        var slice = s.slice(first, end + 1);
+        var obj = JSON.parse(slice);
+        if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) return obj;
+      }
+    } catch (_e3) {}
+    return null;
+  }
+
+  window.H2S_CLOUD_LLM_CLIENT = {
+    callCloudChatCompletions: callCloudChatCompletions,
+    callChatCompletions: callCloudChatCompletions,
+    extractJsonObject: extractCloudJsonObject,
+  };
+
   function requestCloudMaterialsList() {
     if (!window.H2S_CLOUD_MODE && !isCloudModeRequested()) return false;
     window.H2S_CLOUD_MODE = true;

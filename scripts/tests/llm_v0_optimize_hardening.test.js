@@ -76,6 +76,11 @@ function loadAgentController(){
   if (globalThis.window && globalThis.window.H2SAgentController) globalThis.H2SAgentController = globalThis.window.H2SAgentController;
 }
 
+function loadLlmClient(){
+  ensureWindowShim();
+  require(path.resolve(__dirname, '../../static/pianoroll/llm_client.js'));
+}
+
 function makeClip(){
   const H2SProject = globalThis.H2SProject;
   const project = {
@@ -96,6 +101,38 @@ function makeClip(){
     }],
   };
   const clip = H2SProject.createClipFromScoreBeat(scoreBeat, { id: 'llm_h1', name: 'h1' });
+  project.clips[clip.id] = clip;
+  project.clipOrder.push(clip.id);
+  if (H2SProject.normalizeProjectRevisionChains) H2SProject.normalizeProjectRevisionChains(project);
+  return { project, clip };
+}
+
+function makeClipWithNoteCount(count){
+  const H2SProject = globalThis.H2SProject;
+  const project = {
+    version: 2,
+    timebase: 'beat',
+    bpm: 120,
+    tracks: [{ id: 'trk_0', name: 'Track 1', instrument: 'default', gainDb: 0, muted: false, trackId: 'trk_0' }],
+    clips: {},
+    clipOrder: [],
+    instances: [],
+    ui: { pxPerBeat: 120, playheadBeat: 0 },
+  };
+  const notes = [];
+  for (let i = 0; i < count; i++){
+    notes.push({
+      id: 'editable_note_' + String(i).padStart(2, '0') + '_cloud_smoke',
+      pitch: 60 + (i % 12),
+      velocity: 80 + (i % 20),
+      startBeat: i * 0.5,
+      durationBeat: 0.5,
+    });
+  }
+  const clip = H2SProject.createClipFromScoreBeat({
+    version: 2,
+    tracks: [{ id: 't0', notes }],
+  }, { id: 'llm_cloud_24', name: 'cloud 24' });
   project.clips[clip.id] = clip;
   project.clipOrder.push(clip.id);
   if (H2SProject.normalizeProjectRevisionChains) H2SProject.normalizeProjectRevisionChains(project);
@@ -137,6 +174,53 @@ async function testAppliedOutcome(){
   assert(res.llmDebug.attemptSummaries[0].outcome === 'applied', 'single attempt outcome');
 }
 
+async function testCloudSmallClipPromptStaysBounded(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClipWithNoteCount(24);
+  let project = proj;
+  const cid = clip.id;
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'editable_note_00_cloud_smoke', velocity: 88 }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+  let capturedMessages = null;
+
+  const prevCloudMode = globalThis.H2S_CLOUD_MODE;
+  const prevCloudClient = globalThis.H2S_CLOUD_LLM_CLIENT;
+  globalThis.H2S_CLOUD_MODE = true;
+  globalThis.H2S_CLOUD_LLM_CLIENT = {
+    callChatCompletions: async (_cfg, messages) => {
+      capturedMessages = messages;
+      return { text: rawText };
+    },
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+
+  try {
+    const ctrl = AgentController.create({
+      getProjectV2: () => project,
+      setProjectFromV2: (p) => { project = p; },
+      persist: () => {},
+      render: () => {},
+    });
+
+    const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'tighten rhythm gently' });
+    assert(res && res.ok === true, 'cloud optimize succeeds');
+    assert(Array.isArray(capturedMessages), 'cloud messages captured');
+    assert(capturedMessages.length === 2, 'cloud request sends system + user messages only');
+    const totalChars = capturedMessages.reduce((sum, m) => sum + String(m.content || '').length, 0);
+    assert(totalChars <= 4000, '24-note cloud prompt should fit free_basic maxInputChars');
+    const serialized = JSON.stringify(capturedMessages);
+    assert(serialized.indexOf('"clips"') < 0 && serialized.indexOf('"instances"') < 0, 'request must not include whole project');
+    assert(serialized.indexOf('llmPromptTrace') < 0 && serialized.indexOf('finalSystemPrompt') < 0, 'request must not include prompt trace/debug');
+  } finally {
+    globalThis.H2S_CLOUD_MODE = prevCloudMode;
+    globalThis.H2S_CLOUD_LLM_CLIENT = prevCloudClient;
+  }
+}
+
 async function testNoOpOutcome(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
@@ -173,6 +257,36 @@ async function testNoOpOutcome(){
   assert(res.llmDebug.attemptSummaries[0].outcome === 'no_op', 'no_op snapshot');
 }
 
+async function testPlainJsonObjectWithoutFenceAccepted(){
+  loadAgentController();
+  loadLlmClient();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+  const client = globalThis.H2S_LLM_CLIENT;
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', velocity: 81 }] };
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: JSON.stringify(patch) }),
+    extractJsonObject: client.extractJsonObject,
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: true }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make smoother' });
+  assert(res && res.ok === true && res.ops === 1, 'plain JSON object accepted');
+  assertLlmRetryMeta(res, { totalAttempts: 1, finalAttemptIndex: 1 });
+}
+
 async function testFailedExtract(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
@@ -200,6 +314,78 @@ async function testFailedExtract(){
   assertLlmOutcomeContract(res, 'failed_extract');
   assertLlmRetryMeta(res, { totalAttempts: 2, finalAttemptIndex: 2 });
   assert(res.llmDebug.attemptSummaries[0].outcome === 'failed_extract' && res.llmDebug.attemptSummaries[1].outcome === 'failed_extract', 'both attempts failed_extract');
+  assert(res.llmDebug.invalidJsonDiagnostics, 'invalid JSON diagnostics');
+  assert(res.llmDebug.invalidJsonDiagnostics.responseChars === 'no json here'.length, 'responseChars');
+  assert(res.llmDebug.invalidJsonDiagnostics.containsJsonFence === false, 'containsJsonFence');
+  assert(res.llmDebug.invalidJsonDiagnostics.extractionOutcome === 'no_json', 'extractionOutcome');
+  assert(res.llmDebug.invalidJsonDiagnostics.retryAttempted === true, 'retryAttempted');
+}
+
+async function testLengthFinishWithoutJsonReportsTruncatedGeneration(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({
+      text: '<think>reasoning consumed the response budget',
+      raw: { choices: [{ finish_reason: 'length' }] },
+    }),
+    extractJsonObject: () => null,
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: true }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'x' });
+  assert(res && res.ok === false, 'truncated generation fails safely');
+  assert(res.reason === 'truncated_generation', 'specific truncation reason');
+  assertLlmOutcomeContract(res, 'truncated_generation');
+  assert(res.patchSummary.detail === 'finish_reason_length', 'truncation detail');
+}
+
+async function testThinkBlockStrippedBeforeJsonExtraction(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', velocity: 80 }] };
+  const rawText = '<think>{"version":1,"clipId":"' + cid + '","ops":[{"op":"deleteNote","noteId":"n0"}]}</think>\n' + JSON.stringify(patch);
+  let extractedInput = '';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText, raw: { choices: [{ finish_reason: 'stop' }] } }),
+    extractJsonObject: (text) => {
+      extractedInput = String(text || '');
+      const s = extractedInput.trim();
+      return s ? JSON.parse(s) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: true }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'x' });
+  assert(res && res.ok === true, 'JSON after think block applies');
+  assert(!/<think/i.test(extractedInput), 'extractor receives text without think block');
+  assertLlmOutcomeContract(res, 'applied');
 }
 
 /** Second attempt succeeds after first JSON extract failure. */
@@ -242,6 +428,80 @@ async function testRetryRecoverFromFailedExtract(){
   assertLlmRetryMeta(res, { totalAttempts: 2, finalAttemptIndex: 2 });
   assert(res.llmDebug.attemptSummaries[0].outcome === 'failed_extract', 'first failed_extract');
   assert(res.llmDebug.attemptSummaries[1].outcome === 'applied', 'second applied');
+}
+
+/** Invalid JSON retry is a compact repair call that includes the previous model response. */
+async function testFailedExtractRepairRetryUsesPreviousResponse(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+
+  const previousModelText = '我会把旋律变得更顺一点，但这里没有JSON。';
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', velocity: 82 }] };
+  const repairedText = '```json\n' + JSON.stringify(patch) + '\n```';
+  const calls = [];
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async (_cfg, messages) => {
+      calls.push(messages);
+      return { text: calls.length === 1 ? previousModelText : repairedText };
+    },
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: true }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make smoother' });
+  assert(res && res.ok === true && res.ops === 1, 'repair retry applied');
+  assert(calls.length === 2, 'one repair retry');
+  assert(calls[1].length === 2, 'repair retry sends system + user only');
+  const repairUser = String(calls[1][1].content || '');
+  assert(repairUser.indexOf('Convert this into exactly one valid Hum2Song patch JSON object') >= 0, 'repair instruction');
+  assert(repairUser.indexOf(previousModelText) >= 0, 'previous model response included');
+  assert(repairUser.indexOf('NOTE TABLE CSV') < 0, 'repair retry should not resend full note table');
+  assert(repairUser.length < 1400, 'repair retry stays bounded');
+  assert(res.llmDebug.invalidJsonDiagnostics.retryAttempted === true, 'diagnostic retryAttempted');
+}
+
+async function testBassRequestIsNotHardRejectedAsUnsupported(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+  let callN = 0;
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => { callN++; return { text: '{}' }; },
+    extractJsonObject: () => null,
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: true }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '给这段加一段bass' });
+  assert(res && res.ok === false, 'direct optimize still fails safely with invalid mock output');
+  assert(res.reason !== 'unsupported_request', 'bass prompt should not hit old unsupported_request hard reject');
+  assert(callN >= 1, 'no pre-request hard reject in llm_v0');
 }
 
 async function testFailedConfig(){
@@ -794,9 +1054,15 @@ async function testFailedRevision(){
 
 async function main(){
   await testAppliedOutcome();
+  await testCloudSmallClipPromptStaysBounded();
   await testNoOpOutcome();
+  await testPlainJsonObjectWithoutFenceAccepted();
   await testFailedExtract();
+  await testLengthFinishWithoutJsonReportsTruncatedGeneration();
+  await testThinkBlockStrippedBeforeJsonExtraction();
   await testRetryRecoverFromFailedExtract();
+  await testFailedExtractRepairRetryUsesPreviousResponse();
+  await testBassRequestIsNotHardRejectedAsUnsupported();
   await testFailedConfig();
   await testFailedClientNotLoaded();
   await testRejectedSafeMode();

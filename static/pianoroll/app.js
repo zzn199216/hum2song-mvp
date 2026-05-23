@@ -371,8 +371,19 @@
     const s = String(text);
     const low = s.toLowerCase();
     if (/加.{0,12}伴奏|伴奏.{0,8}加|配.{0,6}伴奏|添.{0,6}伴奏|来段伴奏|给.{0,8}加.{0,6}伴奏|加段伴奏|帮我加伴奏|添加伴奏|段伴奏/i.test(s)) return true;
-    if (/add\s+accompaniment|accompaniment\s+to|add\s+support|make\s+(this\s+)?fuller/i.test(low)) return true;
+    if (/add\s+accompaniment|accompaniment\s+to|add\s+support|make\s+(this\s+)?fuller|add\s+(a\s+)?chords?|add\s+(a\s+)?drums?/i.test(low)) return true;
+    if (/加.{0,8}和弦|加.{0,8}鼓|加.{0,8}鼓点|配.{0,8}和弦|配.{0,8}鼓/.test(s)) return true;
     return false;
+  }
+
+  function _assistantIsDirectBassIntent(text){
+    if (!text || typeof text !== 'string') return false;
+    const s = String(text).trim();
+    if (!s) return false;
+    const low = s.toLowerCase();
+    const hasBass = /\bbass\b|\bbassline\b|\bbass line\b|贝斯|低音/.test(low) || /贝斯|低音/.test(s);
+    if (!hasBass) return false;
+    return /\badd\b|\bcreate\b|\bgenerate\b|\bwrite\b|\bcompose\b|加|添加|给/.test(low) || /加|添加|给/.test(s);
   }
 
   /**
@@ -1047,6 +1058,10 @@
 
   /** Create Assistant Optimize card + optional AI plan (existing path; mutates self._aiAssistItems). */
   function _assistantFinishOptimizeCardPath(self, text, _t){
+    if (_assistantIsDirectBassIntent(text)){
+      _assistantDispatchAddAccompanimentFlow(self, text, _t);
+      return;
+    }
     const clipId = self.state.selectedClipId;
     if (!clipId){
       self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.selectClipFirst') });
@@ -1106,9 +1121,7 @@
       return;
     }
     if (likelyArr && !clearlyOpt){
-      self._aiAssistItems = self._aiAssistItems || [];
-      self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.intentRouterArrangementHint') });
-      self.render();
+      _assistantDispatchAddAccompanimentFlow(self, text, _t);
       return;
     }
     _assistantFinishOptimizeCardPath(self, text, _t);
@@ -2561,6 +2574,7 @@ async optimizeClip(clipId, optOverride){
     const r = (res && res.reason != null) ? String(res.reason)
       : (res && res.error != null) ? String(res.error) : '';
     const d = (res && res.detail != null) ? String(res.detail) : '';
+    if (r === 'unsupported_request' && d) return d;
     if (r === 'patch_rejected'){
       const friendly = this._friendlyOptimizeRejection(r, d, t);
       if (friendly) return friendly;
@@ -4332,6 +4346,10 @@ ensureTrackButtons(){
       if (!text) return;
       inp.value = '';
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      if (_assistantIsDirectBassIntent(text)){
+        _assistantDispatchAddAccompanimentFlow(this, text, _t);
+        return;
+      }
       if (_tryAssistantBoundedSkillDispatch(this, text, _t)) return;
       const cfg = (typeof globalThis !== 'undefined' && globalThis.H2S_LLM_CONFIG && typeof globalThis.H2S_LLM_CONFIG.loadLlmConfig === 'function')
         ? globalThis.H2S_LLM_CONFIG.loadLlmConfig() : null;
@@ -4358,9 +4376,7 @@ ensureTrackButtons(){
             _assistantFinishOptimizeCardPath(self, text, _t);
             return;
           }
-          self._aiAssistItems = self._aiAssistItems || [];
-          self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.intentRouterArrangementHint') });
-          self.render();
+          _assistantDispatchAddAccompanimentFlow(self, text, _t);
         }).catch(function(){
           _assistantIntentRouterFallbackSend(self, text, _t);
         });
@@ -4375,6 +4391,11 @@ ensureTrackButtons(){
       if (!card) return;
       _syncAssistantCardTemplateFromPlan(card);
       const text = (promptText !== '' && promptText !== null) ? promptText : (card.promptText || '');
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      if (_assistantIsDirectBassIntent(text)){
+        _assistantDispatchAddAccompanimentFlow(this, text, _t);
+        return;
+      }
       const runSnapshot = _buildAssistantRunExecutionSnapshot(card);
       card._assistantRunSnapshot = runSnapshot;
       if (card.reasoningLog && typeof card.reasoningLog === 'object'){
@@ -6793,7 +6814,23 @@ renderTimeline(){
           segmentDurationSec: seg.durationSec,
         });
         this.setImportStatus(this._audioConvertStatusText(clipId), true);
-        const res = await client.convert({ file: file, segment: seg });
+        const res = await client.convert({
+          file: file,
+          segment: seg,
+          onStatus: (status) => {
+            const workerJobId = status && status.jobId ? String(status.jobId) : null;
+            this._setAudioConvertState(clipId, {
+              phase: 'processing',
+              taskId: workerJobId,
+              workerJobId: workerJobId,
+              workerRoute: true,
+              errorBucket: null,
+              segmentStartSec: seg.startSec,
+              segmentDurationSec: seg.durationSec,
+            });
+            this.setImportStatus(this._audioConvertStatusText(clipId), true);
+          },
+        });
         if (!res || !res.ok || !res.scoreDoc) return { ok: false, reason: (res && res.reason) || 'worker_unavailable' };
         const workerJobId = res.workerJobId || null;
         this._setAudioConvertState(clipId, {

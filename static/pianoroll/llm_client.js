@@ -8,6 +8,12 @@
 
   var DEFAULT_TIMEOUT_MS = 20000;
 
+  function stripThinkBlocks(text) {
+    var s = typeof text === "string" ? text : "";
+    if (!s) return "";
+    return s.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "").replace(/<think\b[^>]*>[\s\S]*$/i, "").trim();
+  }
+
   /**
    * Extract a single JSON object from text.
    * Handles: plain JSON, ```json ...``` fenced blocks, text with leading/trailing commentary.
@@ -16,7 +22,7 @@
    */
   function extractJsonObject(text) {
     if (text == null || typeof text !== "string") return null;
-    var s = text.trim();
+    var s = stripThinkBlocks(text);
     if (s === "") return null;
 
     try {

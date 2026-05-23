@@ -68,6 +68,25 @@
     return n;
   }
 
+  function messageDiagnostics(messages, noteRowsTotal, noteRowsSent){
+    const arr = Array.isArray(messages) ? messages : [];
+    let totalChars = 0;
+    let maxMessageChars = 0;
+    for (let i = 0; i < arr.length; i++){
+      const msg = arr[i] || {};
+      const len = typeof msg.content === 'string' ? msg.content.length : 0;
+      totalChars += len;
+      if (len > maxMessageChars) maxMessageChars = len;
+    }
+    return {
+      messagesCount: arr.length,
+      totalChars: totalChars,
+      maxMessageChars: maxMessageChars,
+      noteRowsTotal: isFiniteNumber(Number(noteRowsTotal)) ? Number(noteRowsTotal) : null,
+      noteRowsSent: isFiniteNumber(Number(noteRowsSent)) ? Number(noteRowsSent) : null,
+    };
+  }
+
   function buildMelodyNoteTable(scoreBeat, maxRows){
     const rows = [];
     const tracks = (scoreBeat && Array.isArray(scoreBeat.tracks)) ? scoreBeat.tracks : [];
@@ -320,12 +339,16 @@
         return Object.assign({}, resultBase, { reason: 'arrangement_patch_module_missing' });
       }
 
-      const cfgApi = ROOT.H2S_LLM_CONFIG;
-      const cfg = (cfgApi && typeof cfgApi.loadLlmConfig === 'function') ? cfgApi.loadLlmConfig() : null;
+      const cloudClient = (ROOT.H2S_CLOUD_MODE && ROOT.H2S_CLOUD_LLM_CLIENT && typeof ROOT.H2S_CLOUD_LLM_CLIENT.callChatCompletions === 'function')
+        ? ROOT.H2S_CLOUD_LLM_CLIENT
+        : null;
+      const cfg = cloudClient
+        ? { baseUrl: 'cloud-ai-bridge', model: 'cloud-ai', authToken: '' }
+        : ((ROOT.H2S_LLM_CONFIG && typeof ROOT.H2S_LLM_CONFIG.loadLlmConfig === 'function') ? ROOT.H2S_LLM_CONFIG.loadLlmConfig() : null);
       if (!cfg || !safeTrim(cfg.baseUrl) || !safeTrim(cfg.model)){
         return Object.assign({}, resultBase, { reason: 'llm_config_missing' });
       }
-      const llmClient = ROOT.H2S_LLM_CLIENT;
+      const llmClient = cloudClient || ROOT.H2S_LLM_CLIENT;
       if (!llmClient || typeof llmClient.callChatCompletions !== 'function' || typeof llmClient.extractJsonObject !== 'function'){
         return Object.assign({}, resultBase, { reason: 'llm_client_not_loaded' });
       }
@@ -350,6 +373,9 @@
         { role: 'system', content: promptBuilt.systemPrompt },
         { role: 'user', content: promptBuilt.userPrompt },
       ];
+      const noteRowsTotal = countNotes(selectedScore);
+      const noteRowsSent = buildMelodyNoteTable(selectedScore, 512).length;
+      const requestDiagnostics = messageDiagnostics(messages, noteRowsTotal, noteRowsSent);
       const promptTrace = {
         systemPrompt: promptBuilt.systemPrompt,
         userPrompt: promptBuilt.userPrompt,
@@ -357,9 +383,9 @@
 
       let rawText = '';
       let parsedPatch = null;
-      statusLog('arrangement_v0: llm_request_started', { goal: goal });
+      statusLog('arrangement_v0: llm_request_started', Object.assign({ goal: goal }, requestDiagnostics));
       try {
-        const llmRes = await llmClient.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 20000 });
+        const llmRes = await llmClient.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 180000 });
         rawText = (llmRes && typeof llmRes.text === 'string') ? llmRes.text : '';
         parsedPatch = llmClient.extractJsonObject(rawText);
       } catch (err){
@@ -370,6 +396,7 @@
             callCount: 1,
             model: safeTrim(cfg.model),
             baseUrl: safeTrim(cfg.baseUrl),
+            request: requestDiagnostics,
           },
           promptTrace: promptTrace,
         });
@@ -379,7 +406,7 @@
         return Object.assign({}, resultBase, {
           reason: 'llm_no_valid_json',
           detail: 'no_json_object_extracted',
-          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length },
+          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
           promptTrace: promptTrace,
         });
       }
@@ -406,7 +433,7 @@
           reason: 'patch_validation_failed',
           detail: (validation && Array.isArray(validation.errors)) ? validation.errors.slice(0, 10).join('; ') : 'validation_failed',
           arrangementOutcome: validation || null,
-          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length },
+          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
           promptTrace: promptTrace,
           rawPatch: patch,
           qualityReport: qualityReport,
@@ -419,7 +446,7 @@
           reason: 'patch_apply_failed',
           detail: (applied && Array.isArray(applied.errors)) ? applied.errors.slice(0, 10).join('; ') : 'apply_failed',
           arrangementOutcome: applied || null,
-          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length },
+          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
           promptTrace: promptTrace,
           rawPatch: patch,
           qualityReport: qualityReport,
@@ -446,6 +473,7 @@
           model: safeTrim(cfg.model),
           baseUrl: safeTrim(cfg.baseUrl),
           outputChars: rawText.length,
+          request: requestDiagnostics,
         },
         promptTrace: promptTrace,
         rawPatch: patch,

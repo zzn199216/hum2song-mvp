@@ -18,7 +18,7 @@ function assert(cond, msg) {
 }
 
 // Stub I18N
-const I18N = { t: (k) => { const m = { 'aiAssist.selectClipFirst': 'Select a clip first.', 'aiAssist.selectedClipStale': 'That clip is no longer in the project.', 'aiAssist.skillDisabled': 'That assistant action is unavailable.', 'aiAssist.addClipToTimelineRunning': 'Adding clip to timeline…', 'aiAssist.addClipToTimelineOk': 'Added clip to timeline.', 'aiAssist.addClipToTimelineFail': 'Could not add clip to timeline', 'aiAssist.addClipToTimelineTrackOutOfRange': 'Track {n} is out of range (1-{max}).', 'aiAssist.addClipToTimelineBeatInvalid': 'Beat value must be a non-negative number.', 'aiAssist.addTrackRunning': 'Adding track…', 'aiAssist.addTrackOk': 'Added track {n}.', 'aiAssist.addTrackFail': 'Could not add track', 'aiAssist.selectInstanceFirst': 'Select a timeline instance first.', 'aiAssist.moveInstanceStale': 'That instance is no longer in the project.', 'aiAssist.moveInstanceRunning': 'Moving instance…', 'aiAssist.moveInstanceFail': 'Could not move instance', 'aiAssist.moveInstanceOk': 'Moved {dir} by {delta} beats.', 'aiAssist.moveInstanceOkTrack': 'Moved instance to track {n}.', 'aiAssist.moveInstanceClamped': '(Start clamped to beat 0.)', 'aiAssist.removeInstanceConfirm': 'Remove ({name})?', 'aiAssist.removeInstanceCancelled': 'Remove cancelled.', 'aiAssist.removeInstanceRunning': 'Removing instance…', 'aiAssist.removeInstanceOk': 'Removed timeline instance.', 'aiAssist.removeInstanceFail': 'Could not remove instance', 'aiAssist.dirLeft': 'left', 'aiAssist.dirRight': 'right', 'aiAssist.run': 'Run', 'aiAssist.openOptimize': 'Open Optimize', 'aiAssist.undo': 'Undo', 'aiAssist.noClip': 'No clip selected', 'aiAssist.clipPrefix': 'Clip: ', 'aiAssist.trackPrefix': 'Track ', 'aiAssist.addAccompanimentRunning': 'Adding accompaniment…', 'aiAssist.addAccompanimentOk': 'Accompaniment added. You can open Arrangement Details to inspect the prompt and patch.', 'aiAssist.addAccompanimentFail': 'Could not add accompaniment: {detail}', 'aiAssist.addAccompanimentCancelled': 'Add accompaniment cancelled.', 'aiAssist.addAccompanimentConfirm': 'I\'ll add an experimental accompaniment to the currently selected melody without changing the original. Continue?', 'aiAssist.addAccompanimentContinue': 'Continue', 'aiAssist.addAccompanimentCancel': 'Cancel', 'aiAssist.selectMelodyTimelineFirst': 'Select melody on timeline.', 'aiAssist.addAccompanimentNeedsNoteClip': 'This needs an editable note clip. Convert the audio to editable notes first.', 'aiAssist.intentRouterArrangementHint': 'HINT_ARR', 'aiAssist.intentRouterAccompanimentFaq': 'FAQ_ACCOMP' }; return m[k] || k; } };
+const I18N = { t: (k) => { const m = { 'aiAssist.selectClipFirst': 'Select a clip first.', 'aiAssist.selectedClipStale': 'That clip is no longer in the project.', 'aiAssist.skillDisabled': 'That assistant action is unavailable.', 'aiAssist.addClipToTimelineRunning': 'Adding clip to timeline…', 'aiAssist.addClipToTimelineOk': 'Added clip to timeline.', 'aiAssist.addClipToTimelineFail': 'Could not add clip to timeline', 'aiAssist.addClipToTimelineTrackOutOfRange': 'Track {n} is out of range (1-{max}).', 'aiAssist.addClipToTimelineBeatInvalid': 'Beat value must be a non-negative number.', 'aiAssist.addTrackRunning': 'Adding track…', 'aiAssist.addTrackOk': 'Added track {n}.', 'aiAssist.addTrackFail': 'Could not add track', 'aiAssist.selectInstanceFirst': 'Select a timeline instance first.', 'aiAssist.moveInstanceStale': 'That instance is no longer in the project.', 'aiAssist.moveInstanceRunning': 'Moving instance…', 'aiAssist.moveInstanceFail': 'Could not move instance', 'aiAssist.moveInstanceOk': 'Moved {dir} by {delta} beats.', 'aiAssist.moveInstanceOkTrack': 'Moved instance to track {n}.', 'aiAssist.moveInstanceClamped': '(Start clamped to beat 0.)', 'aiAssist.removeInstanceConfirm': 'Remove ({name})?', 'aiAssist.removeInstanceCancelled': 'Remove cancelled.', 'aiAssist.removeInstanceRunning': 'Removing instance…', 'aiAssist.removeInstanceOk': 'Removed timeline instance.', 'aiAssist.removeInstanceFail': 'Could not remove instance', 'aiAssist.dirLeft': 'left', 'aiAssist.dirRight': 'right', 'aiAssist.run': 'Run', 'aiAssist.openOptimize': 'Open Optimize', 'aiAssist.undo': 'Undo', 'aiAssist.noClip': 'No clip selected', 'aiAssist.clipPrefix': 'Clip: ', 'aiAssist.trackPrefix': 'Track ', 'aiAssist.addBassRunning': 'Adding bass…', 'aiAssist.addBassOk': 'Bass accompaniment added.', 'aiAssist.addBassFail': 'Could not add bass: {detail}', 'aiAssist.addAccompanimentRunning': 'Adding accompaniment…', 'aiAssist.addAccompanimentOk': 'Accompaniment added. You can open Arrangement Details to inspect the prompt and patch.', 'aiAssist.addAccompanimentFail': 'Could not add accompaniment: {detail}', 'aiAssist.addAccompanimentCancelled': 'Add accompaniment cancelled.', 'aiAssist.addAccompanimentConfirm': 'I\'ll add an experimental accompaniment to the currently selected melody without changing the original. Continue?', 'aiAssist.addAccompanimentContinue': 'Continue', 'aiAssist.addAccompanimentCancel': 'Cancel', 'aiAssist.selectMelodyTimelineFirst': 'Select melody on timeline.', 'aiAssist.addAccompanimentNeedsNoteClip': 'This needs an editable note clip. Convert the audio to editable notes first.', 'aiAssist.intentRouterArrangementHint': 'HINT_ARR', 'aiAssist.intentRouterAccompanimentFaq': 'FAQ_ACCOMP' }; return m[k] || k; } };
 
 // UX7b: Minimal INSPECTOR_TEMPLATES + mapper stub (matches app.js behavior)
 const INSPECTOR_TEMPLATES = {
@@ -91,8 +91,18 @@ function testAssistantHeuristicLikelyArrangementAction(text) {
   const s = String(text);
   const low = s.toLowerCase();
   if (/加.{0,12}伴奏|伴奏.{0,8}加|配.{0,6}伴奏|添.{0,6}伴奏|来段伴奏|给.{0,8}加.{0,6}伴奏|加段伴奏|帮我加伴奏|添加伴奏|段伴奏/i.test(s)) return true;
-  if (/add\s+accompaniment|accompaniment\s+to|add\s+support|make\s+(this\s+)?fuller/i.test(low)) return true;
+  if (/add\s+accompaniment|accompaniment\s+to|add\s+support|make\s+(this\s+)?fuller|add\s+(a\s+)?chords?|add\s+(a\s+)?drums?/i.test(low)) return true;
+  if (/加.{0,8}和弦|加.{0,8}鼓|加.{0,8}鼓点|配.{0,8}和弦|配.{0,8}鼓/.test(s)) return true;
   return false;
+}
+
+function testAssistantDirectBassIntent(text) {
+  if (!text || typeof text !== 'string') return false;
+  const s = String(text).trim();
+  const low = s.toLowerCase();
+  const hasBass = /\bbass\b|\bbassline\b|\bbass line\b|贝斯|低音/.test(low) || /贝斯|低音/.test(s);
+  if (!hasBass) return false;
+  return /\badd\b|\bcreate\b|\bgenerate\b|\bwrite\b|\bcompose\b|加|添加|给/.test(low) || /加|添加|给/.test(s);
 }
 
 function testAssistantClearlyOptimizeLikeForSend(text) {
@@ -578,6 +588,7 @@ function createFakeApp(opts) {
   const doc = createStubDocument();
   const setOptimizeOptionsCalls = [];
   const runCommandCalls = [];
+  const addBassCalls = [];
   const addAccompanimentCalls = [];
   const app = {
     state: { selectedClipId: null, selectedInstanceId: null },
@@ -622,6 +633,13 @@ function createFakeApp(opts) {
     getProjectV2() {
       if (opts.projectV2Override) return opts.projectV2Override;
       return { clips: { 'clip-1': { name: 'Test Clip', parentRevisionId: 'rev-0' } } };
+    },
+    addBassFromSelected(instId) {
+      addBassCalls.push({ instanceId: instId });
+      const r = (opts.addBassResult !== undefined && opts.addBassResult !== null)
+        ? opts.addBassResult
+        : { ok: true };
+      return r;
     },
     addAccompanimentFromSelected(instId, runExtra) {
       addAccompanimentCalls.push({ instanceId: instId, runExtra: runExtra || null });
@@ -1064,6 +1082,7 @@ function createFakeApp(opts) {
     if (inp) inp.value = '';
     const _t = this._t;
     const self = this;
+    if (testAssistantDirectBassIntent(text)) return mirrorRunAddAccompanimentFlow(this, text, _t);
     const d = _tryAssistantBoundedSkillDispatchMirror(this, text, _t);
     if (d !== false) return d;
 
@@ -1077,6 +1096,7 @@ function createFakeApp(opts) {
       && client && typeof client.callChatCompletions === 'function' && typeof client.extractJsonObject === 'function');
 
     function finishOptimizeCard() {
+      if (testAssistantDirectBassIntent(text)) return mirrorRunAddAccompanimentFlow(self, text, _t);
       const clipId = self.state.selectedClipId;
       if (!clipId) {
         self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.selectClipFirst') });
@@ -1127,10 +1147,7 @@ function createFakeApp(opts) {
         return Promise.resolve();
       }
       if (likelyArr && !clearlyOpt) {
-        self._aiAssistItems = self._aiAssistItems || [];
-        self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.intentRouterArrangementHint') });
-        self.render();
-        return Promise.resolve();
+        return mirrorRunAddAccompanimentFlow(self, text, _t);
       }
       return finishOptimizeCard();
     }
@@ -1172,10 +1189,7 @@ function createFakeApp(opts) {
         if (clearlyOpt || !likelyArr) {
           return finishOptimizeCard();
         }
-        self._aiAssistItems = self._aiAssistItems || [];
-        self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.intentRouterArrangementHint') });
-        self.render();
-        return undefined;
+        return mirrorRunAddAccompanimentFlow(self, text, _t);
       }).catch(function () {
         return fallbackRouter();
       });
@@ -1189,6 +1203,7 @@ function createFakeApp(opts) {
     if (!card) return;
     syncAssistantCardTemplateFromPlan(card);
     const text = (promptText !== '' && promptText !== null) ? promptText : (card.promptText || '');
+    if (testAssistantDirectBassIntent(text)) return mirrorRunAddAccompanimentFlow(this, text, this._t);
     const runSnapshot = _buildAssistantRunExecutionSnapshot(card);
     card._assistantRunSnapshot = runSnapshot;
     if (card.reasoningLog && typeof card.reasoningLog === 'object') {
@@ -1295,7 +1310,7 @@ function createFakeApp(opts) {
     }
     return prefix + clipName;
   };
-  return { app, setOptimizeOptionsCalls, runCommandCalls, addAccompanimentCalls, doc };
+  return { app, setOptimizeOptionsCalls, runCommandCalls, addBassCalls, addAccompanimentCalls, doc };
 }
 
 (function testDockElementsExist() {
@@ -1912,6 +1927,147 @@ function createFakeApp(opts) {
     });
 })().then(() => { console.log('PASS add accompaniment failure surfaces reason'); }).catch((e) => { console.error(e); process.exit(1); });
 
+(function testDirectBassIntentRoutesToArrangementNoOptimize() {
+  const validV2 = {
+    instances: [{ id: 'ti', clipId: 'cm', startBeat: 0, trackId: 'tk' }],
+    clips: {
+      cm: { name: 'M', score: { tracks: [{ notes: [{ id: 'n', pitch: 60, velocity: 80, startBeat: 0, durationBeat: 1 }] }] } },
+    },
+  };
+  const { app, doc, addBassCalls, setOptimizeOptionsCalls, runCommandCalls, addAccompanimentCalls } = createFakeApp({ projectV2Override: validV2 });
+  app.state.selectedInstanceId = 'ti';
+  app.state.selectedClipId = 'cm';
+  doc.getElementById('aiAssistInput').value = 'add bass';
+  return app._aiAssistSend().then(() => {
+    assert(addBassCalls.length === 0, 'AI assistant add bass must not call deterministic addBassFromSelected');
+    assert(setOptimizeOptionsCalls.length === 0, 'add bass must not create optimize options');
+    assert(runCommandCalls.length === 0, 'add bass must not call optimize runCommand');
+    assert(addAccompanimentCalls.length === 0, 'arrangement waits for explicit Continue');
+    const conf = app._aiAssistItems.find((x) => x.type === 'add_accompaniment_confirm');
+    assert(conf && conf.instanceId === 'ti' && conf.userPrompt === 'add bass', 'add bass creates arrangement confirmation');
+    return app._aiAssistAddAccompanimentContinue(conf._confirmId);
+  }).then(() => {
+    assert(addAccompanimentCalls.length === 1, 'Continue runs arrangement path');
+    assert(addAccompanimentCalls[0].instanceId === 'ti', 'arrangement uses selected instance');
+    assert(addAccompanimentCalls[0].runExtra && addAccompanimentCalls[0].runExtra.userPrompt === 'add bass', 'bass prompt passes to arrangement LLM');
+  });
+})().then(() => { console.log('PASS add bass => arrangement flow, no deterministic bass or optimize'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testDirectChineseBassIntentRoutesToArrangementNoOptimize() {
+  const validV2 = {
+    instances: [{ id: 'ti', clipId: 'cm', startBeat: 0, trackId: 'tk' }],
+    clips: {
+      cm: { name: 'M', score: { tracks: [{ notes: [{ id: 'n', pitch: 60, velocity: 80, startBeat: 0, durationBeat: 1 }] }] } },
+    },
+  };
+  const { app, doc, addBassCalls, setOptimizeOptionsCalls, addAccompanimentCalls } = createFakeApp({ projectV2Override: validV2 });
+  app.state.selectedInstanceId = 'ti';
+  app.state.selectedClipId = 'cm';
+  doc.getElementById('aiAssistInput').value = '\u7ed9\u8fd9\u6bb5\u97f3\u4e50\u52a0\u4e2abass';
+  return app._aiAssistSend().then(() => {
+    assert(addBassCalls.length === 0, 'Chinese bass request must not call deterministic addBassFromSelected');
+    assert(setOptimizeOptionsCalls.length === 0, 'Chinese bass request must not create optimize card/options');
+    assert(addAccompanimentCalls.length === 0, 'Chinese bass request waits for Continue');
+    const conf = app._aiAssistItems.find((x) => x.type === 'add_accompaniment_confirm');
+    assert(conf && conf.instanceId === 'ti' && conf.userPrompt === '\u7ed9\u8fd9\u6bb5\u97f3\u4e50\u52a0\u4e2abass', 'Chinese bass creates arrangement confirmation');
+  });
+})().then(() => { console.log('PASS Chinese add bass => arrangement flow, no deterministic bass or optimize'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testRunOldBassOptimizeCardReroutesToArrangement() {
+  const validV2 = {
+    instances: [{ id: 'ti', clipId: 'cm', startBeat: 0, trackId: 'tk' }],
+    clips: {
+      cm: { name: 'M', score: { tracks: [{ notes: [{ id: 'n', pitch: 60, velocity: 80, startBeat: 0, durationBeat: 1 }] }] } },
+    },
+  };
+  const { app, addBassCalls, addAccompanimentCalls, setOptimizeOptionsCalls, runCommandCalls } = createFakeApp({ projectV2Override: validV2 });
+  app.state.selectedInstanceId = 'ti';
+  app.state.selectedClipId = 'cm';
+  app._aiAssistItems = [{
+    type: 'card',
+    clipId: 'cm',
+    promptText: 'add bass',
+    createdAt: Date.now(),
+    runState: 'idle',
+    plan: { planTitle: 'Optimize', planKind: 'generic', planLines: ['Goal: stale generic.'] },
+  }];
+  return app._aiAssistRun('cm', { getAttribute: (k) => (k === 'data-prompt' ? 'add bass' : null), disabled: false }).then(() => {
+    assert(addBassCalls.length === 0, 'old bass Optimize card must not call deterministic addBassFromSelected');
+    assert(addAccompanimentCalls.length === 0, 'old bass Optimize card creates arrangement confirmation before LLM run');
+    assert(setOptimizeOptionsCalls.length === 0, 'old bass Optimize card must not set optimize options');
+    assert(!runCommandCalls.some(function (c) { return c.command === 'optimize_clip'; }), 'old bass Optimize card must not run optimize_clip');
+    const conf = app._aiAssistItems.find((x) => x.type === 'add_accompaniment_confirm');
+    assert(conf && conf.instanceId === 'ti' && conf.userPrompt === 'add bass', 'old bass card reroutes to arrangement confirmation');
+  });
+})().then(() => { console.log('PASS old add bass Optimize card reroutes to arrangement flow'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testDirectBassRejectsAudioClip() {
+  const v2 = {
+    instances: [{ id: 'ti', clipId: 'aud', startBeat: 0, trackId: 'tk' }],
+    clips: { aud: { kind: 'audio', name: 'Hum' } },
+  };
+  const { app, doc, addBassCalls, addAccompanimentCalls, setOptimizeOptionsCalls } = createFakeApp({ projectV2Override: v2 });
+  app.state.selectedInstanceId = 'ti';
+  app.state.selectedClipId = 'aud';
+  doc.getElementById('aiAssistInput').value = 'add bass';
+  return app._aiAssistSend().then(() => {
+    assert(addBassCalls.length === 0, 'audio clip does not call addBassFromSelected');
+    assert(addAccompanimentCalls.length === 0, 'audio clip does not call arrangement executor');
+    assert(setOptimizeOptionsCalls.length === 0, 'audio clip does not create optimize card/options');
+    assert(app._aiAssistItems.some((x) => x.type === 'sys' && x.text === I18N.t('aiAssist.addAccompanimentNeedsNoteClip')));
+  });
+})().then(() => { console.log('PASS add bass rejects audio clip'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testDirectBassRejectsNoSelectedEditableClip() {
+  const { app, doc, addBassCalls, addAccompanimentCalls, setOptimizeOptionsCalls } = createFakeApp({ projectV2Override: { instances: [], clips: {} } });
+  app.state.selectedInstanceId = null;
+  app.state.selectedClipId = null;
+  doc.getElementById('aiAssistInput').value = 'add bass';
+  return app._aiAssistSend().then(() => {
+    assert(addBassCalls.length === 0, 'no selection does not call addBassFromSelected');
+    assert(addAccompanimentCalls.length === 0, 'no selection does not call arrangement executor');
+    assert(setOptimizeOptionsCalls.length === 0, 'no selection does not create optimize card/options');
+    assert(app._aiAssistItems.some((x) => x.type === 'sys' && x.text === I18N.t('aiAssist.selectMelodyTimelineFirst')));
+  });
+})().then(() => { console.log('PASS add bass rejects missing selection'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testMelodySmoothingStillCreatesOptimizeCard() {
+  const { app, doc, addBassCalls, addAccompanimentCalls } = createFakeApp();
+  app.state.selectedClipId = 'clip-1';
+  doc.getElementById('aiAssistInput').value = 'Make this melody slightly smoother';
+  app._aiAssistSend();
+  assert(addBassCalls.length === 0, 'smoothing does not call add bass');
+  assert(addAccompanimentCalls.length === 0, 'smoothing does not call accompaniment');
+  assert(app._aiAssistItems.length === 1 && app._aiAssistItems[0].type === 'card', 'smoothing still creates optimize card');
+  console.log('PASS melody smoothing stays on optimize path');
+})();
+
+(function testBroadAccompanimentIntentRoutesToArrangementFlow() {
+  const validV2 = {
+    instances: [{ id: 'ti', clipId: 'cm', startBeat: 0, trackId: 'tk' }],
+    clips: {
+      cm: { name: 'M', score: { tracks: [{ notes: [{ id: 'n', pitch: 60, velocity: 80, startBeat: 0, durationBeat: 1 }] }] } },
+    },
+  };
+  const { app, doc, addBassCalls, addAccompanimentCalls, setOptimizeOptionsCalls } = createFakeApp({ projectV2Override: validV2 });
+  app.state.selectedInstanceId = 'ti';
+  app.state.selectedClipId = 'cm';
+  doc.getElementById('aiAssistInput').value = 'add drums';
+  return app._aiAssistSend()
+    .then(() => {
+      assert(addBassCalls.length === 0, 'drums request is broader accompaniment, not bass-only');
+      assert(addAccompanimentCalls.length === 0, 'broader accompaniment waits for confirmation');
+      assert(setOptimizeOptionsCalls.length === 0, 'broader accompaniment does not create optimize card/options');
+      const conf = app._aiAssistItems.find((x) => x.type === 'add_accompaniment_confirm');
+      assert(conf && conf.instanceId === 'ti' && conf.userPrompt === 'add drums', 'broader accompaniment confirm card');
+      return app._aiAssistAddAccompanimentContinue(conf._confirmId);
+    })
+    .then(() => {
+      assert(addAccompanimentCalls.length === 1, 'broader accompaniment calls addAccompanimentFromSelected after continue');
+      assert(addAccompanimentCalls[0].runExtra.userPrompt === 'add drums', 'passes full broader request');
+    });
+})().then(() => { console.log('PASS add drums => addAccompanimentFromSelected flow'); }).catch((e) => { console.error(e); process.exit(1); });
+
 (function testAppJsBoundedResolverRegistryAndOrder() {
   const fs = require('fs');
   const appPath = path.join(__dirname, '../../static/pianoroll/app.js');
@@ -1925,6 +2081,9 @@ function createFakeApp(opts) {
   assert(s.includes('_tryAssistantBoundedSkillDispatch(this, text, _t)'), '_aiAssistSend calls bounded dispatch');
   assert(s.includes('_assistantCallIntentRouterLlm'), 'intent router calls LLM');
   assert(s.includes('_assistantFinishOptimizeCardPath'), 'optimize card path extracted');
+  assert(s.includes('_assistantIsDirectBassIntent(text)'), '_aiAssistSend recognizes direct bass before optimize');
+  assert(s.includes('_assistantDispatchAddAccompanimentFlow(this, text, _t)'), 'direct bass send routes through arrangement flow');
+  assert(!s.includes('_assistantDispatchAddBassFlow(this, text, _t)'), 'assistant send must not call deterministic addBassFromSelected flow');
   assert(s.includes("type: 'add_accompaniment_confirm'"), 'add accompaniment uses inline confirm item, not window.confirm');
   assert(s.includes('data-act="aiAddAccompanimentContinue"') && s.includes('data-act="aiAddAccompanimentCancel"'), 'dock renders Continue/Cancel for add accompaniment');
   const flowStart = s.indexOf('function _assistantDispatchAddAccompanimentFlow');
