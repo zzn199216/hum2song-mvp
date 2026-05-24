@@ -5867,6 +5867,12 @@ renderTimeline(){
     async pickWavAndGenerate(){
       const f = await this.pickFile('.wav,.mp3,.m4a,.flac,.ogg');
       if (!f) return;
+      const workerTry = await this._tryWorkerConvertFileToEditable(f, { kind: 'import' });
+      if (workerTry && workerTry.ok) return;
+      if (workerTry && workerTry.reason){
+        const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+        this.setImportStatus(_t('convert.phase.workerFallback', 'Background conversion unavailable. Using fallback conversion…'), true);
+      }
       await this.uploadFileAndGenerate(f);
     },
 
@@ -6798,6 +6804,98 @@ renderTimeline(){
       return { ok: true, clipId: clip.id };
     },
 
+    _materializeWorkerFileScoreAsClip(file, scoreForClip, workerJobId, opts){
+      opts = opts || {};
+      const P = window.H2SProject;
+      if (!P || typeof P.createClipFromScore !== 'function') return { ok: false, reason: 'project_api_missing' };
+      const nameFromFile = (file && file.name && /\.[^/.]+$/.test(String(file.name)))
+        ? String(file.name).replace(/\.[^/.]+$/, '')
+        : '';
+      const baseName = (typeof opts.baseName === 'string' && opts.baseName.trim())
+        ? opts.baseName.trim()
+        : (nameFromFile || (opts.kind === 'recording' ? 'Recording' : 'Imported audio'));
+      const playheadSec = this.project && this.project.ui ? Number(this.project.ui.playheadSec || 0) : 0;
+      if ((this.project.clips || []).length === 0){
+        const srcBpm = (typeof scoreForClip.tempo_bpm === 'number') ? scoreForClip.tempo_bpm : ((typeof scoreForClip.bpm === 'number') ? scoreForClip.bpm : null);
+        if (typeof srcBpm === 'number' && isFinite(srcBpm) && srcBpm >= 30 && srcBpm <= 300){
+          this.project.bpm = srcBpm;
+          const el = $('#bpm');
+          if (el) el.value = String(Math.round(srcBpm));
+        }
+      }
+      const clip = P.createClipFromScore(scoreForClip, { name: baseName, sourceTaskId: workerJobId || 'worker_full_audio' });
+      if (!clip.meta) clip.meta = {};
+      clip.meta.workerJobId = workerJobId || null;
+      clip.meta.workerConversionSource = 'worker_full_audio';
+      if (opts.kind) clip.meta.workerConversionKind = String(opts.kind);
+      if (opts.segmentStartSec != null) clip.meta.segmentStartSec = Number(opts.segmentStartSec);
+      if (opts.segmentDurationSec != null) clip.meta.segmentDurationSec = Number(opts.segmentDurationSec);
+      if (typeof scoreForClip.tempo_bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.tempo_bpm;
+      else if (typeof scoreForClip.bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.bpm;
+      this.project.clips.unshift(clip);
+      this.addClipToTimeline(clip.id, playheadSec, 0);
+      persist();
+      this.render();
+      log('Clip added: ' + clip.name);
+      const shouldAutoOpen = !!(this.state.autoOpenAfterImport && typeof this.openClipEditor === 'function' && !_importTooLargeForAutoOpen(clip));
+      this.setImportStatus(this._buildImportSuccessStatus({ clipCount: 1, autoOpen: shouldAutoOpen }), false);
+      if (shouldAutoOpen) setTimeout(() => this.openClipEditor(clip.id), 0);
+      setTimeout(() => this.setImportStatus('', false), this._importSuccessStatusClearMs({ autoOpen: shouldAutoOpen }));
+      return { ok: true, clipId: clip.id };
+    },
+
+    async _tryWorkerConvertFileToEditable(file, opts){
+      opts = opts || {};
+      const client = (typeof window !== 'undefined') ? window.H2SAudioWorkerConversionClient : null;
+      if (!file || !(file instanceof Blob)) return { ok: false, reason: 'bad_args' };
+      if (!client || typeof client.isEnabled !== 'function' || !client.isEnabled() || typeof client.convert !== 'function'){
+        return { ok: false, reason: 'worker_unavailable' };
+      }
+      if (typeof client.isCloudMode === 'function' && !client.isCloudMode()){
+        return { ok: false, reason: 'worker_unavailable' };
+      }
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+      const kind = opts.kind === 'recording' ? 'recording' : 'import';
+      const statusKey = kind === 'recording' ? 'convert.phase.workerRecording' : 'convert.phase.workerImport';
+      const statusDefault = kind === 'recording'
+        ? 'Converting recording with background worker...'
+        : 'Converting imported audio with background worker...';
+      try{
+        let durationSec = 0;
+        try{
+          durationSec = await this._decodeAudioFileDurationSec(file);
+        }catch(e){
+          console.warn('[H2S convert] worker full-audio duration decode failed; fallback will be used');
+          return { ok: false, reason: 'segment_extract_failed' };
+        }
+        if (!isFinite(durationSec) || durationSec <= 0) return { ok: false, reason: 'segment_extract_failed' };
+        const seg = { startSec: 0, durationSec };
+        this.setImportStatus(_t(statusKey, statusDefault), true);
+        const res = await client.convert({
+          file: file,
+          segment: seg,
+          onStatus: () => {
+            this.setImportStatus(_t(statusKey, statusDefault), true);
+          },
+        });
+        if (!res || !res.ok || !res.scoreDoc) return { ok: false, reason: (res && res.reason) || 'worker_unavailable' };
+        const workerJobId = res.workerJobId || null;
+        const mat = this._materializeWorkerFileScoreAsClip(file, res.scoreDoc, workerJobId, {
+          kind,
+          baseName: opts.baseName,
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+        if (!mat || !mat.ok) return { ok: false, reason: 'score_fetch_failed' };
+        console.info('[H2S convert] worker full-audio phase=completed job_id=' + String(workerJobId || '').slice(0, 8) + ' kind=' + kind);
+        return { ok: true, workerJobId: workerJobId, clipId: mat.clipId || null };
+      }catch(e){
+        const reason = (e && e.message) ? String(e.message) : 'worker_unavailable';
+        console.warn('[H2S convert] worker full-audio fallback reason=' + reason + ' kind=' + kind);
+        return { ok: false, reason };
+      }
+    },
+
     async _tryWorkerConvertAudioClipToEditable(clipId, file, seg, opts){
       opts = opts || {};
       const client = (typeof window !== 'undefined') ? window.H2SAudioWorkerConversionClient : null;
@@ -7357,8 +7455,18 @@ renderTimeline(){
       this._recordedChunks = null;
     },
 
-    useLastRecording(){
+    async useLastRecording(){
       if (!this.state.lastRecordedFile) return;
+      try{
+        const workerTry = await this._tryWorkerConvertFileToEditable(this.state.lastRecordedFile, { kind: 'recording', baseName: 'Recording' });
+        if (workerTry && workerTry.ok) return;
+        if (workerTry && workerTry.reason){
+          const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+          this.setImportStatus(_t('convert.phase.workerFallback', 'Background conversion unavailable. Using fallback conversion…'), true);
+        }
+      }catch(_e){
+        // Fall through to the existing /generate path.
+      }
       this.uploadFileAndGenerate(this.state.lastRecordedFile);
     },
 
