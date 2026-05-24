@@ -5,6 +5,9 @@
   var FLAG = 'H2S_STUDIO_WORKER_CONVERSION_ENABLED';
   var POLL_MS = 2750;
   var MAX_WAIT_MS = 600000;
+  var CREATE_UPLOAD_RPC_TIMEOUT_MS = 120000;
+  var STATUS_RPC_TIMEOUT_MS = 45000;
+  var RESULT_RPC_TIMEOUT_MS = 90000;
   var ALLOWED_HOSTS = {
     'https://hum2song.cn': true,
     'http://localhost:3000': true,
@@ -51,7 +54,17 @@
     return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
   }
 
-  function requestHost(type, payload, transfer) {
+  function diag(stage, data) {
+    if (typeof console === 'undefined' || !console || typeof console.info !== 'function') return;
+    var out = { stage: stage };
+    var src = data && typeof data === 'object' ? data : {};
+    ['durationMs', 'elapsedMs', 'timeoutMs', 'jobId', 'status', 'attempt'].forEach(function (k) {
+      if (src[k] != null) out[k] = src[k];
+    });
+    console.info('[H2S worker_convert_diag]', out);
+  }
+
+  function requestHost(type, payload, transfer, opts) {
     return new Promise(function (resolve, reject) {
       if (!isCloudMode()) {
         reject(new Error('worker_unavailable'));
@@ -59,10 +72,13 @@
       }
       var id = reqId('audio-midi');
       var responseType = type + '_RESPONSE';
+      var timeoutMs = opts && typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0 ? opts.timeoutMs : STATUS_RPC_TIMEOUT_MS;
       var timeout = setTimeout(function () {
         window.removeEventListener('message', onMsg);
-        reject(new Error('worker_timeout'));
-      }, 30000);
+        var err = new Error('worker_timeout');
+        err.h2sStage = opts && opts.stage ? String(opts.stage) : type;
+        reject(err);
+      }, timeoutMs);
       function onMsg(ev) {
         if (!ALLOWED_HOSTS[String(ev.origin || '')]) return;
         var data = ev && ev.data;
@@ -142,35 +158,133 @@
     }
   }
 
+  function isWorkerTimeout(err) {
+    return !!(err && err.message && String(err.message) === 'worker_timeout');
+  }
+
+  function emitStatus(options, status) {
+    if (!options || typeof options.onStatus !== 'function') return;
+    try { options.onStatus(status || {}); } catch (_e) {}
+  }
+
+  async function fetchResult(jobId, finalAttempt) {
+    var t0 = nowMs();
+    diag(finalAttempt ? 'result_final_start' : 'result_start', { jobId: jobId, timeoutMs: RESULT_RPC_TIMEOUT_MS });
+    var result = await requestHost('H2S_CLOUD_AUDIO_TO_MIDI_JOB_RESULT', { jobId: jobId }, null, {
+      timeoutMs: RESULT_RPC_TIMEOUT_MS,
+      stage: finalAttempt ? 'result_final' : 'result',
+    });
+    diag(finalAttempt ? 'result_final_end' : 'result_end', { jobId: jobId, durationMs: Math.round(nowMs() - t0) });
+    if (!result.scoreDoc) throw new Error('score_fetch_failed');
+    return result;
+  }
+
+  async function finalCheckAfterTimeout(jobId, reason) {
+    if (!jobId) throw new Error(reason || 'worker_timeout');
+    diag('final_check_start', { jobId: jobId });
+    var st = null;
+    try {
+      st = await requestHost('H2S_CLOUD_AUDIO_TO_MIDI_JOB_STATUS', { jobId: jobId }, null, {
+        timeoutMs: STATUS_RPC_TIMEOUT_MS,
+        stage: 'status_final',
+      });
+    } catch (err) {
+      diag('final_status_failed', { jobId: jobId });
+      throw new Error(reason || 'worker_timeout');
+    }
+    var sj = st && st.job ? st.job : {};
+    diag('final_status_end', { jobId: jobId, status: sj.status || '' });
+    if (sj.status === 'succeeded') {
+      return fetchResult(jobId, true);
+    }
+    if (sj.status === 'failed' || sj.status === 'cancelled') throw new Error('task_failed');
+    throw new Error(reason || 'worker_timeout');
+  }
+
   async function convert(options) {
     options = options || {};
     if (!isEnabled() || !isCloudMode()) return { ok: false, reason: 'worker_unavailable' };
     var file = options.file;
     var segment = options.segment;
     if (!file || !segment) return { ok: false, reason: 'bad_args' };
+    var encodeStart = nowMs();
+    diag('encode_start', {
+      durationMs: 0,
+    });
     var audioBuffer = await segmentToWavArrayBuffer(file, segment);
+    diag('encode_end', { durationMs: Math.round(nowMs() - encodeStart) });
+    var createStart = nowMs();
+    diag('job_create_upload_start', { timeoutMs: CREATE_UPLOAD_RPC_TIMEOUT_MS });
     var created = await requestHost('H2S_CLOUD_AUDIO_TO_MIDI_JOB_CREATE', {
       filename: 'studio-selected-segment.wav',
       mimeType: 'audio/wav',
       segmentStartSec: Number(segment.startSec || 0),
       segmentDurationSec: Number(segment.durationSec || 0),
       audioBuffer: audioBuffer,
-    }, [audioBuffer]);
+    }, [audioBuffer], { timeoutMs: CREATE_UPLOAD_RPC_TIMEOUT_MS, stage: 'job_create_upload' });
     var job = created.job || {};
     var jobId = typeof job.id === 'string' ? job.id : '';
     if (!jobId) throw new Error('worker_failed');
+    diag('job_create_upload_end', { jobId: jobId, status: job.status || '', durationMs: Math.round(nowMs() - createStart) });
+    emitStatus(options, { phase: 'processing', jobId: jobId, status: job.status || 'queued' });
     var started = nowMs();
-    for (;;) {
-      if (nowMs() - started > MAX_WAIT_MS) throw new Error('worker_timeout');
-      var st = await requestHost('H2S_CLOUD_AUDIO_TO_MIDI_JOB_STATUS', { jobId: jobId });
-      var sj = st.job || {};
-      if (sj.status === 'failed' || sj.status === 'cancelled') throw new Error('task_failed');
-      if (sj.status === 'succeeded') break;
-      await new Promise(function (r) { setTimeout(r, POLL_MS); });
+    try {
+      var lastStatus = '';
+      var pollCount = 0;
+      for (;;) {
+        var elapsed = nowMs() - started;
+        if (elapsed > MAX_WAIT_MS) {
+          var finalResult = await finalCheckAfterTimeout(jobId, 'worker_timeout');
+          return { ok: true, workerJobId: jobId, scoreDoc: finalResult.scoreDoc };
+        }
+        pollCount += 1;
+        if (pollCount === 1) diag('first_status_poll', { jobId: jobId, elapsedMs: Math.round(elapsed), timeoutMs: STATUS_RPC_TIMEOUT_MS });
+        var st;
+        try {
+          st = await requestHost('H2S_CLOUD_AUDIO_TO_MIDI_JOB_STATUS', { jobId: jobId }, null, {
+            timeoutMs: STATUS_RPC_TIMEOUT_MS,
+            stage: 'status',
+          });
+        } catch (err) {
+          if (isWorkerTimeout(err) && nowMs() - started <= MAX_WAIT_MS) {
+            diag('status_rpc_timeout_keep_polling', { jobId: jobId, elapsedMs: Math.round(nowMs() - started), timeoutMs: STATUS_RPC_TIMEOUT_MS });
+            await new Promise(function (r) { setTimeout(r, POLL_MS); });
+            continue;
+          }
+          throw err;
+        }
+        var sj = st.job || {};
+        if (sj.status && sj.status !== lastStatus) {
+          lastStatus = sj.status;
+          diag('status_transition', { jobId: jobId, status: sj.status, elapsedMs: Math.round(nowMs() - started), attempt: sj.attempt });
+          emitStatus(options, { phase: 'processing', jobId: jobId, status: sj.status, attempt: sj.attempt });
+        }
+        if (sj.status === 'failed' || sj.status === 'cancelled') throw new Error('task_failed');
+        if (sj.status === 'succeeded') break;
+        await new Promise(function (r) { setTimeout(r, POLL_MS); });
+      }
+      var result;
+      try {
+        diag('materialization_start', { jobId: jobId });
+        result = await fetchResult(jobId, false);
+      } catch (err) {
+        if (isWorkerTimeout(err)) {
+          result = await finalCheckAfterTimeout(jobId, 'worker_timeout');
+        } else {
+          throw err;
+        }
+      }
+      diag('materialization_end', { jobId: jobId, durationMs: Math.round(nowMs() - started) });
+      return { ok: true, workerJobId: jobId, scoreDoc: result.scoreDoc };
+    } catch (err) {
+      if (err && err.message && String(err.message) === 'task_failed') throw err;
+      try {
+        var recovered = await finalCheckAfterTimeout(jobId, (err && err.message) ? String(err.message) : 'worker_failed');
+        return { ok: true, workerJobId: jobId, scoreDoc: recovered.scoreDoc };
+      } catch (_finalErr) {
+        throw err;
+      }
     }
-    var result = await requestHost('H2S_CLOUD_AUDIO_TO_MIDI_JOB_RESULT', { jobId: jobId });
-    if (!result.scoreDoc) throw new Error('score_fetch_failed');
-    return { ok: true, workerJobId: jobId, scoreDoc: result.scoreDoc };
   }
 
   var api = {
@@ -178,6 +292,12 @@
     isCloudMode: isCloudMode,
     convert: convert,
     _encodeWav: encodeWav,
+    _timeouts: {
+      createUploadMs: CREATE_UPLOAD_RPC_TIMEOUT_MS,
+      statusMs: STATUS_RPC_TIMEOUT_MS,
+      resultMs: RESULT_RPC_TIMEOUT_MS,
+      maxWaitMs: MAX_WAIT_MS,
+    },
   };
 
   if (typeof window !== 'undefined') {
