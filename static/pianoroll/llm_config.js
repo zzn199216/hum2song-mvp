@@ -9,7 +9,7 @@
   const KEY = "hum2song_studio_llm_config";
 
   // PR-8D: Default safe mode ON (velocity-only)
-  const DEFAULTS = { baseUrl: "", model: "", authToken: "", velocityOnly: true };
+  const DEFAULTS = { baseUrl: "", model: "", authToken: "", velocityOnly: true, modelProfileId: "auto" };
 
   // PR-8J: Get runtime defaults (merge internal DEFAULTS with H2S_LLM_DEFAULTS if present)
   function getRuntimeDefaults() {
@@ -20,6 +20,7 @@
         if (typeof extDefaults.baseUrl === "string") runtime.baseUrl = extDefaults.baseUrl;
         if (typeof extDefaults.model === "string") runtime.model = extDefaults.model;
         if (typeof extDefaults.velocityOnly === "boolean") runtime.velocityOnly = extDefaults.velocityOnly;
+        if (typeof extDefaults.modelProfileId === "string" && extDefaults.modelProfileId.trim()) runtime.modelProfileId = extDefaults.modelProfileId.trim();
         // DO NOT take authToken from defaults (security: no secrets in defaults file)
       }
     } catch (_) {}
@@ -39,6 +40,7 @@
         model: typeof parsed.model === "string" ? parsed.model : runtimeDefaults.model,
         authToken: typeof parsed.authToken === "string" ? parsed.authToken : "",
         velocityOnly: typeof parsed.velocityOnly === "boolean" ? parsed.velocityOnly : runtimeDefaults.velocityOnly,
+        modelProfileId: typeof parsed.modelProfileId === "string" && parsed.modelProfileId.trim() ? parsed.modelProfileId.trim() : runtimeDefaults.modelProfileId,
       };
     } catch (_) {
       return runtimeDefaults;
@@ -53,6 +55,7 @@
       model: typeof config.model === "string" ? config.model : "",
       authToken: typeof config.authToken === "string" ? config.authToken : "",
       velocityOnly: typeof config.velocityOnly === "boolean" ? config.velocityOnly : true,
+      modelProfileId: typeof config.modelProfileId === "string" && config.modelProfileId.trim() ? config.modelProfileId.trim() : "auto",
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(payload));

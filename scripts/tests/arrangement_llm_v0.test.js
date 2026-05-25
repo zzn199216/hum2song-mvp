@@ -104,6 +104,7 @@ function setMockCloudLlm(mock){
       baseUrl: '',
       model: '',
       authToken: 'LOCAL_TOKEN_SHOULD_NOT_BE_USED',
+      modelProfileId: mock.modelProfileId || 'qwen36_plus',
     }),
   };
   globalThis.H2S_LLM_CLIENT = {
@@ -391,6 +392,7 @@ async function testCloudModeUsesCloudLlmBridge(){
       cloudCalls += 1;
       assert(cfg && cfg.baseUrl === 'cloud-ai-bridge', 'cloud bridge cfg baseUrl');
       assert(cfg && cfg.model === 'cloud-ai', 'cloud bridge cfg model');
+      assert(cfg && cfg.modelProfileId === 'qwen36_plus', 'cloud bridge cfg should carry selected modelProfileId');
       assert(opts && opts.timeoutMs >= 180000, 'arrangement cloud LLM timeout should allow long patch generation');
       return { text: '```json\n' + JSON.stringify(patch) + '\n```' };
     },

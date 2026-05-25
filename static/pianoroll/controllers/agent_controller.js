@@ -845,8 +845,11 @@
       const cloudClient = (ROOT.H2S_CLOUD_MODE && ROOT.H2S_CLOUD_LLM_CLIENT && typeof ROOT.H2S_CLOUD_LLM_CLIENT.callChatCompletions === 'function')
         ? ROOT.H2S_CLOUD_LLM_CLIENT
         : null;
+      const cloudStoredCfg = (cloudClient && ROOT.H2S_LLM_CONFIG && typeof ROOT.H2S_LLM_CONFIG.loadLlmConfig === 'function')
+        ? ROOT.H2S_LLM_CONFIG.loadLlmConfig()
+        : null;
       const cfg = cloudClient
-        ? { baseUrl: 'cloud-ai-bridge', model: 'cloud-ai', authToken: '', velocityOnly: false }
+        ? { baseUrl: 'cloud-ai-bridge', model: 'cloud-ai', authToken: '', velocityOnly: false, modelProfileId: (cloudStoredCfg && typeof cloudStoredCfg.modelProfileId === 'string' && cloudStoredCfg.modelProfileId.trim()) ? cloudStoredCfg.modelProfileId.trim() : 'auto' }
         : (ROOT.H2S_LLM_CONFIG && typeof ROOT.H2S_LLM_CONFIG.loadLlmConfig === 'function')
           ? ROOT.H2S_LLM_CONFIG.loadLlmConfig()
           : null;

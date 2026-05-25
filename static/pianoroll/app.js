@@ -4721,11 +4721,12 @@ ensureTrackButtons(){
     renderCloudAiSettingsPanel(container){
       if (!container) return;
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : function(k){ return k; };
-      const selectedPresetStorageKey = 'h2s_cloud_ai_selected_preset_id';
+      const selectedPresetStorageKey = 'h2s_cloud_ai_selected_model_profile_id';
       const defaultPrompt = '用一句中文回复：Hum2Song 云端 AI 已连接。';
       const cloudAiPresetDisplayName = function(preset){
         const id = preset && preset.id ? String(preset.id) : '';
         const labelKeyById = {
+          auto: 'cloudAi.model.auto',
           basic_optimize: 'cloudAi.preset.basic',
           standard_preview: 'cloudAi.preset.standard',
           quality_optimize: 'cloudAi.preset.quality',
@@ -4749,6 +4750,7 @@ ensureTrackButtons(){
       const cloudAiPresetDescription = function(preset, selectable){
         const id = preset && preset.id ? String(preset.id) : '';
         const descKeyById = {
+          auto: 'cloudAi.autoNote',
           basic_optimize: 'cloudAi.preset.basic.description',
           standard_preview: 'cloudAi.preset.standard.description',
           quality_optimize: 'cloudAi.preset.quality.description',
@@ -4785,7 +4787,7 @@ ensureTrackButtons(){
       };
       const status = (typeof window !== 'undefined' && window.H2S_CLOUD_AI_STATUS && typeof window.H2S_CLOUD_AI_STATUS === 'object') ? window.H2S_CLOUD_AI_STATUS : null;
       const presetsBody = status ? (status.presets || {}) : {};
-      const presets = status && Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []);
+      const presets = Array.isArray(presetsBody.modelProfiles) ? presetsBody.modelProfiles : (status && Array.isArray(status.presets) ? status.presets : (Array.isArray(presetsBody.presets) ? presetsBody.presets : []));
       const quota = (status && status.quota && typeof status.quota === 'object') ? status.quota : {};
       const planCode = (status && (status.planCode || quota.planCode || presetsBody.planCode)) || '';
       const used = quota.used != null ? quota.used : null;
@@ -4808,7 +4810,7 @@ ensureTrackButtons(){
       try{ selectedPresetId = String(localStorage.getItem(selectedPresetStorageKey) || ''); }catch(e){}
       const selectedStillAvailable = availablePresets.some(function(p){ return p.id === selectedPresetId; });
       if (!selectedStillAvailable) {
-        const preferred = planCode === 'internal' ? availablePresets.find(function(p){ return p.id === 'internal_debug'; }) : null;
+        const preferred = availablePresets.find(function(p){ return p.id === 'auto'; }) || availablePresets.find(function(p){ return p.id === 'qwen36_flash'; }) || (planCode === 'internal' ? availablePresets.find(function(p){ return p.id === 'internal_debug'; }) : null);
         selectedPresetId = (preferred || availablePresets[0] || {}).id || '';
         try{
           if (selectedPresetId) localStorage.setItem(selectedPresetStorageKey, selectedPresetId);
@@ -4826,6 +4828,8 @@ ensureTrackButtons(){
         const selected = available && preset.id === selectedPresetId;
         const tierText = cloudAiPresetTierLabel(preset);
         const desc = cloudAiPresetDescription(preset, available);
+        const cost = Number(preset.costWeight || preset.quotaCost || 0);
+        const costText = cost > 0 ? (_t('cloudAi.cost') + ' ' + cost) : '';
         const itemStyle = [
           'width:100%',
           'text-align:left',
@@ -4847,7 +4851,7 @@ ensureTrackButtons(){
           '<span class="muted" style="font-size:10px;">' + escapeHtml(preset.id === selectedPresetId ? _t('cloudAi.selected') : (available ? '' : _t('cloudAi.unavailable'))) + '</span>' +
           '</span>' +
           (desc ? '<span class="muted" data-cloud-ai-preset-description style="font-size:11px; line-height:1.35;">' + escapeHtml(desc) + '</span>' : '') +
-          (tierText ? '<span class="muted" data-cloud-ai-preset-tier style="font-size:10px; line-height:1.2;">' + escapeHtml(tierText) + '</span>' : '') +
+          ((tierText || costText) ? '<span class="muted" data-cloud-ai-preset-tier style="font-size:10px; line-height:1.2;">' + escapeHtml([tierText, costText].filter(Boolean).join(' · ')) + '</span>' : '') +
           '</button>';
       }).join('');
       const presetDetailHtml = selectedPreset ? (
@@ -4894,7 +4898,7 @@ ensureTrackButtons(){
         '<div style="font-weight:800; font-size:14px;">' + escapeHtml(_t('cloudAi.title')) + '</div>' +
         '<div class="muted" style="font-size:12px;">' + escapeHtml(_t('cloudAi.managedHint')) + '</div>' +
         stateHtml +
-        '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.preset')) + '</label>' +
+        '<label class="muted" style="margin:0;">' + escapeHtml(_t('cloudAi.modelProfile')) + '</label>' +
         '<div data-cloud-ai-preset-list="1" role="radiogroup" aria-label="' + escapeHtml(_t('cloudAi.selectPreset')) + '" style="display:grid; gap:6px;">' +
         (presetItemHtml || '<div class="muted" style="font-size:11px;">' + escapeHtml(_t('cloudAi.presetsUnavailable')) + '</div>') +
         '</div>' +
@@ -4937,7 +4941,7 @@ ensureTrackButtons(){
         if (!window.parent || window.parent === window) return;
         if (window.H2S_CLOUD_AI_CHAT_RESULT && window.H2S_CLOUD_AI_CHAT_RESULT.loading) return;
         const requestId = 'cloud-ai-chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
-        const presetId = selectedPresetId;
+        const modelProfileId = selectedPresetId;
         const prompt = (document.getElementById('inspAi_cloudTestPrompt') || {}).value || defaultPrompt;
         window.H2S_CLOUD_AI_TEST_PROMPT = prompt;
         window.H2S_CLOUD_AI_CHAT_REQUEST_ID = requestId;
@@ -4945,7 +4949,8 @@ ensureTrackButtons(){
         window.parent.postMessage({
           type: 'H2S_CLOUD_AI_CHAT_REQUEST',
           requestId: requestId,
-          presetId: presetId,
+          presetId: 'free_basic',
+          modelProfileId: modelProfileId,
           messages: [{ role: 'user', content: prompt }]
         }, '*');
         self.renderCloudAiSettingsPanel(container);

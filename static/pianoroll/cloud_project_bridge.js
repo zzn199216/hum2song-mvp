@@ -132,19 +132,20 @@
   function availableCloudAiPresets() {
     var status = window.H2S_CLOUD_AI_STATUS;
     var raw = status && status.presets;
-    var presets = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.presets) ? raw.presets : []);
+    var presets = raw && Array.isArray(raw.modelProfiles) ? raw.modelProfiles : (Array.isArray(raw) ? raw : (raw && Array.isArray(raw.presets) ? raw.presets : []));
     return presets.filter(function (p) {
       return p && typeof p === 'object' && p.id && p.available !== false && p.enabled !== false;
     });
   }
 
   function selectedCloudAiPresetId(cfg) {
+    if (cfg && typeof cfg.modelProfileId === 'string' && cfg.modelProfileId.trim()) return cfg.modelProfileId.trim();
     if (cfg && typeof cfg.presetId === 'string' && cfg.presetId.trim()) return cfg.presetId.trim();
     var stored = '';
-    try { stored = String(localStorage.getItem('h2s_cloud_ai_selected_preset_id') || '').trim(); } catch (_e) {}
+    try { stored = String(localStorage.getItem('h2s_cloud_ai_selected_model_profile_id') || localStorage.getItem('h2s_cloud_ai_selected_preset_id') || '').trim(); } catch (_e) {}
     var presets = availableCloudAiPresets();
     if (stored && presets.some(function (p) { return p.id === stored; })) return stored;
-    var preferred = presets.find(function (p) { return p.id === 'free_basic' || p.id === 'preview_standard'; });
+    var preferred = presets.find(function (p) { return p.id === 'auto'; }) || presets.find(function (p) { return p.id === 'qwen36_flash' || p.id === 'free_basic' || p.id === 'preview_standard'; });
     return (preferred || presets[0] || {}).id || '';
   }
 
@@ -183,8 +184,9 @@
     if (!window.parent || window.parent === window) {
       return Promise.reject(new Error('cloud_ai_parent_unavailable'));
     }
-    var presetId = selectedCloudAiPresetId(cfg);
-    if (!presetId) return Promise.reject(new Error('cloud_ai_preset_missing'));
+    var modelProfileId = selectedCloudAiPresetId(cfg);
+    if (!modelProfileId) return Promise.reject(new Error('cloud_ai_model_profile_missing'));
+    var presetId = 'free_basic';
     var safeMessages = Array.isArray(messages) ? messages.map(function (m) {
       if (!m || typeof m !== 'object') return null;
       var role = m.role === 'system' || m.role === 'user' || m.role === 'assistant' ? m.role : null;
@@ -236,6 +238,7 @@
         console.info('[h2s-cloud-ai] chat request', {
           requestId: requestId,
           presetId: presetId,
+          modelProfileId: modelProfileId,
           messagesCount: diagnostics.messagesCount,
           totalChars: diagnostics.totalChars,
           maxMessageChars: diagnostics.maxMessageChars,
@@ -246,6 +249,7 @@
         type: 'H2S_CLOUD_AI_CHAT_REQUEST',
         requestId: requestId,
         presetId: presetId,
+        modelProfileId: modelProfileId,
         messages: safeMessages,
         diagnostics: diagnostics,
       }, '*');

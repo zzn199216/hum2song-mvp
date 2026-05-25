@@ -34,8 +34,8 @@ assert(cloudBody.includes("_t('cloudAi.title'"), 'Cloud panel should show a loca
 assert(cloudBody.includes("_t('cloudAi.managedHint'"), 'Cloud panel should explain localized Hum2Song Cloud management');
 assert(/planCode/.test(cloudBody), 'Cloud panel should render planCode when available');
 assert(/quota/.test(cloudBody) && /remaining/.test(cloudBody), 'Cloud panel should render quota used/limit/remaining when available');
-assert(/presets/.test(cloudBody), 'Cloud panel should render available presets when available');
-assert(cloudBody.includes('h2s_cloud_ai_selected_preset_id'), 'Cloud panel should persist selected preset id');
+assert(/modelProfiles/.test(cloudBody), 'Cloud panel should render available model profiles when available');
+assert(cloudBody.includes('h2s_cloud_ai_selected_model_profile_id'), 'Cloud panel should persist selected model profile id');
 assert(!cloudBody.includes('<select id="inspAi_cloudPreset"'), 'Cloud panel should not use a native select for presets');
 assert(!cloudBody.includes('<option'), 'Cloud panel should not render native option popup items');
 assert(cloudBody.includes('data-cloud-ai-preset-list'), 'Cloud panel should render a custom preset list');
@@ -48,20 +48,16 @@ assert(cloudBody.includes('H2S_CLOUD_AI_CHAT_REQUEST'), 'Cloud test action shoul
 assert(cloudBody.includes('H2S_CLOUD_AI_CHAT_RESPONSE'), 'Cloud test action should render correlated chat responses');
 assert(cloudBody.includes('inspAi_cloudTestPrompt'), 'Cloud panel should render a test prompt textarea');
 assert(cloudBody.includes('inspAi_cloudTestButton'), 'Cloud panel should render a Cloud AI test button');
-assert(cloudBody.includes("_t('cloudAi.preset'"), 'Cloud preset label should use i18n');
+assert(cloudBody.includes("_t('cloudAi.modelProfile'"), 'Cloud model profile label should use i18n');
 assert(cloudBody.includes("_t('cloudAi.selectPreset'"), 'Cloud preset selector hint should use i18n');
 assert(cloudBody.includes("_t('cloudAi.testCloudAi'"), 'Cloud test button should use i18n');
-assert(cloudBody.includes('cloudAi.preset.basic'), 'Cloud preset labels should include product-facing Basic copy');
-assert(cloudBody.includes('cloudAi.preset.standard'), 'Cloud preset labels should include product-facing Standard copy');
-assert(cloudBody.includes('cloudAi.preset.quality'), 'Cloud preset labels should include product-facing Quality copy');
-assert(cloudBody.includes('cloudAi.preset.internal'), 'Cloud preset labels should include product-facing Internal copy');
-assert(cloudBody.includes('basic_optimize'), 'Cloud preset labels should localize basic_optimize by stable id');
-assert(cloudBody.includes('standard_preview'), 'Cloud preset labels should localize standard_preview by stable id');
-assert(cloudBody.includes('quality_optimize'), 'Cloud preset labels should localize quality_optimize by stable id');
+assert(cloudBody.includes('cloudAi.autoNote'), 'Cloud model profile copy should explain current Auto behavior');
+assert(cloudBody.includes('cloudAi.cost'), 'Cloud model profile items should render credit cost labels');
 assert(cloudBody.includes('cloudAiPresetDescription'), 'Cloud preset descriptions should be resolved through i18n for known ids');
 assert(cloudBody.includes('cloudAiPresetTierLabel'), 'Cloud preset tiers should be resolved through i18n for known tiers');
 assert(!cloudBody.includes('escapeHtml(selectedPreset.description || \'\')'), 'Selected preset detail should not render raw API descriptions for known presets');
-assert(cloudBody.includes('presetId: presetId'), 'Cloud test action should send the stable selected preset id');
+assert(cloudBody.includes("presetId: 'free_basic'"), 'Cloud test action should send the safe assistant preset id');
+assert(cloudBody.includes('modelProfileId: modelProfileId'), 'Cloud test action should send the stable selected model profile id');
 assert(!new RegExp('qw' + 'en-|dash' + 'scope|apiKey|modelName', 'i').test(cloudBody), 'Cloud panel source should not expose provider ids, API keys, or raw model names');
 assert(/loading/.test(cloudBody), 'Cloud panel should render a loading state while status is requested');
 assert(/error/.test(cloudBody), 'Cloud panel should render a safe error state');
@@ -157,7 +153,7 @@ function createRenderer(lang, status, initialPresetId) {
   const dom = createFakeDom();
   const posted = [];
   const storage = {};
-  if (initialPresetId) storage.h2s_cloud_ai_selected_preset_id = initialPresetId;
+  if (initialPresetId) storage.h2s_cloud_ai_selected_model_profile_id = initialPresetId;
   const localStorage = {
     getItem(k) { return Object.prototype.hasOwnProperty.call(storage, k) ? storage[k] : null; },
     setItem(k, v) { storage[k] = String(v); },
@@ -186,28 +182,31 @@ const sampleStatus = {
   ok: true,
   planCode: 'standard',
   quota: { used: 1, limit: 10, remaining: 9, period: 'month' },
-  presets: [
-    { id: 'basic_optimize', name: 'Basic AI Optimize', description: 'Small cloud AI cleanup and preview assistance.', tier: 'fast', available: true, enabled: true },
-    { id: 'standard_preview', name: 'Standard AI Preview', description: 'Melody, rhythm, and lightweight arrangement assistance.', tier: 'standard', available: true, enabled: true },
-    { id: 'quality_optimize', name: 'Quality AI Optimize', description: 'Higher quality cloud AI assistance for pro workflows.', tier: 'quality', available: true, enabled: true },
-    { id: 'unknown_vendor_safe', name: 'Vendor Safe', description: 'Safe API fallback copy.', tier: 'custom', available: true, enabled: true }
-  ]
+  presets: {
+    modelProfiles: [
+      { id: 'auto', name: '自动推荐 / Auto', description: 'Auto currently uses Qwen3.6 Flash.', tier: 'fast', costWeight: 1, available: true, enabled: true },
+      { id: 'qwen36_flash', name: 'Qwen3.6 Flash', description: 'Fastest.', tier: 'fast', costWeight: 1, available: true, enabled: true },
+      { id: 'qwen37_max', name: 'Qwen3.7 Max', description: 'Strongest.', tier: 'quality', costWeight: 15, available: true, enabled: true },
+      { id: 'unknown_vendor_safe', name: 'Vendor Safe', description: 'Safe API fallback copy.', tier: 'custom', costWeight: 1, available: true, enabled: true }
+    ]
+  }
 };
 
-const zhRuntime = createRenderer('zh', sampleStatus, 'standard_preview');
+const zhRuntime = createRenderer('zh', sampleStatus, 'qwen36_flash');
 zhRuntime.renderer.renderCloudAiSettingsPanel(zhRuntime.container);
-assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.preset.standard']), 'Cloud mode zh should render localized preset label');
-assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.preset.standard.description']), 'Cloud mode zh should render localized preset description');
+assert(zhRuntime.container.innerHTML.includes('Qwen3.6 Flash'), 'Cloud mode zh should render model profile label');
+assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.autoNote']), 'Cloud mode zh should render auto recommendation note');
 assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.tier.fast']), 'Cloud mode zh should render localized fast tier');
-assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.tier.standard']), 'Cloud mode zh should render localized standard tier');
+assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.cost']), 'Cloud mode zh should render cost label');
 assert(zhRuntime.container.innerHTML.includes('Vendor Safe'), 'Unknown preset id should fall back to API name');
 assert(zhRuntime.container.innerHTML.includes('Safe API fallback copy.'), 'Unknown preset id should fall back to API description');
-assert(zhRuntime.storage.h2s_cloud_ai_selected_preset_id === 'standard_preview', 'Selected preset should persist by id');
+assert(zhRuntime.storage.h2s_cloud_ai_selected_model_profile_id === 'qwen36_flash', 'Selected model profile should persist by id');
 const testButton = zhRuntime.document.getElementById('inspAi_cloudTestButton');
 assert(testButton, 'Cloud test button should render');
 testButton.click();
 assert(zhRuntime.posted.length === 1, 'Cloud test button should post one request');
-assert(zhRuntime.posted[0].presetId === 'standard_preview', 'Cloud test button should send selected preset id, not localized text');
+assert(zhRuntime.posted[0].presetId === 'free_basic', 'Cloud test button should send safe assistant preset id');
+assert(zhRuntime.posted[0].modelProfileId === 'qwen36_flash', 'Cloud test button should send selected model profile id, not localized text');
 const loadingButton = zhRuntime.document.getElementById('inspAi_cloudTestButton');
 assert(loadingButton.disabled === true, 'Cloud test button should disable while a request is in flight');
 assert(zhRuntime.container.innerHTML.includes('data-cloud-ai-test-state="loading"'), 'Cloud test panel should render a loading state');
@@ -215,15 +214,15 @@ loadingButton.click();
 assert(zhRuntime.posted.length === 1, 'Cloud test button should prevent duplicate requests while loading');
 assert(zhRuntime.container.innerHTML.includes(zhDict['cloudAi.testing']), 'Cloud loading copy should show testing text');
 
-const enRuntime = createRenderer('en', sampleStatus, 'quality_optimize');
+const enRuntime = createRenderer('en', sampleStatus, 'qwen37_max');
 enRuntime.renderer.renderCloudAiSettingsPanel(enRuntime.container);
-assert(enRuntime.container.innerHTML.includes('Quality AI Optimize'), 'Cloud mode en should render localized preset label');
-assert(enRuntime.container.innerHTML.includes('Higher quality cloud AI assistance for pro workflows.'), 'Cloud mode en should render localized preset description');
+assert(enRuntime.container.innerHTML.includes('Qwen3.7 Max'), 'Cloud mode en should render model profile label');
+assert(enRuntime.container.innerHTML.includes('15'), 'Cloud mode en should render model profile cost');
 assert(enRuntime.container.innerHTML.includes('Quality'), 'Cloud mode en should render localized quality tier');
 assert(!new RegExp('qw' + 'en-|dash' + 'scope|apiKey|modelName|baseUrl', 'i').test(enRuntime.container.innerHTML), 'Rendered Cloud panel should not expose raw provider config');
 const enTestButton = enRuntime.document.getElementById('inspAi_cloudTestButton');
 enTestButton.click();
-assert(enRuntime.posted[0].presetId === 'quality_optimize', 'Cloud test request should send the selected preset id');
+assert(enRuntime.posted[0].modelProfileId === 'qwen37_max', 'Cloud test request should send the selected model profile id');
 
 const resultRuntime = createRenderer('en', sampleStatus, 'standard_preview');
 resultRuntime.window.H2S_CLOUD_AI_CHAT_RESULT = {

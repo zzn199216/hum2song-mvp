@@ -443,12 +443,18 @@ async function testCloudSmallClipPromptStaysBounded(){
   const patch = { version: 1, clipId: cid, ops: [{ op: 'moveNote', noteId: 'editable_note_00_cloud_smoke', deltaBeat: 0.125 }] };
   const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
   let capturedMessages = null;
+  let capturedCfg = null;
 
   const prevCloudMode = globalThis.H2S_CLOUD_MODE;
   const prevCloudClient = globalThis.H2S_CLOUD_LLM_CLIENT;
+  const prevLlmConfig = globalThis.H2S_LLM_CONFIG;
   globalThis.H2S_CLOUD_MODE = true;
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: '', model: '', authToken: 'LOCAL_TOKEN_SHOULD_NOT_BE_USED', modelProfileId: 'minimax_m27_highspeed' }),
+  };
   globalThis.H2S_CLOUD_LLM_CLIENT = {
-    callChatCompletions: async (_cfg, messages) => {
+    callChatCompletions: async (cfg, messages) => {
+      capturedCfg = cfg;
       capturedMessages = messages;
       return { text: rawText };
     },
@@ -472,6 +478,7 @@ async function testCloudSmallClipPromptStaysBounded(){
       intent: { fixPitch: false, tightenRhythm: true, reduceOutliers: false },
     });
     assert(res && res.ok === true, 'cloud optimize succeeds');
+    assert(capturedCfg && capturedCfg.modelProfileId === 'minimax_m27_highspeed', 'cloud optimize should carry selected modelProfileId');
     assert(Array.isArray(capturedMessages), 'cloud messages captured');
     assert(capturedMessages.length === 2, 'cloud request sends system + user messages only');
     const totalChars = capturedMessages.reduce((sum, m) => sum + String(m.content || '').length, 0);
@@ -485,6 +492,7 @@ async function testCloudSmallClipPromptStaysBounded(){
   } finally {
     globalThis.H2S_CLOUD_MODE = prevCloudMode;
     globalThis.H2S_CLOUD_LLM_CLIENT = prevCloudClient;
+    globalThis.H2S_LLM_CONFIG = prevLlmConfig;
   }
 }
 
