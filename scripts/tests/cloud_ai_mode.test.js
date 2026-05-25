@@ -12,6 +12,8 @@ const root = path.resolve(__dirname, '../..');
 const indexHtml = fs.readFileSync(path.join(root, 'static/pianoroll/index.html'), 'utf8');
 const bridge = fs.readFileSync(path.join(root, 'static/pianoroll/cloud_project_bridge.js'), 'utf8');
 const editorRuntime = fs.readFileSync(path.join(root, 'static/pianoroll/controllers/editor_runtime.js'), 'utf8');
+const agentController = fs.readFileSync(path.join(root, 'static/pianoroll/controllers/agent_controller.js'), 'utf8');
+const zhLocale = fs.readFileSync(path.join(root, 'static/i18n/locales/zh.json'), 'utf8');
 
 assert(indexHtml.includes('id="editorLocalLlmSettings"'), 'standalone local LLM settings wrapper should exist');
 assert(indexHtml.includes('id="editorCloudAiPanel"'), 'Cloud AI panel should exist');
@@ -26,11 +28,17 @@ assert(bridge.includes('H2S_CLOUD_LLM_CLIENT'), 'Cloud mode should expose a serv
 assert(bridge.includes('callCloudChatCompletions'), 'Cloud LLM adapter should present chat-completions-like API');
 assert(bridge.includes('extractCloudJsonObject'), 'Cloud LLM adapter should preserve JSON patch extraction');
 assert(bridge.includes('chatMessageStats'), 'Cloud LLM adapter should report safe request size diagnostics');
-assert(bridge.includes(': 180000'), 'Cloud LLM adapter default timeout should allow long patch generation');
+assert(bridge.includes(': 600000'), 'Cloud LLM adapter default timeout should be capped at 10 minutes');
+assert(agentController.includes('timeoutMs: 600000'), 'optimize_clip Cloud LLM timeout should be capped at 10 minutes');
+assert(zhLocale.includes('可能需要 1-3 分钟'), 'optimize progress copy should set long-running AI expectation');
 assert(bridge.includes('AI arrangement request is too large for the current plan limit'), 'Cloud LLM adapter should map oversized requests to a clear arrangement-size message');
 assert(!bridge.includes('clearing assistant history'), 'oversized arrangement message should not mention history when history is not included');
 assert(bridge.includes('H2S_CLOUD_AI_STATUS_REQUEST_ID'), 'Cloud AI status responses should be correlated by requestId');
 assert(bridge.includes('data.requestId !== window.H2S_CLOUD_AI_STATUS_REQUEST_ID'), 'Mismatched Cloud AI status responses should be ignored');
+assert(bridge.includes("p.id === 'free_basic' || p.id === 'preview_standard'"), 'interactive Cloud AI should prefer fast/default presets over pro_quality');
+assert(!bridge.includes("p.id === 'pro_quality' || p.id === 'preview_standard' || p.id === 'free_basic'"), 'interactive Cloud AI must not default internal/pro users to slow pro_quality');
+assert(bridge.includes("if (typeof data.requestId !== 'string' || !data.requestId) return;"), 'Cloud AI chat responses should dispatch by requestId instead of one global current id');
+assert(!bridge.includes("data.requestId !== window.H2S_CLOUD_AI_CHAT_REQUEST_ID"), 'Cloud AI chat responses must not drop late valid responses because a newer request changed the global id');
 assert(bridge.includes("local.style.display = 'none'"), 'Cloud mode should hide local provider settings');
 assert(!bridge.includes('ROOT.H2S_LLM_CLIENT') && !bridge.includes('window.H2S_LLM_CLIENT') && !bridge.includes('listModels'), 'Cloud AI status must not call browser-side provider clients');
 

@@ -174,13 +174,273 @@ async function testAppliedOutcome(){
   assert(res.llmDebug.attemptSummaries[0].outcome === 'applied', 'single attempt outcome');
 }
 
+async function testUserTextPromptDisablesVelocityOnlySafeMode(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', pitch: 62, velocity: 82 }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: true }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, {
+    requestedPresetId: 'llm_v0',
+    userPrompt: '优化一下，让这段音乐更好听，这段有一些音不符合乐理',
+    _assistantFreeformTextRequest: true,
+  });
+  assert(res && res.ok === true, 'user text prompt should allow pitch edits even when stored config is velocityOnly');
+  assert(res.llmDebug && res.llmDebug.safeModeResolved === false, 'user text prompt resolves normal mode');
+  const updated = project.clips[cid].score.tracks[0].notes.find((n) => n.id === 'n0');
+  assert(updated && updated.pitch === 62, 'pitch change applied');
+}
+
+async function testVagueMakeBetterCanApplyMultiDimensionalPatch(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClipWithNoteCount(4);
+  let project = proj;
+  const cid = clip.id;
+  const beforeRevisionId = clip.revisionId;
+
+  const patch = {
+    version: 1,
+    clipId: cid,
+    ops: [
+      { op: 'setNote', noteId: 'editable_note_00_cloud_smoke', pitch: 61, velocity: 86, startBeat: 0.125, durationBeat: 0.375 },
+      { op: 'moveNote', noteId: 'editable_note_01_cloud_smoke', deltaBeat: 0.125 },
+    ],
+  };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '优化一下，让这段音乐更好听，这段有一些音不符合乐理' });
+  assert(res && res.ok === true && res.ops === 2, 'vague make-better prompt can apply pitch/timing/velocity patch');
+  assertLlmOutcomeContract(res, 'applied');
+  assert(res.patchSummary.hasPitchChange === true, 'patch summary has pitch change');
+  assert(res.patchSummary.hasTimingChange === true, 'patch summary has timing change');
+  assert(project.clips[cid].revisionId !== beforeRevisionId, 'applied patch creates new revision');
+  const updated = project.clips[cid].score.tracks[0].notes.find((n) => n.id === 'editable_note_00_cloud_smoke');
+  assert(updated.pitch === 61 && updated.velocity === 86 && updated.startBeat === 0.125 && updated.durationBeat === 0.375, 'multi-dimensional edit applied');
+}
+
+async function testCleanUnmusicalNotesCanDeleteSmallOutlierSet(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClipWithNoteCount(10);
+  let project = proj;
+  const cid = clip.id;
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'deleteNote', noteId: 'editable_note_09_cloud_smoke' }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'clean unmusical notes' });
+  assert(res && res.ok === true, 'small outlier delete applies');
+  assert(project.clips[cid].score.tracks[0].notes.length === 9, 'one note deleted');
+}
+
+async function testTooManyDeletesRejectedAndClipUnchanged(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClipWithNoteCount(10);
+  let project = proj;
+  const cid = clip.id;
+  const before = JSON.stringify(project.clips[cid].score);
+
+  const patch = {
+    version: 1,
+    clipId: cid,
+    ops: [0, 1, 2].map((i) => ({ op: 'deleteNote', noteId: 'editable_note_0' + i + '_cloud_smoke' })),
+  };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'clean unmusical notes' });
+  assert(res && res.ok === false && res.reason === 'too_destructive', 'too many deletes rejected');
+  assertLlmOutcomeContract(res, 'rejected_destructive');
+  assert(JSON.stringify(project.clips[cid].score) === before, 'rejected delete patch leaves original unchanged');
+}
+
+async function testInvalidNoteIdRejectedWithSpecificReason(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+  const before = JSON.stringify(project.clips[cid].score);
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'missing_note_id', pitch: 62 }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'fix wrong note' });
+  assert(res && res.ok === false && res.reason === 'invalid_note_reference', 'invalid noteId gets specific reason');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(JSON.stringify(project.clips[cid].score) === before, 'invalid noteId leaves original unchanged');
+}
+
+async function testSecondsFieldsRejectedWithSpecificReason(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+  const before = JSON.stringify(project.clips[cid].score);
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', startSec: 0.25, durationSec: 0.5, velocity: 82 }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'tighten this note' });
+  assert(res && res.ok === false && res.reason === 'invalid_timing', 'seconds fields get timing validation reason');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(JSON.stringify(project.clips[cid].score) === before, 'seconds patch leaves original unchanged');
+}
+
+async function testUnsupportedAddNoteRejected(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'addNote', trackId: 't0', note: { id: 'new1', pitch: 64, velocity: 80, startBeat: 1, durationBeat: 0.5 } }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make it better' });
+  assert(res && res.ok === false && res.reason === 'unsupported_operation', 'addNote remains disabled for llm_v0');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+}
+
 async function testCloudSmallClipPromptStaysBounded(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
   const { project: proj, clip } = makeClipWithNoteCount(24);
   let project = proj;
   const cid = clip.id;
-  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'editable_note_00_cloud_smoke', velocity: 88 }] };
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'moveNote', noteId: 'editable_note_00_cloud_smoke', deltaBeat: 0.125 }] };
   const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
   let capturedMessages = null;
 
@@ -206,7 +466,11 @@ async function testCloudSmallClipPromptStaysBounded(){
       render: () => {},
     });
 
-    const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'tighten rhythm gently' });
+    const res = await ctrl.optimizeClip(cid, {
+      requestedPresetId: 'llm_v0',
+      userPrompt: 'tighten rhythm gently',
+      intent: { fixPitch: false, tightenRhythm: true, reduceOutliers: false },
+    });
     assert(res && res.ok === true, 'cloud optimize succeeds');
     assert(Array.isArray(capturedMessages), 'cloud messages captured');
     assert(capturedMessages.length === 2, 'cloud request sends system + user messages only');
@@ -215,6 +479,9 @@ async function testCloudSmallClipPromptStaysBounded(){
     const serialized = JSON.stringify(capturedMessages);
     assert(serialized.indexOf('"clips"') < 0 && serialized.indexOf('"instances"') < 0, 'request must not include whole project');
     assert(serialized.indexOf('llmPromptTrace') < 0 && serialized.indexOf('finalSystemPrompt') < 0, 'request must not include prompt trace/debug');
+    assert(/musically meaningful/i.test(serialized), 'normal llm prompt encourages musically meaningful edits');
+    assert(/expressive but bounded/i.test(serialized), 'normal llm prompt allows expressive bounded changes');
+    assert(/do not respond with velocity-only unless explicitly requested/i.test(serialized), 'normal llm prompt should not default to velocity-only');
   } finally {
     globalThis.H2S_CLOUD_MODE = prevCloudMode;
     globalThis.H2S_CLOUD_LLM_CLIENT = prevCloudClient;
@@ -618,11 +885,11 @@ async function testRejectedValidation(){
   });
 
   const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'x', intent: { fixPitch: true, tightenRhythm: false, reduceOutliers: false } });
-  assert(res && res.ok === false && res.reason === 'patch_rejected', 'validation reject');
+  assert(res && res.ok === false && res.reason === 'invalid_pitch_or_velocity', 'validation reject');
   assertLlmOutcomeContract(res, 'rejected_validation');
 }
 
-async function testRejectedQuality(){
+async function testTemplateVelocityOnlyPatchAppliesAsMusicalEdit(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
   const { project: proj, clip } = makeClip();
@@ -660,13 +927,13 @@ async function testRejectedQuality(){
     templateId: 'fix_pitch_v1',
     intent: { fixPitch: true, tightenRhythm: false, reduceOutliers: false },
   });
-  assert(res && res.ok === false && res.reason === 'patch_rejected', 'quality reject');
-  assertLlmOutcomeContract(res, 'rejected_quality');
+  assert(res && res.ok === true, 'velocity-only patch is no longer rejected by template quality gate');
+  assertLlmOutcomeContract(res, 'applied');
   assertLlmRetryMeta(res, { totalAttempts: 1, finalAttemptIndex: 1 });
-  assert(callN === 1, 'quality reject should not trigger retry');
+  assert(callN === 1, 'applied patch should not retry');
 }
 
-async function testRejectedQualityMissingPitchForFixPitch(){
+async function testTemplateFixPitchCanApplyTimingOnlyPatch(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
   const { project: proj, clip } = makeClip();
@@ -701,12 +968,11 @@ async function testRejectedQualityMissingPitchForFixPitch(){
     templateId: 'fix_pitch_v1',
     intent: { fixPitch: true, tightenRhythm: false, reduceOutliers: false },
   });
-  assert(res && res.ok === false && res.reason === 'patch_rejected', 'missing pitch quality reject');
-  assert(res.detail === 'missing pitch change for Fix Pitch', 'missing pitch reason detail');
-  assertLlmOutcomeContract(res, 'rejected_quality');
+  assert(res && res.ok === true, 'missing pitch is no longer blanket rejected');
+  assertLlmOutcomeContract(res, 'applied');
 }
 
-async function testRejectedQualityPitchChangeTooBroadForFixPitch(){
+async function testTemplateFixPitchCanApplyBroadPitchPatch(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
   const H2SProject = globalThis.H2SProject;
@@ -738,7 +1004,7 @@ async function testRejectedQualityPitchChangeTooBroadForFixPitch(){
   if (H2SProject.normalizeProjectRevisionChains) H2SProject.normalizeProjectRevisionChains(project);
   const cid = clip.id;
 
-  // 2 / 4 notes changed -> 50% (>30%) should be rejected.
+  // 2 / 4 notes changed used to be rejected by an overly narrow scope gate.
   const patch = {
     version: 1,
     clipId: cid,
@@ -773,12 +1039,11 @@ async function testRejectedQualityPitchChangeTooBroadForFixPitch(){
     templateId: 'fix_pitch_v1',
     intent: { fixPitch: true, tightenRhythm: false, reduceOutliers: false },
   });
-  assert(res && res.ok === false && res.reason === 'patch_rejected', 'broad pitch scope quality reject');
-  assert(res.detail === 'pitch change too broad for Fix Pitch', 'broad pitch scope reason detail');
-  assertLlmOutcomeContract(res, 'rejected_quality');
+  assert(res && res.ok === true, 'broad but structurally valid pitch patch applies');
+  assertLlmOutcomeContract(res, 'applied');
 }
 
-async function testRejectedQualityMissingTimingForTightenRhythm(){
+async function testTemplateTightenRhythmCanApplyPitchPatch(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
   const { project: proj, clip } = makeClip();
@@ -813,9 +1078,8 @@ async function testRejectedQualityMissingTimingForTightenRhythm(){
     templateId: 'tighten_rhythm_v1',
     intent: { fixPitch: false, tightenRhythm: true, reduceOutliers: false },
   });
-  assert(res && res.ok === false && res.reason === 'patch_rejected', 'missing timing quality reject');
-  assert(res.detail === 'missing timing change for Tighten Rhythm', 'missing timing reason detail');
-  assertLlmOutcomeContract(res, 'rejected_quality');
+  assert(res && res.ok === true, 'missing timing is no longer blanket rejected');
+  assertLlmOutcomeContract(res, 'applied');
 }
 
 async function testRejectedSemantic(){
@@ -1054,6 +1318,12 @@ async function testFailedRevision(){
 
 async function main(){
   await testAppliedOutcome();
+  await testUserTextPromptDisablesVelocityOnlySafeMode();
+  await testVagueMakeBetterCanApplyMultiDimensionalPatch();
+  await testCleanUnmusicalNotesCanDeleteSmallOutlierSet();
+  await testTooManyDeletesRejectedAndClipUnchanged();
+  await testInvalidNoteIdRejectedWithSpecificReason();
+  await testUnsupportedAddNoteRejected();
   await testCloudSmallClipPromptStaysBounded();
   await testNoOpOutcome();
   await testPlainJsonObjectWithoutFenceAccepted();
@@ -1067,10 +1337,10 @@ async function main(){
   await testFailedClientNotLoaded();
   await testRejectedSafeMode();
   await testRejectedValidation();
-  await testRejectedQuality();
-  await testRejectedQualityMissingPitchForFixPitch();
-  await testRejectedQualityPitchChangeTooBroadForFixPitch();
-  await testRejectedQualityMissingTimingForTightenRhythm();
+  await testTemplateVelocityOnlyPatchAppliesAsMusicalEdit();
+  await testTemplateFixPitchCanApplyTimingOnlyPatch();
+  await testTemplateFixPitchCanApplyBroadPitchPatch();
+  await testTemplateTightenRhythmCanApplyPitchPatch();
   await testRejectedSemantic();
   await testFailedApplyStub();
   await testFailedApplyMisleadingSubstring();

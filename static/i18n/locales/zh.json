@@ -341,7 +341,7 @@
   "aiAssist.intentRouterArrangementHint": "听起来你想添加伴奏。请使用明确口令（例如「添加伴奏」），或在设置中配置 AI（大模型）以便助手识别你的意图。",
   "aiAssist.intentRouterAccompanimentFaq": "这像是在问伴奏相关说明，而不是对项目进行修改。需要操作时请用文档说明，或在助手中使用明确的动作口令。",
 
-  "cmd.optimizing": "正在优化…",
+  "cmd.optimizing": "正在优化…可能需要 1-3 分钟。",
   "cmd.optimized": "优化完成。",
   "cmd.undoing": "正在撤销…",
   "cmd.undone": "已撤销。",
@@ -416,7 +416,7 @@
   "lastOpt.fail.rhythm_tighten_loosen_unavailable": "节奏工具不可用",
   "lastOpt.fail.apply_failed": "无法应用更改",
   "lastOpt.fail.beginNewClipRevision_failed": "无法保存新版本",
-  "lastOpt.fail.patch_rejected": "补丁被拒绝",
+  "lastOpt.fail.patch_rejected": "AI 返回的修改格式不完整，已拒绝应用。请换一种更具体的描述再试。",
   "lastOpt.fail.no_rollback": "无法撤销",
 
   "lastOpt.details": "详情",

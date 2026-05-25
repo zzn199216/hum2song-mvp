@@ -1993,7 +1993,6 @@
                 if (typeof saveLlmDebug === 'function' && presetId === 'llm_v0' && res && res.llmDebug){
                   saveLlmDebug(clipId, res.llmDebug);
                 }
-                if (res && res.ok && typeof app.playClip === 'function'){ try{ app.playClip(clipId); }catch(playErr){} }
               }).catch(function(err){
                 const selPreset = (typeof document !== 'undefined') ? document.getElementById('editorOptimizePreset') : null;
                 const presetIdErr = (selPreset && selPreset.value) ? String(selPreset.value).trim() : null;

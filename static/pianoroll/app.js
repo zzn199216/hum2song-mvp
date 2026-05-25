@@ -106,7 +106,14 @@
   }
 
   // PR-UX2 / INFRA-1a: Inspector Optimize templates — derived from shared registry
-  const INSPECTOR_TEMPLATES = (typeof window !== 'undefined' && window.H2S_OPTIMIZE_TEMPLATES_V1_MAP) ? window.H2S_OPTIMIZE_TEMPLATES_V1_MAP : {};
+  const INSPECTOR_TEMPLATES = (function(){
+    const src = (typeof window !== 'undefined' && window.H2S_OPTIMIZE_TEMPLATES_V1_MAP) ? window.H2S_OPTIMIZE_TEMPLATES_V1_MAP : {};
+    const out = {};
+    for (const k in src){
+      if (Object.prototype.hasOwnProperty.call(src, k) && k !== 'bluesy_v1') out[k] = src[k];
+    }
+    return out;
+  })();
 
   /** UX7b: Keyword-based mapping from natural-language text to template/intent. Returns null fields if no match. */
   function _mapAiAssistTextToTemplate(text){
@@ -1032,7 +1039,7 @@
     try { cfg = configApi.loadLlmConfig(); } catch (_) { return Promise.resolve(null); }
     if (!cfg || typeof cfg.baseUrl !== 'string' || !cfg.baseUrl.trim() || typeof cfg.model !== 'string' || !cfg.model.trim()) return Promise.resolve(null);
 
-    const systemMsg = 'You are a music optimization assistant. Reply with ONLY a JSON object, no other text. Schema: { "planKind": "fix-pitch"|"tighten-rhythm"|"clean-outliers"|"bluesy"|"generic", "planTitle": "short title", "planLines": ["Goal: ...", "Strategy: ...", "Note: ..."] }. planLines must have 2-4 strings. Output valid JSON only.';
+    const systemMsg = 'You are a music optimization assistant. Reply with ONLY a JSON object, no other text. Schema: { "planKind": "fix-pitch"|"tighten-rhythm"|"clean-outliers"|"bluesy"|"generic", "planTitle": "short title", "planLines": ["Goal: ...", "Strategy: ...", "Note: ..."] }. Make the plan musically useful, not overly conservative; suggest expressive pitch, rhythm, or dynamics changes when the prompt asks for them. planLines should have 2-5 strings. Output valid JSON only.';
     const hint = templateId ? ' Detected template: ' + String(templateId) + '.' : '';
     const userMsg = 'User request: ' + (typeof promptText === 'string' ? promptText.slice(0, 200) : '') + hint + '\n\nOutput the plan JSON object only.';
 
@@ -1069,22 +1076,7 @@
       return;
     }
     const card = { type: 'card', clipId: clipId, promptText: text, createdAt: Date.now(), runState: 'idle', usedPresetId: null, resultKind: null, lastError: null };
-    const narrow = _resolvePhase1AssistantIntentForSend(text);
-    if (narrow && narrow.branch === 'rhythm_tighten_loosen'){
-      card.rhythmIntent = narrow.intent;
-    } else if (narrow && narrow.branch === 'local_transpose'){
-      card.localTransposeIntent = narrow.intent;
-    } else if (narrow && narrow.branch === 'velocity_shape'){
-      card.velocityShapeIntent = narrow.intent;
-    } else {
-      const mapped = _mapAiAssistTextToTemplate(text);
-      if (mapped.templateId && mapped.intent){
-        card.templateId = mapped.templateId;
-        card.templateLabel = mapped.templateLabel;
-        card.intent = mapped.intent;
-      }
-    }
-    card.plan = _buildAiAssistPlan(card.templateId || null, card.intent || null, text);
+    card.plan = _buildAiAssistPlan(null, null, text);
     card.reasoningLog = {
       userPrompt: text.slice(0, 200),
       templateId: card.templateId || null,
@@ -1102,7 +1094,6 @@
           card.reasoningLog.planSummary = (plan.planTitle && String(plan.planTitle).trim()) ? String(plan.planTitle).trim() : card.reasoningLog.planSummary;
           card.reasoningLog.planSource = 'ai';
         }
-        _syncAssistantCardTemplateFromPlan(card);
         self.render();
       }
     }).catch(function(){ /* keep rule-based plan */ });
@@ -2132,8 +2123,8 @@ async runCommand(command, payload){
         const clipId = payload.clipId;
         if (!clipId) throw new Error('clipId required');
         const optRes = await this.optimizeClip(clipId);
-        if (optRes && !optRes.ok) throw new Error(optRes.reason || optRes.detail || optRes.message || 'Optimize failed');
         result.data = { clipId, optimizeResult: optRes };
+        if (optRes && !optRes.ok) result.ok = false;
         break;
       }
       case 'rollback_clip': {
@@ -2488,6 +2479,9 @@ async optimizeClip(clipId, optOverride){
     if (Object.prototype.hasOwnProperty.call(merged, '_assistantExecutionPlanSnapshot')){
       options._assistantExecutionPlanSnapshot = merged._assistantExecutionPlanSnapshot;
     }
+    if (merged._assistantFreeformTextRequest === true){
+      options._assistantFreeformTextRequest = true;
+    }
     if (merged.velocityShapeIntent && typeof merged.velocityShapeIntent === 'object' && merged.velocityShapeIntent.mode){
       options.velocityShapeIntent = merged.velocityShapeIntent;
     }
@@ -2556,13 +2550,23 @@ async optimizeClip(clipId, optOverride){
       'missing timing change for Tighten Rhythm': 'opt.rejectDetail.missingTimingChangeTightenRhythm',
       'pitch change too broad for Fix Pitch': 'opt.rejectDetail.pitchChangeTooBroadFixPitch',
       'quality_velocity_only': 'opt.rejectDetail.qualityVelocityOnly',
+      'invalid_note_reference': 'opt.rejectDetail.invalidNoteReference',
+      'unsupported_operation': 'opt.rejectDetail.unsupportedOperation',
+      'too_destructive': 'opt.rejectDetail.tooDestructive',
+      'invalid_timing': 'opt.rejectDetail.invalidTiming',
+      'invalid_pitch_or_velocity': 'opt.rejectDetail.invalidPitchOrVelocity',
+      'no_meaningful_change': 'opt.rejectDetail.noMeaningfulChange',
+      'validation_failed': 'opt.rejectDetail.validationFailed',
     };
-    const mappedKey = map[detailStr];
+    const mappedKey = map[reasonStr] || map[detailStr];
     if (mappedKey){
       const mapped = t(mappedKey);
       if (mapped !== mappedKey) return mapped;
     }
     if (detailStr) return detailStr;
+    const reasonKey = 'lastOpt.fail.' + reasonStr;
+    const reasonMapped = t(reasonKey);
+    if (reasonMapped !== reasonKey) return reasonMapped;
     if (reasonStr === 'patch_rejected'){
       const x = t('lastOpt.fail.patch_rejected');
       return x !== 'lastOpt.fail.patch_rejected' ? x : reasonStr;
@@ -2575,7 +2579,7 @@ async optimizeClip(clipId, optOverride){
       : (res && res.error != null) ? String(res.error) : '';
     const d = (res && res.detail != null) ? String(res.detail) : '';
     if (r === 'unsupported_request' && d) return d;
-    if (r === 'patch_rejected'){
+    if (r === 'patch_rejected' || r === 'invalid_note_reference' || r === 'unsupported_operation' || r === 'too_destructive' || r === 'invalid_timing' || r === 'invalid_pitch_or_velocity' || r === 'no_meaningful_change' || r === 'validation_failed'){
       const friendly = this._friendlyOptimizeRejection(r, d, t);
       if (friendly) return friendly;
     }
@@ -4389,7 +4393,6 @@ ensureTrackButtons(){
       const promptText = (btnEl && btnEl.getAttribute && btnEl.getAttribute('data-prompt')) || '';
       const card = (this._aiAssistItems || []).find(x => x.type === 'card' && String(x.clipId) === String(clipId) && (!promptText || x.promptText === promptText));
       if (!card) return;
-      _syncAssistantCardTemplateFromPlan(card);
       const text = (promptText !== '' && promptText !== null) ? promptText : (card.promptText || '');
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
       if (_assistantIsDirectBassIntent(text)){
@@ -4409,7 +4412,7 @@ ensureTrackButtons(){
           card.reasoningLog.planSummary = String(runSnapshot.usedPlan.planTitle).slice(0, 200);
         }
       }
-      const opts = { userPrompt: text, requestedPresetId: runSnapshot.usedRequestedPresetId };
+      const opts = { userPrompt: text, requestedPresetId: runSnapshot.usedRequestedPresetId, _assistantFreeformTextRequest: true };
       if (runSnapshot.rhythmIntent && typeof runSnapshot.rhythmIntent === 'object'){
         opts.rhythmIntent = runSnapshot.rhythmIntent;
       }
@@ -4438,7 +4441,16 @@ ensureTrackButtons(){
       try {
         const res = await this.runCommand('optimize_clip', { clipId });
         if (btnEl) btnEl.disabled = false;
+        const optRes = (res && res.data && res.data.optimizeResult) ? res.data.optimizeResult : null;
         if (!res || !res.ok) {
+          if (optRes) {
+            card.runState = 'failed';
+            card.lastError = this._lastOptFailureDetail(optRes, _t).slice(0, 80);
+            if (card.reasoningLog) _enrichReasoningLogFromRun(card.reasoningLog, optRes && optRes.patchSummary ? optRes.patchSummary : null, false, card.runState, card.resultKind, card.lastError);
+            try { card.executionTrace = _buildAiAssistExecutionTrace(card, optRes, runSnapshot); } catch (_e) {}
+            this.render();
+            return;
+          }
           card.runState = 'failed';
           card.lastError = (res && res.message) ? String(res.message).slice(0, 80) : 'Optimize failed';
           if (card.reasoningLog) _enrichReasoningLogFromRun(card.reasoningLog, null, false, card.runState, card.resultKind, card.lastError);
@@ -4446,10 +4458,9 @@ ensureTrackButtons(){
           this.render();
           return;
         }
-        const optRes = (res.data && res.data.optimizeResult) ? res.data.optimizeResult : null;
         if (!optRes || !optRes.ok) {
           card.runState = 'failed';
-          card.lastError = (optRes && (optRes.reason || optRes.detail || optRes.message)) ? String(optRes.reason || optRes.detail || optRes.message).slice(0, 80) : 'Optimize failed';
+          card.lastError = optRes ? this._lastOptFailureDetail(optRes, _t).slice(0, 80) : 'Optimize failed';
           if (card.reasoningLog) _enrichReasoningLogFromRun(card.reasoningLog, optRes && optRes.patchSummary ? optRes.patchSummary : null, false, card.runState, card.resultKind, card.lastError);
           try { card.executionTrace = _buildAiAssistExecutionTrace(card, optRes, runSnapshot); } catch (_e) {}
           this.render();
@@ -4957,13 +4968,13 @@ ensureTrackButtons(){
       const DEEPSEEK_URL = 'https://api.deepseek.com/v1';
       const OLLAMA_URL = 'http://localhost:11434/v1';
       const api = (typeof globalThis !== 'undefined' && globalThis.H2S_LLM_CONFIG) ? globalThis.H2S_LLM_CONFIG : null;
-      let baseVal = ''; let modelVal = ''; let presetVal = 'custom'; let tokenVal = ''; let velocityOnly = true;
+      let baseVal = ''; let modelVal = ''; let presetVal = 'custom'; let tokenVal = ''; let velocityOnly = false;
       if (api && typeof api.loadLlmConfig === 'function'){
         const cfg = api.loadLlmConfig();
         baseVal = (cfg && typeof cfg.baseUrl === 'string') ? cfg.baseUrl : '';
         modelVal = (cfg && typeof cfg.model === 'string') ? cfg.model : '';
         tokenVal = (cfg && typeof cfg.authToken === 'string') ? cfg.authToken : '';
-        velocityOnly = (cfg && typeof cfg.velocityOnly === 'boolean') ? cfg.velocityOnly : true;
+        velocityOnly = (cfg && typeof cfg.velocityOnly === 'boolean') ? cfg.velocityOnly : false;
         if (baseVal === DEEPSEEK_URL) presetVal = 'deepseek';
         else if (baseVal === OLLAMA_URL) presetVal = 'ollama';
       }
@@ -5287,7 +5298,7 @@ renderTimeline(){
           if (ps.hasStructuralChange === true) parts.push(_t('opt.structure'));
         }
         if (ps.reason && ps.reason !== 'ok' && ps.reason !== 'empty_ops') parts.push(`reason: ${escapeHtml(String(ps.reason))}`);
-        if (ps.reason === 'patch_rejected'){
+        if (ps.reason === 'patch_rejected' || ps.reason === 'invalid_note_reference' || ps.reason === 'unsupported_operation' || ps.reason === 'too_destructive' || ps.reason === 'invalid_timing' || ps.reason === 'invalid_pitch_or_velocity' || ps.reason === 'no_meaningful_change' || ps.reason === 'validation_failed'){
           const friendly = this._friendlyOptimizeRejection(ps.reason, (ps.detail != null ? ps.detail : (ps.llm && ps.llm.detail != null ? ps.llm.detail : '')), _t);
           if (friendly) parts.push(escapeHtml(friendly));
         }
@@ -5297,7 +5308,7 @@ renderTimeline(){
           parts.push(`Template: ${escapeHtml(id)} (${escapeHtml(ver)})`);
         }
         resultsHtml = parts.length > 0 ? parts.join(' · ') : 'No key fields.';
-      } else if (lastRes && lastRes.ok === false && String(lastRes.reason || '') === 'patch_rejected'){
+      } else if (lastRes && lastRes.ok === false){
         const friendly = this._friendlyOptimizeRejection(lastRes.reason, lastRes.detail, _t);
         resultsHtml = friendly ? escapeHtml(friendly) : escapeHtml(String(lastRes.reason || _t('lastOpt.fail.unknownReason')));
       } else {
@@ -5315,7 +5326,7 @@ renderTimeline(){
         const api = (typeof globalThis !== 'undefined' && globalThis.H2S_LLM_CONFIG && typeof globalThis.H2S_LLM_CONFIG.loadLlmConfig === 'function') ? globalThis.H2S_LLM_CONFIG : null;
         if (api) {
           const cfg = api.loadLlmConfig();
-          const safeMode = (cfg && typeof cfg.velocityOnly === 'boolean') ? cfg.velocityOnly : true;
+          const safeMode = (cfg && typeof cfg.velocityOnly === 'boolean') ? cfg.velocityOnly : false;
           llmMode = safeMode ? _t('opt.safe') : _t('opt.full');
           llmModel = (cfg && cfg.model != null && String(cfg.model).trim()) ? String(cfg.model).trim() : '';
         }

@@ -19,18 +19,33 @@ assert(H2SProject, 'H2SProject loaded');
 assert(ArrangementPatch && ArrangementPatch.applyArrangementPatchV0ToProject, 'arrangement patch loaded');
 assert(ArrangementController && ArrangementController.create, 'arrangement controller loaded');
 
-function makeProjectWithMelody(){
+function makeProjectWithMelody(options){
+  const opts = options && typeof options === 'object' ? options : {};
+  const noteCount = Number.isFinite(Number(opts.noteCount)) ? Math.max(1, Math.floor(Number(opts.noteCount))) : 2;
   const p2 = H2SProject.defaultProjectV2();
+  let notes = [
+    { id: 'm0', pitch: 64, velocity: 90, startBeat: 0, durationBeat: 1 },
+    { id: 'm1', pitch: 67, velocity: 90, startBeat: 1, durationBeat: 1 },
+  ];
+  if (noteCount !== 2){
+    notes = [];
+    for (let i = 0; i < noteCount; i++){
+      notes.push({
+        id: 'm' + i,
+        pitch: 60 + (i % 12),
+        velocity: 68 + (i % 24),
+        startBeat: Math.round(i * 0.25 * 1000) / 1000,
+        durationBeat: (i % 4 === 0) ? 0.5 : 0.25,
+      });
+    }
+  }
   const melodyScore = {
     version: 2,
     time_signature: '4/4',
     tracks: [{
       id: 'mel_t0',
       name: 'Melody',
-      notes: [
-        { id: 'm0', pitch: 64, velocity: 90, startBeat: 0, durationBeat: 1 },
-        { id: 'm1', pitch: 67, velocity: 90, startBeat: 1, durationBeat: 1 },
-      ],
+      notes: notes,
     }],
   };
   const melodyClip = H2SProject.createClipFromScoreBeat(melodyScore, { id: 'clip_melody', name: 'Melody' });
@@ -230,9 +245,12 @@ async function testPromptIncludesRequiredContext(){
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'simple chords' });
   assert(res.promptTrace && typeof res.promptTrace.userPrompt === 'string', 'prompt trace exists');
   const up = res.promptTrace.userPrompt;
-  assert(up.indexOf('Allowed schema JSON') >= 0, 'schema included');
-  assert(up.indexOf('melodyNoteTableBeat') >= 0, 'note table included');
-  assert(up.indexOf('"bpm"') >= 0, 'bpm included');
+  assert(up.indexOf('Allowed operations:') >= 0, 'compact operation summary included');
+  assert(up.indexOf('Allowed schema JSON') < 0, 'full expanded schema omitted');
+  assert(up.indexOf('melodyNoteRowsBeatCSV') >= 0, 'compact note rows included');
+  assert(up.indexOf('melodyNoteTableBeat') < 0, 'verbose note table omitted');
+  assert(/scoreBeat\.tracks\[\][^\n]*must include[^\n]*id/i.test(up), 'scoreBeat track id requirement explicit');
+  assert(up.indexOf('bpm') >= 0, 'bpm included');
   assert(up.indexOf('instanceStartBeat') >= 0, 'instance start beat included');
   const sp = res.promptTrace.systemPrompt;
   assert(sp.indexOf('beats-only') >= 0, 'beats-only constraint included');
@@ -242,26 +260,31 @@ async function testPromptIncludesRequiredContext(){
   assert(up.indexOf('createTrack') >= 0 && up.indexOf('gainDb') >= 0, 'schema includes createTrack and gainDb');
 
   assert(up.indexOf('Strategy for add_accompaniment_v0:') >= 0, 'add_accompaniment_v0 strategy block header');
-  assert(/\bbass-first\b/i.test(up), 'bass-first support guidance');
+  assert(/musically useful accompaniment/i.test(up), 'musically useful accompaniment guidance');
   assert(up.indexOf('Avoid pad-only') >= 0 || up.indexOf('block-chord-only') >= 0, 'discourages pad/block sustained default');
-  assert(up.indexOf('optional_-30..6') >= 0, 'schema documents optional gainDb range');
+  assert(/clear repeating groove/i.test(up), 'requests clear groove');
+  assert(/variation|fill/i.test(up), 'allows variation/fills');
+  assert(/kick\/snare\/hat/i.test(up), 'drum part guidance');
+  assert(/avoid over-constraining/i.test(up), 'explicitly avoids over-constraining musical choices');
+  assert(up.indexOf('keep accompaniment sparse, supportive, and musically simple') < 0, 'system prompt no longer over-constrains sparse/simple');
+  assert(up.indexOf('gainDb optional -30..0') >= 0, 'schema documents optional gainDb range');
   assert(up.indexOf('gainDb') >= 0, 'gainDb mentioned in prompt');
-  assert(/quieter than the melody/i.test(up), 'accompaniment quieter than melody');
-  assert(/-8\b/.test(up) && /-10\b/.test(up), 'suggested bass/dB ranges in strategy');
+  assert(/below the melody/i.test(up), 'accompaniment balanced below melody');
+  assert(/-5\b/.test(up) && /-9\b/.test(up), 'suggested bass/dB ranges in strategy');
   assert(up.indexOf('above 0 dB') >= 0, 'do not exceed 0 dB for accompaniment');
 
   assert(/\b(bass|drum|lead|pad|pluck|default)\b/.test(up), 'canonical built-in instrument ids mentioned');
   assert(up.indexOf('pluck') >= 0 && up.indexOf('Built-in instrument') >= 0, 'built-in instrument guidance block');
   assert(/not drums/i.test(up) && /\bdrum\b/.test(up), 'prefer drum id, discourage drums');
-  assert(/45[^\n]*60/.test(up) && /bass about 45/i.test(up), 'bass velocity range 45–60');
-  assert(/hi-hat|auxiliary/i.test(up) && /30[^\n]*45/.test(up), 'aux/hat velocity range 30–45');
-  assert(/pad\/chords about 35/i.test(up) || (/35[^\n]*55/.test(up) && /pad/i.test(up)), 'pad/chords velocity range 35–55');
-  assert(/kick\/snare|main hit/i.test(up) && /45[^\n]*60/.test(up), 'main drum hit velocity band');
-  assert(/strongest notes/i.test(up) && /melodyNoteTableBeat/i.test(up), 'velocities below melody reference');
+  assert(/50[^\n]*72/.test(up) && /bass often 50/i.test(up), 'bass velocity range 50-72');
+  assert(/hi-hat|auxiliary/i.test(up) && /35[^\n]*62/.test(up), 'aux/hat velocity range 35-62');
+  assert(/pad\/chords/i.test(up) && /40[^\n]*65/.test(up), 'pad/chords velocity range 40-65');
+  assert(/kick\/snare|main hit/i.test(up) && /50[^\n]*78/.test(up), 'main drum hit velocity band');
+  assert(/strongest notes/i.test(up) && /melody note rows/i.test(up), 'velocities below melody reference');
   assert(/Do not rely on gainDb alone/i.test(up), 'gainDb and velocity both required for balance');
-  assert(/prefer one new track/i.test(up), 'default single track preference');
-  assert(/explicitly ask[^\n]*two|two new tracks/i.test(up), 'explicit multi-part allows two tracks');
-  assert(/two tracks[^\n]*bass[^\n]*drum|bass plus light rhythm/i.test(up), 'two-track pairing guidance');
+  assert(/use two new tracks/i.test(up), 'explicit bass plus drums should use two tracks');
+  assert(/asks for one part/i.test(up), 'single track only when requested');
+  assert(/bass plus drums\/percussion/i.test(up) && /use two new tracks/i.test(up), 'two-track pairing guidance');
 
   assert(/selectedClip\.spanBeat.*target accompaniment length|target accompaniment length.*selectedClip\.spanBeat/i.test(up), 'spanBeat as target accompaniment length');
   assert(/cover most or all of the selected melody clip/i.test(up), 'cover most/all of melody clip');
@@ -276,10 +299,40 @@ async function testPromptIncludesRequiredContext(){
   assert(res.llmDebug.request.maxMessageChars > 0, 'diagnostics maxMessageChars');
   assert(res.llmDebug.request.noteRowsTotal === 2, 'diagnostics noteRowsTotal');
   assert(res.llmDebug.request.noteRowsSent === 2, 'diagnostics noteRowsSent');
+  assert(res.llmDebug.request.promptMode === 'compact', 'diagnostics promptMode');
   const safeDiag = JSON.stringify(res.llmDebug.request);
   assert(safeDiag.indexOf('simple chords') < 0, 'diagnostics do not include user prompt text');
-  assert(safeDiag.indexOf('melodyNoteTableBeat') < 0, 'diagnostics do not include prompt/schema text');
+  assert(safeDiag.indexOf('melodyNoteRowsBeatCSV') < 0, 'diagnostics do not include prompt/schema text');
   assert(res.llmDebug.request.totalChars < 50_000, 'typical arrangement prompt fits free_basic input cap');
+}
+
+async function testLargeSelectedClipPromptIsCompact(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody({ noteCount: 220 });
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  const patch = { kind: 'arrangement_patch_v0', version: 1, ops: [] };
+  setMockCloudLlm({
+    callChatCompletions: async (_cfg, _messages) => ({ text: '```json\n' + JSON.stringify(patch) + '\n```' }),
+    extractJsonObject: (txt) => {
+      const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  });
+  try {
+    const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add drums and bass' });
+    assert(res.ok === true, 'large clip still routes to cloud LLM');
+    assert(res.llmDebug && res.llmDebug.request, 'safe request diagnostics included');
+    assert(res.llmDebug.request.noteRowsTotal === 220, 'diagnostics noteRowsTotal for large clip');
+    assert(res.llmDebug.request.noteRowsSent === 220, 'diagnostics noteRowsSent for large clip');
+    assert(res.llmDebug.request.promptMode === 'compact', 'diagnostics promptMode for large clip');
+    assert(res.llmDebug.request.totalChars < 30_000, '220-note arrangement prompt stays below compact target budget');
+    const up = res.promptTrace.userPrompt;
+    assert(up.indexOf('melodyNoteRowsBeatCSV') >= 0, 'compact CSV note rows included');
+    assert(!/\{\s*"trackId"\s*:/.test(up), 'prompt does not include verbose per-note JSON objects');
+    assert(up.indexOf('Allowed schema JSON') < 0, 'prompt does not include full expanded schema');
+  } finally {
+    globalThis.H2S_CLOUD_MODE = false;
+    globalThis.H2S_CLOUD_LLM_CLIENT = null;
+  }
 }
 
 async function testRejectsMissingOrAudioSelection(){
@@ -363,6 +416,7 @@ async function main(){
   await testMalformedNoJsonNoCommit();
   await testBeatsOnlyInvariantRejectsSeconds();
   await testPromptIncludesRequiredContext();
+  await testLargeSelectedClipPromptIsCompact();
   await testRejectsMissingOrAudioSelection();
   await testPromptTraceSanitized();
   await testCloudModeUsesCloudLlmBridge();

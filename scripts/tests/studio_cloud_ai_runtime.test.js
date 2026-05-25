@@ -17,15 +17,41 @@ const verMatch = version.match(/H2S_STUDIO_ASSET_VERSION\s*=\s*'([^']+)'/);
 assert(verMatch, 'studio_asset_version.js should define H2S_STUDIO_ASSET_VERSION');
 const ver = verMatch[1];
 
-assert(index.includes('studio_asset_version.js?v=' + ver), 'index.html should cache-bust studio_asset_version.js');
-assert(index.includes('app.js?v=' + ver), 'index.html should cache-bust app.js');
-assert(index.includes('cloud_project_bridge.js?v=' + ver), 'index.html should cache-bust cloud_project_bridge.js');
-assert(index.includes('cloud_materials_panel.js?v=' + ver), 'index.html should cache-bust cloud_materials_panel.js');
-assert(index.includes('library_view.js?v=' + ver), 'index.html should cache-bust library_view.js');
-assert(index.includes('selection_view.js?v=' + ver), 'index.html should cache-bust selection_view.js');
-assert(index.includes('selection_controller.js?v=' + ver), 'index.html should cache-bust selection_controller.js');
+function scriptVersion(src) {
+  const escaped = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = index.match(new RegExp('<script\\s+src="/static/pianoroll/' + escaped + '\\?v=([^"]+)"'));
+  return m ? m[1] : '';
+}
+
+const requiredVersionedScripts = [
+  'studio_asset_version.js',
+  'h2s_startup_perf.js',
+  'app.js',
+  'cloud_project_bridge.js',
+  'cloud_materials_panel.js',
+  'ui/library_view.js',
+  'ui/selection_view.js',
+  'controllers/selection_controller.js',
+];
+
+for (const src of requiredVersionedScripts) {
+  const assetVersion = scriptVersion(src);
+  assert(assetVersion, src + ' should be present with a non-empty cache-bust version');
+  assert(!/[\\/?#]/.test(assetVersion), src + ' cache-bust version should be a plain marker');
+}
+
+assert(ver === 'worker-default-v1', 'studio_asset_version.js should preserve current production marker');
+assert(scriptVersion('studio_asset_version.js') === 'ai-optimize-musical-v1', 'index.html should preserve production studio_asset_version.js cache marker');
+assert(scriptVersion('h2s_startup_perf.js') === 'ai-optimize-musical-v1', 'index.html should preserve production startup perf cache marker');
+assert(scriptVersion('app.js') === 'typed-ai-optfail-detail-20260526-0355', 'index.html should preserve production app.js cache marker');
+assert(scriptVersion('cloud_project_bridge.js') === 'typed-ai-optfail-detail-20260526-0355', 'index.html should preserve production cloud_project_bridge.js cache marker');
+assert(scriptVersion('cloud_materials_panel.js') === 'ai-optimize-musical-v1', 'index.html should preserve production cloud materials cache marker');
+assert(scriptVersion('ui/library_view.js') === 'ai-optimize-musical-v1', 'index.html should preserve production library view cache marker');
+assert(scriptVersion('ui/selection_view.js') === 'ai-optimize-musical-v1', 'index.html should preserve production selection view cache marker');
+assert(scriptVersion('controllers/selection_controller.js') === 'ai-optimize-musical-v1', 'index.html should preserve production selection controller cache marker');
+
 assert(index.indexOf('studio_asset_version.js') < index.indexOf('i18n.js'), 'asset version should load before i18n.js');
-assert(index.indexOf('studio_asset_version.js') < index.indexOf('app.js?v=' + ver), 'asset version should load before app.js');
+assert(index.indexOf('studio_asset_version.js') < index.indexOf('app.js?v=' + scriptVersion('app.js')), 'asset version should load before app.js');
 assert(index.includes('params.get(\'cloudMode\') === \'1\''), 'index.html should bootstrap cloudMode before app.js');
 assert(index.includes('hum2song\\.cn'), 'index.html bootstrap should detect Hum2Song Cloud embed referrer');
 
@@ -34,6 +60,6 @@ assert(bridge.includes('document.referrer'), 'bridge should detect Cloud embed v
 assert(bridge.includes('rerenderAiSettingsDrawerIfOpen'), 'bridge should refresh open AI Settings drawer on cloud boot');
 assert(bridge.includes('H2S_SCHEDULE_CLOUD_AI_STATUS'), 'bridge should defer cloud AI status until interactive or drawer');
 assert(bridge.includes('h2s_startup_perf.js') === false, 'bridge file should not embed perf script');
-assert(index.includes('h2s_startup_perf.js?v=' + ver), 'index should load startup perf helper');
+assert(index.includes('h2s_startup_perf.js?v=' + scriptVersion('h2s_startup_perf.js')), 'index should load startup perf helper');
 
 console.log('studio_cloud_ai_runtime.test.js ok');

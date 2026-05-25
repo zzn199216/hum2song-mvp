@@ -68,7 +68,7 @@
     return n;
   }
 
-  function messageDiagnostics(messages, noteRowsTotal, noteRowsSent){
+  function messageDiagnostics(messages, noteRowsTotal, noteRowsSent, promptMode){
     const arr = Array.isArray(messages) ? messages : [];
     let totalChars = 0;
     let maxMessageChars = 0;
@@ -84,7 +84,14 @@
       maxMessageChars: maxMessageChars,
       noteRowsTotal: isFiniteNumber(Number(noteRowsTotal)) ? Number(noteRowsTotal) : null,
       noteRowsSent: isFiniteNumber(Number(noteRowsSent)) ? Number(noteRowsSent) : null,
+      promptMode: safeTrim(promptMode) || null,
     };
+  }
+
+  function compactNumber(value, fallback){
+    const n = Number(value);
+    if (!isFiniteNumber(n)) return fallback;
+    return Math.round(n * 1000) / 1000;
   }
 
   function buildMelodyNoteTable(scoreBeat, maxRows){
@@ -107,7 +114,6 @@
       for (const note of notes){
         if (rows.length >= maxRows) return rows;
         rows.push({
-          trackId: trackId,
           noteId: asString(note && note.id),
           pitch: Number(note && note.pitch),
           velocity: Number(note && note.velocity),
@@ -119,13 +125,40 @@
     return rows;
   }
 
+  function melodyPitchStats(noteTable){
+    let minPitch = null;
+    let maxPitch = null;
+    for (let i = 0; i < noteTable.length; i++){
+      const p = Number(noteTable[i] && noteTable[i].pitch);
+      if (!isFiniteNumber(p)) continue;
+      if (minPitch === null || p < minPitch) minPitch = p;
+      if (maxPitch === null || p > maxPitch) maxPitch = p;
+    }
+    return { minPitch: minPitch, maxPitch: maxPitch };
+  }
+
+  function formatMelodyNoteRowsCsv(noteTable){
+    const lines = ['row,pitch,vel,start,dur'];
+    for (let i = 0; i < noteTable.length; i++){
+      const r = noteTable[i] || {};
+      lines.push([
+        String(i + 1),
+        String(Math.max(0, Math.min(127, Math.round(Number(r.pitch) || 0)))),
+        String(Math.max(1, Math.min(127, Math.round(Number(r.velocity) || 1)))),
+        String(compactNumber(r.startBeat, 0)),
+        String(compactNumber(r.durationBeat, 0)),
+      ].join(','));
+    }
+    return lines.join('\n');
+  }
+
   function summarizeTracks(project, maxItems){
     const out = [];
     const tracks = (project && Array.isArray(project.tracks)) ? project.tracks : [];
     for (let i = 0; i < tracks.length && out.length < maxItems; i++){
       const t = tracks[i] || {};
       out.push({
-        trackId: safeTrim(t.id || t.trackId) || ('track_' + i),
+        id: safeTrim(t.id || t.trackId) || ('track_' + i),
         name: safeTrim(t.name) || '',
         instrument: safeTrim(t.instrument) || 'default',
       });
@@ -139,11 +172,11 @@
     for (let i = 0; i < instances.length && out.length < maxItems; i++){
       const inst = instances[i] || {};
       out.push({
-        instanceId: safeTrim(inst.id),
-        clipId: safeTrim(inst.clipId),
-        trackId: safeTrim(inst.trackId),
-        startBeat: Number(inst.startBeat),
-        transpose: Number(inst.transpose || 0),
+        id: safeTrim(inst.id),
+        clip: safeTrim(inst.clipId),
+        track: safeTrim(inst.trackId),
+        start: compactNumber(inst.startBeat, 0),
+        transpose: compactNumber(inst.transpose || 0, 0),
       });
     }
     return out;
@@ -153,8 +186,8 @@
   function buildAddAccompanimentV0StrategyBlock(){
     return [
       'Strategy for add_accompaniment_v0:',
-      '- Default strategy: bass-first support.',
-      '- Tracks: unless the user explicitly asks for multiple parts, prefer one new track. If they explicitly ask for two parts (e.g. bass + drums), up to two new tracks is appropriate (still within the v0 cap). For two tracks, prefer bass plus light rhythm/drum, both sparse and quieter than the melody.',
+      '- Default strategy: create a musically useful accompaniment, not only a minimal placeholder.',
+      '- Tracks: if the user asks for bass plus drums/percussion, use two new tracks. Use one new track only when the user asks for one part or the musical idea clearly needs one.',
       '- Duration coverage: use Context JSON selectedClip.spanBeat as the target accompaniment length (beats).',
       '- Generated accompaniment should usually cover most or all of the selected melody clip.',
       '- Do not end accompaniment much earlier than the melody unless the user explicitly asks for a short fill.',
@@ -162,62 +195,43 @@
       '- For bass, drum, and rhythm patterns, repeat or continue the pattern until near selectedClip.spanBeat.',
       '- If creating two tracks, both should roughly cover the selected clip unless one is explicitly a short fill.',
       '- Built-in instrument ids (use these exact strings; do not invent plural ids): bass, drum, lead, pad, pluck, default. For drums/percussion use drum, not drums.',
-      '- Prefer creating one supportive bass-like accompaniment track.',
-      '- Use low register notes, but keep them soft and sparse.',
-      '- Use short-to-medium rhythmic notes, not whole-clip or multi-bar sustained blocks.',
+      '- Bass: use low-register notes with a clear repeating groove. Follow strong melody beats and imply root movement; avoid only whole-clip sustained notes.',
+      '- Drums: use a recognizable kick/snare/hat or percussion pattern when drum is requested. Add small variations or fills every 4-8 bars when the clip is long enough.',
+      '- Use short-to-medium rhythmic notes and enough activity to feel like an accompaniment, while leaving space for the melody.',
       '- Avoid pad-only / block-chord-only output as the default.',
       '- Preserve melody as the main focus.',
       '- If adding chords/pad, keep them secondary and light.',
-      '- Velocity (MIDI 1–127) for new accompaniment notes: bass about 45–60; kick/snare/main hits about 45–60; hi-hat/auxiliary hits about 30–45; pad/chords about 35–55.',
-      '- Keep accompaniment velocities generally below the melody’s strongest notes (see melodyNoteTableBeat).',
-      '- Do not rely on gainDb alone; combine conservative gainDb with these velocities so accompaniment stays behind the melody.',
-      '- If using two tracks, keep both sparse and conservative in velocity and note density.',
+      '- Velocity (MIDI 1–127) for new accompaniment notes: bass often 50–72; kick/snare/main hits often 50–78; hi-hat/auxiliary hits often 35–62; pad/chords often 40–65.',
+      '- Keep accompaniment velocities generally below the melody’s strongest notes (see melody note rows).',
+      '- Do not rely on gainDb alone; combine moderate gainDb with sensible velocities so accompaniment stays behind the melody.',
+      '- Avoid over-constraining musical choices: prefer coherent groove and variation over extreme sparsity.',
       '- Do not overpower the melody.',
       '- Do not modify/delete existing melody material.',
-      '- Set conservative createTrack gainDb so accompaniment is quieter than the melody (usually below 0 dB).',
-      '- Typical gainDb: bass about -8 to -10; drums/percussion about -10 to -14; pad/chords about -12 to -16.',
+      '- Set createTrack gainDb so accompaniment is balanced below the melody (usually below 0 dB).',
+      '- Typical gainDb: bass about -5 to -9; drums/percussion about -6 to -11; pad/chords about -8 to -14.',
       '- Do not set accompaniment gainDb above 0 dB.',
     ].join('\n');
   }
 
   function buildPromptContext(input){
     const noteTable = buildMelodyNoteTable(input.selectedClip.score, 512);
-    const payload = {
-      task: 'Hum2Song Arrangement Patch v0',
-      goal: input.goal,
-      userPrompt: input.userPrompt || '',
-      project: {
-        bpm: input.bpm,
-        timeSignature: input.timeSignature || null,
-      },
+    const pitchStats = melodyPitchStats(noteTable);
+    const projectContext = {
+      bpm: compactNumber(input.bpm, 120),
+      timeSignature: input.timeSignature || null,
       selectedClip: {
         clipId: input.selectedClipId,
         name: safeTrim(input.selectedClip.name) || '',
-        spanBeat: Number(input.selectedClipSpanBeat),
-        instanceStartBeat: Number(input.selectedInstanceStartBeat),
+        spanBeat: compactNumber(input.selectedClipSpanBeat, 0),
+        instanceStartBeat: compactNumber(input.selectedInstanceStartBeat, 0),
       },
-      melodyNoteTableBeat: noteTable,
+      melodySummary: {
+        noteCount: noteTable.length,
+        minPitch: pitchStats.minPitch,
+        maxPitch: pitchStats.maxPitch,
+      },
       existingTracks: summarizeTracks(input.projectV2, 24),
       existingTimelineInstances: summarizeInstances(input.projectV2, 48),
-    };
-
-    const schema = {
-      kind: 'arrangement_patch_v0',
-      version: 1,
-      ops: [
-        { op: 'createTrack', trackId: 'string', name: 'string', instrument: 'string', gainDb: 'optional_-30..6' },
-        { op: 'createClip', clipId: 'string', name: 'string', sourceTaskId: 'optional_string', scoreBeat: {
-          version: 2,
-          time_signature: 'optional_string',
-          tracks: [
-            { id: 'string', name: 'optional_string', notes: [
-              { id: 'string', pitch: '0..127', velocity: '1..127', startBeat: '>=0', durationBeat: '>0' }
-            ] }
-          ],
-        } },
-        { op: 'setTrackInstrument', trackId: 'string', instrument: 'string' },
-        { op: 'addInstance', instanceId: 'string', clipId: 'string', trackId: 'string', startBeat: '>=0', transpose: 'optional_-48..48' },
-      ],
     };
 
     const systemPrompt = [
@@ -232,7 +246,7 @@
       '- never modify or delete existing melody material.',
       '- do not reference non-existent clip/track IDs.',
       '- prefer 1-2 new tracks maximum.',
-      '- keep accompaniment sparse, supportive, and musically simple.',
+      '- keep accompaniment supportive, balanced, and musically coherent; do not default to extremely sparse placeholder parts.',
       '- generated caps: max 2 new tracks, max 4 new clips, max 8 new instances, max 256 notes total.',
       '',
       'Return only the JSON code block.',
@@ -248,15 +262,25 @@
     }
     userPromptParts.push(
       '',
-      'Context JSON:',
-      JSON.stringify(payload, null, 2),
+      'Context compact JSON:',
+      JSON.stringify(projectContext),
       '',
-      'Allowed schema JSON:',
-      JSON.stringify(schema, null, 2),
+      'melodyNoteRowsBeatCSV:',
+      formatMelodyNoteRowsCsv(noteTable),
+      '',
+      'Allowed operations:',
+      '- Return {"kind":"arrangement_patch_v0","version":1,"ops":[...]} in one json code block.',
+      '- createTrack(trackId,name,instrument,gainDb optional -30..0).',
+      '- createClip(clipId,name,scoreBeat:{version:2,tracks:[{id,notes:[{id,pitch,velocity,startBeat,durationBeat}]}]}).',
+      '- scoreBeat.tracks[] objects must include non-empty id; note objects must include id,pitch 0..127,velocity 1..127,startBeat >=0,durationBeat >0.',
+      '- setTrackInstrument(trackId,instrument) only for newly created tracks if needed.',
+      '- addInstance(instanceId,clipId,trackId,startBeat,transpose optional -48..48).',
+      '- Use only new unique ids for created tracks/clips/instances/notes; avoid ids listed in compact context.',
+      '- Do not include seconds fields. Do not modify or delete existing melody.',
     );
     const userPrompt = userPromptParts.join('\n');
 
-    return { systemPrompt: systemPrompt, userPrompt: userPrompt };
+    return { systemPrompt: systemPrompt, userPrompt: userPrompt, promptMode: 'compact', noteRowsSent: noteTable.length };
   }
 
   function validateHooks(hooks){
@@ -374,8 +398,8 @@
         { role: 'user', content: promptBuilt.userPrompt },
       ];
       const noteRowsTotal = countNotes(selectedScore);
-      const noteRowsSent = buildMelodyNoteTable(selectedScore, 512).length;
-      const requestDiagnostics = messageDiagnostics(messages, noteRowsTotal, noteRowsSent);
+      const noteRowsSent = promptBuilt.noteRowsSent;
+      const requestDiagnostics = messageDiagnostics(messages, noteRowsTotal, noteRowsSent, promptBuilt.promptMode);
       const promptTrace = {
         systemPrompt: promptBuilt.systemPrompt,
         userPrompt: promptBuilt.userPrompt,

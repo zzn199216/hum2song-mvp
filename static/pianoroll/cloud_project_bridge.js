@@ -144,7 +144,7 @@
     try { stored = String(localStorage.getItem('h2s_cloud_ai_selected_preset_id') || '').trim(); } catch (_e) {}
     var presets = availableCloudAiPresets();
     if (stored && presets.some(function (p) { return p.id === stored; })) return stored;
-    var preferred = presets.find(function (p) { return p.id === 'pro_quality' || p.id === 'preview_standard' || p.id === 'free_basic'; });
+    var preferred = presets.find(function (p) { return p.id === 'free_basic' || p.id === 'preview_standard'; });
     return (preferred || presets[0] || {}).id || '';
   }
 
@@ -196,7 +196,7 @@
 
     return new Promise(function (resolve, reject) {
       var requestId = newCloudRequestId('cloud-ai-llm');
-      var timeoutMs = opts && typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0 ? opts.timeoutMs : 180000;
+      var timeoutMs = opts && typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0 ? opts.timeoutMs : 600000;
       var done = false;
       var timer = null;
       function cleanup() {
@@ -375,7 +375,7 @@
       }
 
       case 'H2S_CLOUD_AI_CHAT_RESPONSE': {
-        if (!window.H2S_CLOUD_AI_CHAT_REQUEST_ID || data.requestId !== window.H2S_CLOUD_AI_CHAT_REQUEST_ID) return;
+        if (typeof data.requestId !== 'string' || !data.requestId) return;
         window.H2S_CLOUD_MODE = true;
         window.H2S_CLOUD_AI_CHAT_RESULT = {
           loading: false,

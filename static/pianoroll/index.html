@@ -1509,7 +1509,6 @@
                   <button type="button" class="btn mini" data-template-id="fix_pitch_v1" data-i18n="editor.fixPitch">Fix Pitch</button>
                   <button type="button" class="btn mini" data-template-id="tighten_rhythm_v1" data-i18n="editor.tightenRhythm">Tighten Rhythm</button>
                   <button type="button" class="btn mini" data-template-id="clean_outliers_v1" data-i18n="editor.cleanOutliers">Clean Outliers</button>
-                  <button type="button" class="btn mini" data-template-id="bluesy_v1" data-i18n="editor.bluesy">Bluesy</button>
                 </div>
               </div>
               <div style="display:none;" aria-hidden="true">
@@ -1518,7 +1517,7 @@
                 <input type="checkbox" id="qoptReduceOutliers" />
               </div>
               <div style="font-size:11px; opacity:0.85; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-                <span id="editorQuickOptimizeMode" class="badge" data-i18n="opt.safe">Safe mode</span>
+                <span id="editorQuickOptimizeMode" class="badge" data-i18n="opt.full">Full mode</span>
                 <span id="editorQuickOptimizeModel" class="muted" data-i18n="editor.modelUnset">Model: (unset)</span>
               </div>
               <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
@@ -1573,7 +1572,7 @@
                     <div class="editor-llm-row">
                       <label class="editor-llm-checkbox">
                         <input type="checkbox" id="editorLlmVelocityOnly" checked />
-                        <span data-i18n="editor.velocityOnlySafe">Velocity-only (Safe mode)</span>
+                        <span data-i18n="editor.velocityOnlySafe">Velocity-only quick tool</span>
                       </label>
                     </div>
                     <div class="row" style="margin-top:4px;">
@@ -1611,8 +1610,8 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=worker-default-v1"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=ai-optimize-musical-v1"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=ai-optimize-musical-v1"></script>
   <script src="/static/i18n/i18n.js?v=worker-default-v1"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
@@ -1631,16 +1630,16 @@
   <script src="/static/pianoroll/core/arrangement_patch_v0.js?v=1"></script>
   <script src="/static/pianoroll/core/arrangement_quality_v0.js?v=1"></script>
   <script src="/static/pianoroll/core/optimize_templates_v1.js"></script>
-  <script src="/static/pianoroll/controllers/agent_controller.js"></script>
-  <script src="/static/pianoroll/controllers/arrangement_controller.js"></script>
+  <script src="/static/pianoroll/controllers/agent_controller.js?v=typed-ai-optfail-detail-20260526-0355"></script>
+  <script src="/static/pianoroll/controllers/arrangement_controller.js?v=arrangement-creative-v1"></script>
   <script src="/static/pianoroll/ui/timeline_view.js"></script>
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=ai-optimize-musical-v1"></script>
   <script src="/static/pianoroll/controllers/library_controller.js"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=worker-default-v1"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=ai-optimize-musical-v1"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=ai-optimize-musical-v1"></script>
   <script src="/static/pianoroll/controllers/audio_controller.js"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
@@ -1809,9 +1808,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=worker-default-v1"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=worker-default-v1"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/app.js?v=typed-ai-optfail-detail-20260526-0355"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=typed-ai-optfail-detail-20260526-0355"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=ai-optimize-musical-v1"></script>
   <script>
   (function () {
     try {

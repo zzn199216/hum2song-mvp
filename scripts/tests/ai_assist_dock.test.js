@@ -17,6 +17,20 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg || 'assertion failed');
 }
 
+(function testAiPlanPromptAllowsMoreMusicalPlan(){
+  const fs = require('fs');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../static/pianoroll/app.js'), 'utf8');
+  assert(src.indexOf('musically useful, not overly conservative') >= 0, 'AI plan prompt should allow less conservative musical plans');
+  assert(src.indexOf('planLines should have 2-5 strings') >= 0, 'AI plan prompt should allow up to 5 plan lines');
+  assert(src.indexOf('planLines must have 2-4 strings') < 0, 'AI plan prompt should not keep old 2-4 line constraint');
+  assert(src.indexOf("this._lastOptFailureDetail(optRes, _t)") >= 0, 'Assistant optimize failures should use friendly failure text');
+  assert(src.indexOf("String(optRes.reason || optRes.detail || optRes.message).slice(0, 80)") < 0, 'Assistant optimize failures must not expose raw patch_rejected codes');
+  assert(src.indexOf("merged._assistantFreeformTextRequest === true") >= 0, 'App.optimizeClip must preserve typed assistant freeform marker');
+  assert(src.indexOf("options._assistantFreeformTextRequest = true") >= 0, 'Agent options must receive typed assistant freeform marker');
+  assert(src.indexOf("if (optRes && !optRes.ok) throw new Error(optRes.reason") < 0, 'runCommand must not throw away optimizeResult on patch rejection');
+  console.log('PASS AI plan prompt allows more musical plan');
+})();
+
 // Stub I18N
 const I18N = { t: (k) => { const m = { 'aiAssist.selectClipFirst': 'Select a clip first.', 'aiAssist.selectedClipStale': 'That clip is no longer in the project.', 'aiAssist.skillDisabled': 'That assistant action is unavailable.', 'aiAssist.addClipToTimelineRunning': 'Adding clip to timeline…', 'aiAssist.addClipToTimelineOk': 'Added clip to timeline.', 'aiAssist.addClipToTimelineFail': 'Could not add clip to timeline', 'aiAssist.addClipToTimelineTrackOutOfRange': 'Track {n} is out of range (1-{max}).', 'aiAssist.addClipToTimelineBeatInvalid': 'Beat value must be a non-negative number.', 'aiAssist.addTrackRunning': 'Adding track…', 'aiAssist.addTrackOk': 'Added track {n}.', 'aiAssist.addTrackFail': 'Could not add track', 'aiAssist.selectInstanceFirst': 'Select a timeline instance first.', 'aiAssist.moveInstanceStale': 'That instance is no longer in the project.', 'aiAssist.moveInstanceRunning': 'Moving instance…', 'aiAssist.moveInstanceFail': 'Could not move instance', 'aiAssist.moveInstanceOk': 'Moved {dir} by {delta} beats.', 'aiAssist.moveInstanceOkTrack': 'Moved instance to track {n}.', 'aiAssist.moveInstanceClamped': '(Start clamped to beat 0.)', 'aiAssist.removeInstanceConfirm': 'Remove ({name})?', 'aiAssist.removeInstanceCancelled': 'Remove cancelled.', 'aiAssist.removeInstanceRunning': 'Removing instance…', 'aiAssist.removeInstanceOk': 'Removed timeline instance.', 'aiAssist.removeInstanceFail': 'Could not remove instance', 'aiAssist.dirLeft': 'left', 'aiAssist.dirRight': 'right', 'aiAssist.run': 'Run', 'aiAssist.openOptimize': 'Open Optimize', 'aiAssist.undo': 'Undo', 'aiAssist.noClip': 'No clip selected', 'aiAssist.clipPrefix': 'Clip: ', 'aiAssist.trackPrefix': 'Track ', 'aiAssist.addBassRunning': 'Adding bass…', 'aiAssist.addBassOk': 'Bass accompaniment added.', 'aiAssist.addBassFail': 'Could not add bass: {detail}', 'aiAssist.addAccompanimentRunning': 'Adding accompaniment…', 'aiAssist.addAccompanimentOk': 'Accompaniment added. You can open Arrangement Details to inspect the prompt and patch.', 'aiAssist.addAccompanimentFail': 'Could not add accompaniment: {detail}', 'aiAssist.addAccompanimentCancelled': 'Add accompaniment cancelled.', 'aiAssist.addAccompanimentConfirm': 'I\'ll add an experimental accompaniment to the currently selected melody without changing the original. Continue?', 'aiAssist.addAccompanimentContinue': 'Continue', 'aiAssist.addAccompanimentCancel': 'Cancel', 'aiAssist.selectMelodyTimelineFirst': 'Select melody on timeline.', 'aiAssist.addAccompanimentNeedsNoteClip': 'This needs an editable note clip. Convert the audio to editable notes first.', 'aiAssist.intentRouterArrangementHint': 'HINT_ARR', 'aiAssist.intentRouterAccompanimentFaq': 'FAQ_ACCOMP' }; return m[k] || k; } };
 
@@ -1103,14 +1117,8 @@ function createFakeApp(opts) {
         self.render();
         return Promise.resolve();
       }
-      const mapped = mapAiAssistTextToTemplate(text);
       const card = { type: 'card', clipId, promptText: text, createdAt: Date.now(), runState: 'idle', usedPresetId: null, resultKind: null, lastError: null };
-      if (mapped.templateId && mapped.intent) {
-        card.templateId = mapped.templateId;
-        card.templateLabel = mapped.templateLabel;
-        card.intent = mapped.intent;
-      }
-      card.plan = _buildAiAssistPlan(card.templateId || null, card.intent || null, text);
+      card.plan = _buildAiAssistPlan(null, null, text);
       card.reasoningLog = {
         userPrompt: text.slice(0, 200),
         templateId: card.templateId || null,
@@ -1121,14 +1129,13 @@ function createFakeApp(opts) {
         createdAt: card.createdAt,
       };
       self._aiAssistItems.push(card);
-      const p = tryGenerateAiPlan(text, card.templateId || null, card.intent || null).then((plan) => {
+      const p = tryGenerateAiPlan(text, null, null).then((plan) => {
         if (plan) {
           card.plan = plan;
           if (card.reasoningLog) {
             card.reasoningLog.planSummary = (plan.planTitle && String(plan.planTitle).trim()) ? String(plan.planTitle).trim() : card.reasoningLog.planSummary;
             card.reasoningLog.planSource = 'ai';
           }
-          syncAssistantCardTemplateFromPlan(card);
         }
         self.render();
       }).catch(() => {});
@@ -1201,7 +1208,6 @@ function createFakeApp(opts) {
     const promptText = (btnEl && btnEl.getAttribute && btnEl.getAttribute('data-prompt')) || '';
     const card = (this._aiAssistItems || []).find(x => x.type === 'card' && String(x.clipId) === String(clipId) && (!promptText || x.promptText === promptText));
     if (!card) return;
-    syncAssistantCardTemplateFromPlan(card);
     const text = (promptText !== '' && promptText !== null) ? promptText : (card.promptText || '');
     if (testAssistantDirectBassIntent(text)) return mirrorRunAddAccompanimentFlow(this, text, this._t);
     const runSnapshot = _buildAssistantRunExecutionSnapshot(card);
@@ -1217,7 +1223,7 @@ function createFakeApp(opts) {
         card.reasoningLog.planSummary = String(runSnapshot.usedPlan.planTitle).slice(0, 200);
       }
     }
-    const opts = { userPrompt: text, requestedPresetId: runSnapshot.usedRequestedPresetId };
+    const opts = { userPrompt: text, requestedPresetId: runSnapshot.usedRequestedPresetId, _assistantFreeformTextRequest: true };
     if (runSnapshot.usedTemplateId && runSnapshot.usedIntent) {
       opts.templateId = runSnapshot.usedTemplateId;
       opts.intent = runSnapshot.usedIntent;
@@ -1237,7 +1243,16 @@ function createFakeApp(opts) {
     try {
       const res = await this.runCommand('optimize_clip', { clipId });
       if (btnEl) btnEl.disabled = false;
+      const optRes = (res && res.data && res.data.optimizeResult) ? res.data.optimizeResult : null;
       if (!res || !res.ok) {
+        if (optRes) {
+          card.runState = 'failed';
+          card.lastError = (optRes && (optRes.reason || optRes.detail || optRes.message)) ? String(optRes.reason || optRes.detail || optRes.message).slice(0, 80) : 'Optimize failed';
+          if (card.reasoningLog) _enrichReasoningLogFromRun(card.reasoningLog, optRes && optRes.patchSummary ? optRes.patchSummary : null, false, card.runState, card.resultKind, card.lastError);
+          try { card.executionTrace = _buildAiAssistExecutionTrace(card, optRes, runSnapshot); } catch (_e) {}
+          this.render();
+          return;
+        }
         card.runState = 'failed';
         card.lastError = (res && res.message) ? String(res.message).slice(0, 80) : 'Optimize failed';
         if (card.reasoningLog) _enrichReasoningLogFromRun(card.reasoningLog, null, false, card.runState, card.resultKind, card.lastError);
@@ -1245,7 +1260,6 @@ function createFakeApp(opts) {
         this.render();
         return;
       }
-      const optRes = (res.data && res.data.optimizeResult) ? res.data.optimizeResult : null;
       if (!optRes || !optRes.ok) {
         card.runState = 'failed';
         card.lastError = (optRes && (optRes.reason || optRes.detail || optRes.message)) ? String(optRes.reason || optRes.detail || optRes.message).slice(0, 80) : 'Optimize failed';
@@ -2196,7 +2210,7 @@ function createFakeApp(opts) {
     return app._aiAssistSend().then(() => {
       assert(addAccompanimentCalls.length === 0, 'optimize keyword wins');
       assert(app._aiAssistItems.length === 1 && app._aiAssistItems[0].type === 'card');
-      assert(app._aiAssistItems[0].templateId === 'fix_pitch_v1');
+      assert(app._aiAssistItems[0].templateId == null, 'typed optimize should not bind template even when it overrides mistaken add router');
     });
   } finally {
     globalThis.H2S_LLM_CONFIG = prevCfg;
@@ -2258,13 +2272,14 @@ function createFakeApp(opts) {
   assert(setOptimizeOptionsCalls[0].clipId === 'clip-1', 'clipId should match');
   assert(setOptimizeOptionsCalls[0].opts.requestedPresetId === 'llm_v0', 'preset should be llm_v0');
   assert(setOptimizeOptionsCalls[0].opts.userPrompt === 'fix pitch', 'userPrompt should match');
+  assert(setOptimizeOptionsCalls[0].opts._assistantFreeformTextRequest === true, 'typed assistant run should mark freeform text request');
   assert(runCommandCalls.length === 1, 'runCommand should be called once');
   assert(runCommandCalls[0].command === 'optimize_clip', 'command should be optimize_clip');
   assert(runCommandCalls[0].payload.clipId === 'clip-1', 'payload should have correct clipId');
   console.log('PASS Run on card => runCommand optimize_clip');
 })();
 
-(function testUx7bMatchedMappingStoresTemplateIdOnCard() {
+(function testTypedAssistantMatchedOptimizePromptStaysFreeform() {
   const { app, doc } = createFakeApp();
   app.state.selectedClipId = 'clip-1';
   const inp = doc.getElementById('aiAssistInput');
@@ -2273,14 +2288,15 @@ function createFakeApp(opts) {
   assert(app._aiAssistItems.length === 1, 'should have one card');
   const card = app._aiAssistItems[0];
   assert(card.type === 'card', 'should be card');
-  assert(card.templateId === 'fix_pitch_v1', 'card should store templateId fix_pitch_v1');
-  assert(card.templateLabel === 'Fix Pitch', 'card should store templateLabel');
-  assert(card.intent && card.intent.fixPitch === true, 'card should store intent with fixPitch');
+  assert(card.templateId == null, 'typed assistant optimize card should not bind templateId');
+  assert(card.templateLabel == null, 'typed assistant optimize card should not bind templateLabel');
+  assert(card.intent == null, 'typed assistant optimize card should not bind intent');
+  assert(!card.rhythmIntent && !card.localTransposeIntent && !card.velocityShapeIntent, 'typed assistant should not bind deterministic optimize presets');
   assert(card.promptText === 'the pitch is off', 'userPrompt preserved as original text');
-  console.log('PASS UX7b matched mapping => card stores templateId, templateLabel, intent');
+  console.log('PASS typed assistant matched optimize prompt stays freeform');
 })();
 
-(function testUx7bRunPassesTemplateIdAndIntent() {
+(function testTypedAssistantRunDoesNotPassTemplateIdAndIntent() {
   const { app, doc, setOptimizeOptionsCalls } = createFakeApp();
   app.state.selectedClipId = 'clip-1';
   doc.getElementById('aiAssistInput').value = 'the pitch is off';
@@ -2288,11 +2304,12 @@ function createFakeApp(opts) {
   const btnEl = { getAttribute: (a) => (a === 'data-prompt' ? 'the pitch is off' : null), disabled: false };
   app._aiAssistRun('clip-1', btnEl);
   assert(setOptimizeOptionsCalls.length === 1, 'setOptimizeOptions should be called');
-  assert(setOptimizeOptionsCalls[0].opts.templateId === 'fix_pitch_v1', 'Run should pass templateId');
-  assert(setOptimizeOptionsCalls[0].opts.intent && setOptimizeOptionsCalls[0].opts.intent.fixPitch === true, 'Run should pass intent');
+  assert(!('templateId' in setOptimizeOptionsCalls[0].opts) || setOptimizeOptionsCalls[0].opts.templateId == null, 'Run should not pass templateId');
+  assert(!('intent' in setOptimizeOptionsCalls[0].opts) || setOptimizeOptionsCalls[0].opts.intent == null, 'Run should not pass intent');
   assert(setOptimizeOptionsCalls[0].opts.userPrompt === 'the pitch is off', 'userPrompt preserved');
   assert(setOptimizeOptionsCalls[0].opts.requestedPresetId === 'llm_v0', 'preset preserved');
-  console.log('PASS UX7b Run writes templateId + intent through setOptimizeOptions');
+  assert(setOptimizeOptionsCalls[0].opts._assistantFreeformTextRequest === true, 'Run should disable velocity-only safe mode for typed assistant');
+  console.log('PASS typed assistant Run omits templateId + intent');
 })();
 
 (function testUx7bUnmatchedMappingNoTemplateId() {
@@ -2310,30 +2327,29 @@ function createFakeApp(opts) {
   console.log('PASS UX7b unmatched prompt => Run writes only userPrompt + requestedPresetId');
 })();
 
-(function testUx7bChinesePhraseMatch() {
+(function testTypedAssistantChineseOptimizePhrasesStayFreeform() {
   const { app, doc } = createFakeApp();
   app.state.selectedClipId = 'clip-1';
   doc.getElementById('aiAssistInput').value = '跑调';
   app._aiAssistSend();
-  assert(app._aiAssistItems[0].templateId === 'fix_pitch_v1', '跑调 should map to fix_pitch_v1');
+  assert(app._aiAssistItems[0].templateId == null, 'typed Chinese optimize prompt should not map to fix_pitch_v1');
   doc.getElementById('aiAssistInput').value = '节奏更稳';
   app._aiAssistSend();
-  assert(app._aiAssistItems[1].templateId === 'tighten_rhythm_v1', '节奏更稳 should map to tighten_rhythm_v1');
-  console.log('PASS UX7b Chinese phrases 跑调, 节奏更稳 map correctly');
+  assert(app._aiAssistItems[1].templateId == null, 'typed Chinese optimize prompt should not map to tighten_rhythm_v1');
+  console.log('PASS typed assistant Chinese optimize phrases stay freeform');
 })();
 
-(function testPlanMappedPromptProducesPlanOnCard() {
+(function testTypedAssistantOptimizePromptProducesGenericPlanOnCard() {
   const { app, doc } = createFakeApp();
   app.state.selectedClipId = 'clip-1';
   doc.getElementById('aiAssistInput').value = 'the pitch is off';
   app._aiAssistSend();
   const card = app._aiAssistItems[0];
-  assert(card.type === 'card' && card.plan, 'mapped card should have plan');
-  assert(card.plan.planTitle === 'Fix Pitch', 'plan should have Fix Pitch title');
-  assert(card.plan.planKind === 'fix-pitch', 'plan kind should be fix-pitch');
+  assert(card.type === 'card' && card.plan, 'typed assistant card should have plan');
+  assert(card.plan.planTitle === 'Optimize', 'typed assistant default plan should be generic Optimize');
+  assert(card.plan.planKind === 'generic', 'typed assistant default plan kind should be generic');
   assert(Array.isArray(card.plan.planLines) && card.plan.planLines.length >= 2, 'plan should have planLines');
-  assert(card.plan.planLines.some(l => l.indexOf('out-of-tune') >= 0 || l.indexOf('pitch') >= 0), 'plan should mention pitch goal');
-  console.log('PASS mapped prompt produces plan on card');
+  console.log('PASS typed assistant optimize prompt produces generic plan on card');
 })();
 
 (function testPlanFallbackProducesGenericPlan() {
@@ -2372,9 +2388,9 @@ function createFakeApp(opts) {
   return app._aiAssistSend().then(() => {
     const card = app._aiAssistItems[0];
     assert(card.type === 'card' && card.plan, 'card should have plan');
-    assert(card.plan.planTitle === 'Fix Pitch', 'rule-based plan used when AI returns null');
-    assert(card.plan.planKind === 'fix-pitch', 'planKind from rule-based');
-    console.log('PASS PR1 fallback to rule-based plan when AI returns null');
+    assert(card.plan.planTitle === 'Optimize', 'typed assistant falls back to generic plan when AI returns null');
+    assert(card.plan.planKind === 'generic', 'typed assistant fallback planKind is generic');
+    console.log('PASS PR1 typed assistant fallback to generic plan when AI returns null');
   });
 })();
 
@@ -2389,10 +2405,10 @@ function createFakeApp(opts) {
   }).then(() => {
     assert(setOptimizeOptionsCalls.length === 1, 'Run should call setOptimizeOptions once');
     assert(setOptimizeOptionsCalls[0].opts.userPrompt === 'the pitch is off', 'userPrompt unchanged');
-    assert(setOptimizeOptionsCalls[0].opts.templateId === 'fix_pitch_v1', 'templateId unchanged');
-    assert(setOptimizeOptionsCalls[0].opts.intent && setOptimizeOptionsCalls[0].opts.intent.fixPitch === true, 'intent unchanged');
+    assert(!('templateId' in setOptimizeOptionsCalls[0].opts) || setOptimizeOptionsCalls[0].opts.templateId == null, 'typed assistant AI plan should not inject templateId');
+    assert(!('intent' in setOptimizeOptionsCalls[0].opts) || setOptimizeOptionsCalls[0].opts.intent == null, 'typed assistant AI plan should not inject intent');
     assert(setOptimizeOptionsCalls[0].opts.plan && setOptimizeOptionsCalls[0].opts.plan.planTitle === 'Fix Pitch (AI)', 'PR3: Run passes plan when card has plan');
-    console.log('PASS PR1/PR3 Run passes plan when card has plan');
+    console.log('PASS PR1/PR3 typed assistant Run passes AI plan without template binding');
   });
 })();
 
@@ -2411,7 +2427,7 @@ function createFakeApp(opts) {
   });
 })();
 
-(function testAiCleanOutliersPlanBackfillsTemplateWhenKeywordsMiss() {
+(function testTypedAssistantAiPlanDoesNotBackfillOptimizeTemplate() {
   const aiPlan = {
     planKind: 'clean-outliers',
     planTitle: '移除离群高音',
@@ -2460,15 +2476,15 @@ function createFakeApp(opts) {
   doc.getElementById('aiAssistInput').value = '离群高音 note cluster xyz unmatched';
   return app._aiAssistSend().then(() => {
     const card = app._aiAssistItems[0];
-    assert(card.templateId === 'clean_outliers_v1', 'AI clean-outliers plan should backfill templateId');
-    assert(card.intent && card.intent.reduceOutliers === true, 'intent should be reduceOutliers');
+    assert(card.templateId == null, 'typed assistant AI plan should not backfill templateId');
+    assert(card.intent == null, 'typed assistant AI plan should not backfill intent');
     assert(card.plan && card.plan.planKind === 'clean-outliers', 'planKind preserved');
     const btnEl = { getAttribute: (a) => (a === 'data-prompt' ? '离群高音 note cluster xyz unmatched' : null), disabled: false };
     return app._aiAssistRun('clip-1', btnEl);
   }).then(() => {
     assert(setOptimizeOptionsCalls.length === 1, 'Run should call setOptimizeOptions once');
-    assert(setOptimizeOptionsCalls[0].opts.templateId === 'clean_outliers_v1', 'Run must pass clean_outliers_v1 for execution');
-    assert(setOptimizeOptionsCalls[0].opts.intent && setOptimizeOptionsCalls[0].opts.intent.reduceOutliers === true, 'Run must pass reduceOutliers intent');
+    assert(!('templateId' in setOptimizeOptionsCalls[0].opts) || setOptimizeOptionsCalls[0].opts.templateId == null, 'Run must not pass clean_outliers_v1 for typed assistant execution');
+    assert(!('intent' in setOptimizeOptionsCalls[0].opts) || setOptimizeOptionsCalls[0].opts.intent == null, 'Run must not pass reduceOutliers intent');
     assert(setOptimizeOptionsCalls[0].opts.plan && setOptimizeOptionsCalls[0].opts.plan.planKind === 'clean-outliers', 'Run must pass AI plan snapshot');
     assert(setOptimizeOptionsCalls[0].opts._assistantExecutionPlanSnapshot && setOptimizeOptionsCalls[0].opts._assistantExecutionPlanSnapshot.planTitle === '移除离群高音', 'Run must pass assistant execution plan snapshot');
     const snap = setOptimizeOptionsCalls[0].opts._assistantExecutionPlanSnapshot;
@@ -2480,14 +2496,14 @@ function createFakeApp(opts) {
     });
     assert(staleMerged && staleMerged.planTitle === '移除离群高音', 'merge must prefer assistant snapshot over stale generic plan');
     const card = app._aiAssistItems[0];
-    assert(card.executionTrace && card.executionTrace.templateId === 'clean_outliers_v1', 'executionTrace.templateId matches run snapshot');
-    assert(card.executionTrace.intent && card.executionTrace.intent.reduceOutliers === true, 'executionTrace.intent matches run snapshot');
-    assert(card.executionTrace.executionSnapshot && card.executionTrace.executionSnapshot.usedTemplateId === 'clean_outliers_v1', 'executionSnapshot.usedTemplateId');
+    assert(card.executionTrace && !card.executionTrace.templateId, 'executionTrace has no templateId for typed assistant run snapshot');
+    assert(!card.executionTrace.intent, 'executionTrace has no intent for typed assistant run snapshot');
+    assert(card.executionTrace.executionSnapshot && card.executionTrace.executionSnapshot.usedTemplateId == null, 'executionSnapshot.usedTemplateId is null');
     assert(card.executionTrace.promptVersion === 'tmpl_v1.clean_outliers', 'executionTrace.promptVersion from agent result (not manual_v0)');
     const pt = card.executionTrace.llmPromptTrace;
     assert(pt && pt.blocks && pt.blocks.promptVersion === 'tmpl_v1.clean_outliers', 'llmPromptTrace.blocks.promptVersion aligned');
     assert(pt.blocks.resolvedTemplateId === 'clean_outliers_v1', 'llmPromptTrace resolvedTemplateId aligned');
-    console.log('PASS AI clean-outliers plan backfills template when keywords miss');
+    console.log('PASS typed assistant AI plan does not backfill optimize template');
   });
 })();
 
@@ -2630,9 +2646,9 @@ function createFakeApp(opts) {
   const card = app._aiAssistItems[0];
   assert(card.type === 'card' && card.reasoningLog, 'card should have reasoningLog');
   assert(card.reasoningLog.userPrompt === 'fix the pitch', 'userPrompt in log');
-  assert(card.reasoningLog.templateId === 'fix_pitch_v1', 'templateId in log');
-  assert(card.reasoningLog.intent && card.reasoningLog.intent.fixPitch === true, 'intent in log');
-  assert(card.reasoningLog.planSummary === 'Fix Pitch', 'planSummary from rule-based');
+  assert(card.reasoningLog.templateId == null, 'typed assistant templateId should be null in log');
+  assert(card.reasoningLog.intent == null, 'typed assistant intent should be null in log');
+  assert(card.reasoningLog.planSummary === 'Optimize', 'planSummary from generic rule-based');
   assert(card.reasoningLog.requestedPresetId === 'llm_v0', 'requestedPresetId');
   assert(card.reasoningLog.planSource === 'rule', 'planSource rule');
   assert(typeof card.reasoningLog.createdAt === 'number', 'createdAt in log');
@@ -2953,6 +2969,38 @@ function createFakeApp(opts) {
     assert(app._aiAssistItems[0].runState === 'failed', 'card should be failed');
     assert(app._aiAssistItems[0].lastError && app._aiAssistItems[0].lastError.indexOf('Agent failed') >= 0, 'lastError should contain message');
     console.log('PASS UX7c failed run => card failed + lastError');
+  });
+})();
+
+(function testUx7cFailedOptimizeResultUsesUnderlyingDetail() {
+  const { app } = createFakeApp();
+  app.state.selectedClipId = 'clip-1';
+  app._aiAssistItems.push({ type: 'card', clipId: 'clip-1', promptText: 'fix pitch', createdAt: 1, runState: 'idle' });
+  const btnEl = { getAttribute: (a) => (a === 'data-prompt' ? 'fix pitch' : null), disabled: false };
+  app.runCommand = (cmd, payload) => {
+    if (cmd === 'optimize_clip') {
+      return Promise.resolve({
+        ok: false,
+        data: {
+          clipId: payload.clipId,
+          optimizeResult: {
+            ok: false,
+            reason: 'patch_rejected',
+            detail: 'noteId_not_found',
+            executionPath: 'llm',
+            patchSummary: { executedPreset: 'llm_v0', status: 'failed', reason: 'patch_rejected' },
+          },
+        },
+      });
+    }
+    return Promise.resolve({ ok: true });
+  };
+  return app._aiAssistRun('clip-1', btnEl).then(() => {
+    const card = app._aiAssistItems[0];
+    assert(card.runState === 'failed', 'card should be failed');
+    assert(card.lastError === 'patch_rejected', 'card should show optimizeResult reason instead of generic command failure');
+    assert(card.executionTrace && card.executionTrace.executionPath === 'llm', 'card should keep optimizeResult execution trace');
+    console.log('PASS UX7c failed optimizeResult => card uses underlying detail');
   });
 })();
 

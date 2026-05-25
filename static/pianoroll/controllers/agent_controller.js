@@ -98,7 +98,7 @@
 
   function _buildRepairUserContent(previousText, clipId, safeMode, noteIds){
     let schema = '{"version":1,"clipId":"' + String(clipId || '<clipId>') + '","ops":[...]}';
-    if (safeMode) schema = '{"version":1,"clipId":"' + String(clipId || '<clipId>') + '","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}';
+      if (safeMode) schema = '{"version":1,"clipId":"' + String(clipId || '<clipId>') + '","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}';
     const ids = Array.isArray(noteIds) && noteIds.length ? noteIds.slice(0, LLM_V0_MAX_PROMPT_NOTE_ROWS).join(', ') : '';
     let body = 'Convert this into exactly one valid Hum2Song patch JSON object in a ```json``` block. No <think>, no hidden reasoning, no prose.\n';
     body += 'Schema: ' + schema + '\n';
@@ -140,6 +140,46 @@
     if (applied && applied.semanticReject === true) return true;
     const e = firstError != null ? String(firstError) : '';
     return e.length > 0 && e.indexOf('semantic_') === 0;
+  }
+
+  function _llmFailureReasonFromValidation(errors, patchObj){
+    const arr = Array.isArray(errors) ? errors.map(function(e){ return String(e || ''); }) : [];
+    const ops = (patchObj && Array.isArray(patchObj.ops)) ? patchObj.ops : [];
+    for (let i = 0; i < ops.length; i++){
+      const opType = ops[i] && ops[i].op != null ? String(ops[i].op) : '';
+      if (opType === 'addNote') return 'unsupported_operation';
+      if (opType && !/^(setNote|moveNote|deleteNote)$/.test(opType)) return 'unsupported_operation';
+    }
+    if (arr.some(function(e){ return /note_not_found|missing_noteId|_missing_noteId/.test(e); })) return 'invalid_note_reference';
+    if (arr.some(function(e){ return /seconds_field|startBeat|durationBeat|deltaBeat|timing/i.test(e); })) return 'invalid_timing';
+    if (arr.some(function(e){ return /pitch|velocity/i.test(e); })) return 'invalid_pitch_or_velocity';
+    if (arr.some(function(e){ return /unknown_op|unsupported/i.test(e); })) return 'unsupported_operation';
+    return 'validation_failed';
+  }
+
+  function _deleteLimitForClip(clip){
+    const totalNotes = Object.keys(_buildNoteStateMapFromClip(clip)).length;
+    if (totalNotes <= 0) return { totalNotes: 0, maxDeletes: 0 };
+    return { totalNotes: totalNotes, maxDeletes: Math.max(1, Math.min(32, Math.floor(totalNotes * 0.20))) };
+  }
+
+  function _boundedDeleteCheck(ops, clip){
+    const arr = Array.isArray(ops) ? ops : [];
+    let deleteCount = 0;
+    for (let i = 0; i < arr.length; i++){
+      if (arr[i] && String(arr[i].op || '') === 'deleteNote') deleteCount += 1;
+    }
+    const limit = _deleteLimitForClip(clip);
+    if (deleteCount > limit.maxDeletes){
+      return {
+        ok: false,
+        reason: 'too_destructive',
+        deleteCount: deleteCount,
+        maxDeletes: limit.maxDeletes,
+        totalNotes: limit.totalNotes,
+      };
+    }
+    return { ok: true, deleteCount: deleteCount, maxDeletes: limit.maxDeletes, totalNotes: limit.totalNotes };
   }
 
   /** Bounded snapshot for one llm_v0 attempt (no raw prompts). */
@@ -806,7 +846,7 @@
         ? ROOT.H2S_CLOUD_LLM_CLIENT
         : null;
       const cfg = cloudClient
-        ? { baseUrl: 'cloud-ai-bridge', model: 'cloud-ai', authToken: '', velocityOnly: true }
+        ? { baseUrl: 'cloud-ai-bridge', model: 'cloud-ai', authToken: '', velocityOnly: false }
         : (ROOT.H2S_LLM_CONFIG && typeof ROOT.H2S_LLM_CONFIG.loadLlmConfig === 'function')
           ? ROOT.H2S_LLM_CONFIG.loadLlmConfig()
           : null;
@@ -819,10 +859,11 @@
         ? { fixPitch: !!optsIn.intent.fixPitch, tightenRhythm: !!optsIn.intent.tightenRhythm, reduceOutliers: !!optsIn.intent.reduceOutliers }
         : { fixPitch: false, tightenRhythm: false, reduceOutliers: false };
 
-      // PR-8D: Determine safe mode (velocity-only) - default ON if missing
-      // Quality fix: fixPitch/tightenRhythm require pitch/timing edits; override so those intents are not blocked
-      let safeMode = (cfg && typeof cfg.velocityOnly === 'boolean') ? cfg.velocityOnly : true;
-      if (intent.fixPitch || intent.tightenRhythm) safeMode = false;
+      // Determine velocity-only quick-tool mode. Default Optimize allows musical edits.
+      // Assistant typed requests are intentionally freeform: do not force them
+      // through the velocity-only schema. Keep safe mode for explicit/template flows.
+      let safeMode = (cfg && typeof cfg.velocityOnly === 'boolean') ? cfg.velocityOnly : false;
+      if (optsIn._assistantFreeformTextRequest === true || intent.fixPitch || intent.tightenRhythm) safeMode = false;
 
       // PR-8B-1 / LLM Context PR1: clip metadata, noteIds, and full per-note table (beats-only)
       const score = clip && clip.score;
@@ -862,14 +903,17 @@
         systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in a single ```json ... ``` block. No <think>, no hidden reasoning, no explanation, no prose before or after. ' +
           'Schema: {"version":1,"clipId":"<clipId>","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}. ' +
           'Safe mode: only setNote velocity edits are allowed. Do not include pitch,startBeat,durationBeat,addNote,deleteNote,moveNote. ' +
+          'Shape dynamics musically within those safety limits; avoid tiny no-op changes when the user asks for expression. ' +
           'Use only noteIds from the prompt.';
       } else {
-        // Normal mode: all 4 op types allowed (PR-8B-1 contract)
+        // Normal mode: reversible musical edits; addNote remains disabled until fully supported.
         systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in a single ```json ... ``` block. No <think>, no hidden reasoning, no explanation, no prose before or after. ' +
           'Schema: {"version":1,"clipId":"<clipId>","ops":[...]}. ' +
           'Allowed ops: setNote(noteId plus one or more of pitch 0-127,velocity 1-127,startBeat >=0,durationBeat >0), ' +
-          'moveNote(noteId,deltaBeat), deleteNote(noteId), addNote(trackId,note{pitch,startBeat,durationBeat,velocity,id?}). ' +
-          'All numbers must be finite. Use only listed noteIds for setNote/moveNote/deleteNote.';
+          'moveNote(noteId,deltaBeat), deleteNote(noteId) for a few obvious outliers. Do not use addNote. ' +
+          'Make musically meaningful, reversible edits across pitch, timing, duration, velocity, and bounded outlier deletion when useful. ' +
+          'The project keeps a revision chain and users can revert, but every patch must satisfy the schema. ' +
+          'All numbers must be finite and beats-only; never include seconds fields. Use only listed noteIds for setNote/moveNote/deleteNote.';
       }
 
       // PR-8B-1: User message with structured clip hint including allowed noteIds
@@ -929,7 +973,7 @@
 
       let baseUserContent = promptBody + clipHint;
       if (!safeMode){
-        baseUserContent = 'User prompt may require pitch/timing changes; do not respond with velocity-only unless explicitly requested.\n\n' + baseUserContent;
+        baseUserContent = 'User prompt may require pitch/timing/duration/velocity changes or deleting a few obvious outlier notes. Do not respond with velocity-only unless explicitly requested. Make musically meaningful edits and prefer expressive but bounded reversible changes over tiny no-op patches. Use setNote, moveNote, or bounded deleteNote only; do not use addNote. Keep all timing in beats, never seconds.\n\n' + baseUserContent;
       }
       const client = cloudClient || ROOT.H2S_LLM_CLIENT;
       if (!client || typeof client.callChatCompletions !== 'function' || typeof client.extractJsonObject !== 'function'){
@@ -979,7 +1023,7 @@
           if (ROOT.H2S_CLOUD_MODE && typeof console !== 'undefined' && console && typeof console.info === 'function'){
             console.info('[h2s-llm-v0] cloud request', requestStats);
           }
-          const res = await client.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 20000 });
+          const res = await client.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 600000 });
           const text = (res && typeof res.text === 'string') ? res.text : '';
           const extractionText = _stripThinkBlocks(text);
           const finishReason = _finishReasonFromResponse(res);
@@ -1027,15 +1071,16 @@
             if (intent.reduceOutliers){
               return {
                 ok: false,
-                reason: 'patch_rejected',
+                reason: 'no_meaningful_change',
                 detail: 'no meaningful outlier cleanup',
                 patchSummary: Object.assign({}, patchSummaryBase, {
                   status: 'failed',
-                  reason: 'no meaningful outlier cleanup',
+                  reason: 'no_meaningful_change',
                   ops: 0,
                   byOp: {},
                   examples: [],
-                }, _llmOutcomeExtra('rejected_quality', { detail: 'no meaningful outlier cleanup' }), _computePatchTypeSummary([])),
+                  detail: 'no meaningful outlier cleanup',
+                }, _llmOutcomeExtra('no_meaningful_change', { detail: 'no meaningful outlier cleanup' }), _computePatchTypeSummary([])),
               };
             }
             if (debugCapture) debugCapture.validateErrors = [];
@@ -1096,88 +1141,78 @@
             }
           }
 
+          const unsupportedOps = [];
+          for (let i = 0; i < patchObj.ops.length; i++){
+            const opType = patchObj.ops[i] && patchObj.ops[i].op != null ? String(patchObj.ops[i].op) : '';
+            if (opType === 'addNote' || (opType && !/^(setNote|moveNote|deleteNote)$/.test(opType))){
+              unsupportedOps.push(opType || 'unknown');
+            }
+          }
+          if (unsupportedOps.length > 0){
+            const detail = unsupportedOps.slice(0, 3).join(', ');
+            if (debugCapture) debugCapture.validateErrors = ['unsupported_operation:' + detail];
+            return {
+              ok: false,
+              reason: 'unsupported_operation',
+              detail: detail,
+              patchObj: patchObj,
+              opsN: opsN,
+              patchSummary: Object.assign({}, patchSummaryBase, {
+                status: 'failed',
+                reason: 'unsupported_operation',
+                ops: opsN,
+                byOp: _opsByOp(patchObj.ops),
+                examples: [],
+                detail: detail,
+              }, _computePatchTypeSummary(patchObj.ops, clip), _llmOutcomeExtra('rejected_validation', { detail: detail, reasonCode: 'unsupported_operation' })),
+            };
+          }
+
           const valid = H2SAgentPatch.validatePatch(patchObj, clip);
           if (!valid || !valid.ok){
             const firstError = (valid && valid.errors && valid.errors[0]) ? valid.errors[0] : 'patch_rejected';
             const errorCodes = (valid && valid.errors && Array.isArray(valid.errors)) ? valid.errors.slice(0, 3).join(', ') : firstError;
+            const mappedReason = _llmFailureReasonFromValidation(valid && valid.errors, patchObj);
             if (debugCapture) debugCapture.validateErrors = (valid && valid.errors && Array.isArray(valid.errors)) ? valid.errors.slice(0, 10) : [firstError];
             return {
               ok: false,
-              reason: 'patch_rejected',
+              reason: mappedReason,
               detail: errorCodes,
               patchObj: patchObj,
               opsN: opsN,
               patchSummary: Object.assign({}, patchSummaryBase, {
                 status: 'failed',
-                reason: 'patch_rejected',
+                reason: mappedReason,
                 ops: opsN,
                 byOp: _opsByOp(patchObj.ops),
                 examples: [],
                 detail: errorCodes,
-              }, _llmOutcomeExtra('rejected_validation', { detail: errorCodes })),
+              }, _computePatchTypeSummary(patchObj.ops, clip), _llmOutcomeExtra('rejected_validation', { detail: errorCodes, reasonCode: mappedReason })),
             };
           }
           if (debugCapture) debugCapture.validateErrors = [];
+          const patchTypeSummaryBeforeApply = _computePatchTypeSummary(patchObj.ops, clip);
 
-          // PR-B3b: Full-mode Quality Gate — velocity-only unacceptable when intent requires pitch/timing
-          const gateRequired = !safeMode && (intent.fixPitch || intent.tightenRhythm);
-          if (gateRequired && opsN > 0){
-            const ps = _computePatchTypeSummary(patchObj.ops, clip);
-            let missingReason = '';
-            if (ps.isVelocityOnly){
-              missingReason = 'quality_velocity_only';
-            } else if (intent.fixPitch && !ps.hasPitchChange){
-              missingReason = 'missing pitch change for Fix Pitch';
-            } else if (intent.fixPitch){
-              const scope = _computePitchChangeScope(patchObj.ops, clip);
-              // Keep tiny clips editable: scope cap applies only when enough notes exist.
-              if (scope.totalNotes >= 4 && scope.ratio > 0.3){
-                missingReason = 'pitch change too broad for Fix Pitch';
-              }
-            } else if (intent.tightenRhythm && !ps.hasTimingChange){
-              missingReason = 'missing timing change for Tighten Rhythm';
-            }
-            if (missingReason){
-              const patchSummary = Object.assign({}, patchSummaryBase, {
-                status: 'failed',
-                reason: missingReason,
-                ops: opsN,
-                byOp: _opsByOp(patchObj.ops),
-                examples: [],
-              }, ps, _llmOutcomeExtra('rejected_quality', { detail: missingReason }));
-              return {
-                ok: false,
-                reason: 'patch_rejected',
-                detail: missingReason,
-                patchSummary,
-              };
-            }
-          }
-
-          // Clean Outliers quality gate: require meaningful cleanup and prevent over-aggressive deletion.
-          if (intent.reduceOutliers && opsN > 0){
-            const outlierSignals = _computeOutlierCleanupSignals(patchObj.ops, clip);
-            let outlierReason = '';
-            if (outlierSignals.deleteCount < 1 && outlierSignals.significantDurationChangeCount < 1){
-              outlierReason = 'no meaningful outlier cleanup';
-            } else if (outlierSignals.totalNotes > 0 && outlierSignals.deleteRatio > 0.30){
-              outlierReason = 'too aggressive cleanup';
-            }
-            if (outlierReason){
-              const patchSummary = Object.assign({}, patchSummaryBase, {
-                status: 'failed',
-                reason: outlierReason,
-                ops: opsN,
-                byOp: _opsByOp(patchObj.ops),
-                examples: [],
-              }, _computePatchTypeSummary(patchObj.ops, clip), _llmOutcomeExtra('rejected_quality', { detail: outlierReason }));
-              return {
-                ok: false,
-                reason: 'patch_rejected',
-                detail: outlierReason,
-                patchSummary,
-              };
-            }
+          const destructive = _boundedDeleteCheck(patchObj.ops, clip);
+          if (!destructive.ok){
+            const detail = 'deleteNote ' + String(destructive.deleteCount) + ' exceeds limit ' + String(destructive.maxDeletes) + ' of ' + String(destructive.totalNotes);
+            const patchSummary = Object.assign({}, patchSummaryBase, {
+              status: 'failed',
+              reason: 'too_destructive',
+              ops: opsN,
+              byOp: _opsByOp(patchObj.ops),
+              examples: [],
+              detail: detail,
+              deleteCount: destructive.deleteCount,
+              maxDeletes: destructive.maxDeletes,
+              totalNotes: destructive.totalNotes,
+            }, patchTypeSummaryBeforeApply, _llmOutcomeExtra('rejected_destructive', { detail: detail, reasonCode: 'too_destructive' }));
+            return {
+              ok: false,
+              reason: 'too_destructive',
+              detail: detail,
+              patchSummary,
+            };
           }
 
           const applied = H2SAgentPatch.applyPatchToClip(clip, patchObj, { project: project });
@@ -1203,7 +1238,7 @@
             ops: opsN,
             byOp: _opsByOp(patchObj.ops),
             examples: [],
-          }, _computePatchTypeSummary(patchObj.ops, clip), _llmOutcomeExtra('applied'));
+          }, patchTypeSummaryBeforeApply, _llmOutcomeExtra('applied'));
           head.meta.agent = {
             optimizedFromRevisionId: beforeRevisionId,
             appliedAt: _now(),
