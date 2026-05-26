@@ -220,6 +220,46 @@
     ].join('\n');
   }
 
+  function buildArrangementOutputFormatContractBlock(){
+    const example = {
+      kind: 'arrangement_patch_v0',
+      version: 1,
+      ops: [
+        { op: 'createTrack', trackId: 'trk_acc_1', name: 'Accompaniment', instrument: 'bass', gainDb: -7 },
+        {
+          op: 'createClip',
+          clipId: 'clip_acc_1',
+          name: 'Accompaniment Clip',
+          scoreBeat: {
+            version: 2,
+            tracks: [{
+              id: 'acc_t0',
+              notes: [
+                { id: 'a0', pitch: 48, velocity: 64, startBeat: 0, durationBeat: 1 },
+              ],
+            }],
+          },
+        },
+        { op: 'addInstance', instanceId: 'inst_acc_1', clipId: 'clip_acc_1', trackId: 'trk_acc_1', startBeat: 0 },
+      ],
+    };
+    return [
+      'Output format contract:',
+      '- Return exactly one ```json fenced block and nothing else before or after it.',
+      '- The JSON inside the fence must be one object, not an array and not prose.',
+      '- Top-level fields must include kind, version, and ops.',
+      '- Each createClip scoreBeat note must include id, pitch, velocity, startBeat, and durationBeat.',
+      '- Use beat timing fields only; never use startSec, durationSec, spanSec, or any seconds field.',
+      '- Music remains creative: choose rhythm, pitch, density, contour, velocity, instruments, and variation from the melody/context.',
+      '- Do not copy the example music literally; it is only a formatting example.',
+      '',
+      'Minimal valid example:',
+      '```json',
+      JSON.stringify(example),
+      '```',
+    ].join('\n');
+  }
+
   function buildPromptContext(input){
     const noteTable = buildMelodyNoteTable(input.selectedClip.score, 512);
     const pitchStats = melodyPitchStats(noteTable);
@@ -269,6 +309,8 @@
     }
     userPromptParts.push(
       '',
+      buildArrangementOutputFormatContractBlock(),
+      '',
       'Context compact JSON:',
       JSON.stringify(projectContext),
       '',
@@ -315,6 +357,33 @@
       { role: 'system', content: repairSystem },
       { role: 'user', content: repairUser },
     ];
+  }
+
+  function finishReasonFromResponse(res){
+    if (!res || typeof res !== 'object') return '';
+    if (typeof res.finishReason === 'string') return res.finishReason;
+    const raw = res.raw && typeof res.raw === 'object' ? res.raw : null;
+    if (raw && typeof raw.finish_reason === 'string') return raw.finish_reason;
+    const choices = raw && Array.isArray(raw.choices) ? raw.choices : null;
+    const first = choices && choices[0] && typeof choices[0] === 'object' ? choices[0] : null;
+    if (first && typeof first.finish_reason === 'string') return first.finish_reason;
+    return '';
+  }
+
+  function invalidJsonDetail(finishReason){
+    return String(finishReason || '').toLowerCase() === 'length' ? 'finish_reason_length' : 'no_json_object_extracted';
+  }
+
+  function llmDebugBlock(cfg, callCount, rawText, requestDiagnostics, finishReason){
+    const out = {
+      callCount: callCount,
+      model: safeTrim(cfg && cfg.model),
+      baseUrl: safeTrim(cfg && cfg.baseUrl),
+      outputChars: asString(rawText).length,
+      request: requestDiagnostics,
+    };
+    if (safeTrim(finishReason)) out.finishReason = safeTrim(finishReason);
+    return out;
   }
 
   function validateHooks(hooks){
@@ -445,10 +514,12 @@
       let rawText = '';
       let parsedPatch = null;
       let callCount = 1;
+      let finishReason = '';
       statusLog('arrangement_v0: llm_request_started', Object.assign({ goal: goal }, requestDiagnostics));
       try {
         const llmRes = await llmClient.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 180000 });
         rawText = (llmRes && typeof llmRes.text === 'string') ? llmRes.text : '';
+        finishReason = finishReasonFromResponse(llmRes);
         parsedPatch = llmClient.extractJsonObject(rawText);
       } catch (err){
         return Object.assign({}, resultBase, {
@@ -472,6 +543,7 @@
         try {
           const retryRes = await llmClient.callChatCompletions(cfg, repairMessages, { temperature: 0.1, timeoutMs: 180000 });
           rawText = (retryRes && typeof retryRes.text === 'string') ? retryRes.text : '';
+          finishReason = finishReasonFromResponse(retryRes);
           parsedPatch = llmClient.extractJsonObject(rawText);
         } catch (err){
           return Object.assign({}, resultBase, {
@@ -487,10 +559,11 @@
           });
         }
         if (!parsedPatch || typeof parsedPatch !== 'object'){
+          const detail = invalidJsonDetail(finishReason);
           return Object.assign({}, resultBase, {
             reason: 'llm_no_valid_json',
-            detail: 'no_json_object_extracted',
-            llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+            detail: detail,
+            llmDebug: llmDebugBlock(cfg, callCount, rawText, requestDiagnostics, finishReason),
             promptTrace: promptTrace,
           });
         }
@@ -522,6 +595,7 @@
           try {
             const retryRes = await llmClient.callChatCompletions(cfg, repairMessages, { temperature: 0.1, timeoutMs: 180000 });
             rawText = (retryRes && typeof retryRes.text === 'string') ? retryRes.text : '';
+            finishReason = finishReasonFromResponse(retryRes);
             parsedPatch = llmClient.extractJsonObject(rawText);
           } catch (err){
             return Object.assign({}, resultBase, {
@@ -537,10 +611,11 @@
             });
           }
           if (!parsedPatch || typeof parsedPatch !== 'object'){
+            const detail = invalidJsonDetail(finishReason);
             return Object.assign({}, resultBase, {
               reason: 'llm_no_valid_json',
-              detail: 'no_json_object_extracted',
-              llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+              detail: detail,
+              llmDebug: llmDebugBlock(cfg, callCount, rawText, requestDiagnostics, finishReason),
               promptTrace: promptTrace,
             });
           }
@@ -567,7 +642,7 @@
           reason: 'patch_validation_failed',
           detail: (validation && Array.isArray(validation.errors)) ? validation.errors.slice(0, 10).join('; ') : 'validation_failed',
           arrangementOutcome: validation || null,
-          llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+          llmDebug: llmDebugBlock(cfg, callCount, rawText, requestDiagnostics, finishReason),
           promptTrace: promptTrace,
           rawPatch: patch,
           qualityReport: qualityReport,
@@ -580,7 +655,7 @@
           reason: 'patch_apply_failed',
           detail: (applied && Array.isArray(applied.errors)) ? applied.errors.slice(0, 10).join('; ') : 'apply_failed',
           arrangementOutcome: applied || null,
-          llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+          llmDebug: llmDebugBlock(cfg, callCount, rawText, requestDiagnostics, finishReason),
           promptTrace: promptTrace,
           rawPatch: patch,
           qualityReport: qualityReport,
@@ -608,6 +683,7 @@
           baseUrl: safeTrim(cfg.baseUrl),
           outputChars: rawText.length,
           request: requestDiagnostics,
+          finishReason: safeTrim(finishReason) || undefined,
         },
         promptTrace: promptTrace,
         rawPatch: patch,

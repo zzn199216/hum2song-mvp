@@ -222,6 +222,24 @@ async function testMalformedNoJsonNoCommit(){
   assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes repair retry');
 }
 
+async function testMalformedLengthFinishReasonIsDiagnostic(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  let llmCalls = 0;
+  setMockLlm({
+    callChatCompletions: async () => {
+      llmCalls += 1;
+      return { text: '<think>reasoning consumed the response budget', raw: { choices: [{ finish_reason: 'length' }] } };
+    },
+    extractJsonObject: () => null,
+  });
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0' });
+  assert(res.ok === false && res.reason === 'llm_no_valid_json', 'length-truncated malformed output rejected');
+  assert(res.detail === 'finish_reason_length', 'length finish reason should be surfaced as actionable detail');
+  assert(res.llmDebug && res.llmDebug.finishReason === 'length', 'llmDebug includes finishReason');
+  assert(llmCalls === 2, 'length-truncated malformed output still gets one repair retry');
+}
+
 async function testMalformedNoJsonRepairRetryCanCommit(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
@@ -323,6 +341,17 @@ async function testPromptIncludesRequiredContext(){
   const up = res.promptTrace.userPrompt;
   assert(up.indexOf('Allowed operations:') >= 0, 'compact operation summary included');
   assert(up.indexOf('Allowed schema JSON') < 0, 'full expanded schema omitted');
+  assert(up.indexOf('Output format contract:') >= 0, 'format contract block included');
+  assert(up.indexOf('Minimal valid example') >= 0, 'minimal valid JSON example included');
+  assert(up.indexOf('"kind":"arrangement_patch_v0"') >= 0, 'example includes arrangement kind');
+  assert(up.indexOf('"op":"createTrack"') >= 0, 'example includes createTrack op');
+  assert(up.indexOf('"op":"createClip"') >= 0, 'example includes createClip op');
+  assert(up.indexOf('"op":"addInstance"') >= 0, 'example includes addInstance op');
+  assert(up.indexOf('"startBeat":0') >= 0 && up.indexOf('"durationBeat":1') >= 0, 'example uses beat timing fields');
+  assert(/one ```json fenced block/i.test(up), 'format contract requires one json fence');
+  assert(/Music remains creative/i.test(up), 'format contract preserves creative freedom');
+  assert(up.indexOf('Do not copy the example music literally') >= 0, 'example is format-only');
+  assert(up.indexOf('exactly one note') < 0, 'prompt must not constrain note count to example');
   assert(up.indexOf('melodyNoteRowsBeatCSV') >= 0, 'compact note rows included');
   assert(up.indexOf('melodyNoteTableBeat') < 0, 'verbose note table omitted');
   assert(/scoreBeat\.tracks\[\][^\n]*must include[^\n]*id/i.test(up), 'scoreBeat track id requirement explicit');
@@ -491,6 +520,7 @@ async function main(){
   await testValidPatchOneCommit();
   await testInvalidPatchNoCommit();
   await testMalformedNoJsonNoCommit();
+  await testMalformedLengthFinishReasonIsDiagnostic();
   await testMalformedNoJsonRepairRetryCanCommit();
   await testInvalidPatchRepairRetryCanCommit();
   await testBeatsOnlyInvariantRejectsSeconds();
