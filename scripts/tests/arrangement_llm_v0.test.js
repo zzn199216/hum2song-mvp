@@ -292,6 +292,47 @@ async function testInvalidPatchRepairRetryCanCommit(){
   assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes validation retry');
 }
 
+async function testAddInstanceValidationRetryPromptNamesInstanceId(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  let llmCalls = 0;
+  const invalidPatch = {
+    kind: 'arrangement_patch_v0',
+    version: 1,
+    ops: [
+      { op: 'createTrack', trackId: 'trk_bad_inst', name: 'Bad', instrument: 'bass' },
+      {
+        op: 'createClip',
+        clipId: 'clip_bad_inst',
+        name: 'Bad Clip',
+        scoreBeat: { version: 2, tracks: [{ id: 'tb', notes: [{ id: 'b0', pitch: 48, velocity: 64, startBeat: 0, durationBeat: 1 }] }] },
+      },
+      { op: 'addInstance', id: 'wrong_key', clipId: 'clip_bad_inst', trackId: 'trk_bad_inst', startBeat: 8 },
+    ],
+  };
+  const patch = makeValidAccompanimentPatch();
+  const calls = [];
+  setMockLlm({
+    callChatCompletions: async (_cfg, messages) => {
+      llmCalls += 1;
+      calls.push(messages);
+      const body = llmCalls === 1 ? invalidPatch : patch;
+      return { text: '```json\n' + JSON.stringify(body) + '\n```' };
+    },
+    extractJsonObject: (txt) => {
+      const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  });
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
+  assert(res.ok === true, 'missing instanceId first patch can be repaired');
+  assert(llmCalls === 2, 'one validation retry');
+  const repairUser = String(calls[1] && calls[1][1] && calls[1][1].content || '');
+  assert(repairUser.indexOf('"op":"addInstance","instanceId"') >= 0, 'repair prompt shows exact addInstance instanceId key');
+  assert(/Do not use "id" for addInstance/i.test(repairUser), 'repair prompt forbids id alias for addInstance');
+  assert(/unique instanceId/i.test(repairUser), 'repair prompt requires unique instanceId');
+}
+
 async function testBeatsOnlyInvariantRejectsSeconds(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
@@ -348,6 +389,9 @@ async function testPromptIncludesRequiredContext(){
   assert(up.indexOf('"op":"createClip"') >= 0, 'example includes createClip op');
   assert(up.indexOf('"op":"addInstance"') >= 0, 'example includes addInstance op');
   assert(up.indexOf('"startBeat":0') >= 0 && up.indexOf('"durationBeat":1') >= 0, 'example uses beat timing fields');
+  assert(/addInstance object must use the exact key instanceId/i.test(up), 'format contract names addInstance instanceId key');
+  assert(/Do not use "id" for addInstance/i.test(up), 'format contract forbids addInstance id alias');
+  assert(/instanceId.*unique/i.test(up), 'format contract requires unique instance IDs');
   assert(/one ```json fenced block/i.test(up), 'format contract requires one json fence');
   assert(/Music remains creative/i.test(up), 'format contract preserves creative freedom');
   assert(up.indexOf('Do not copy the example music literally') >= 0, 'example is format-only');
@@ -523,6 +567,7 @@ async function main(){
   await testMalformedLengthFinishReasonIsDiagnostic();
   await testMalformedNoJsonRepairRetryCanCommit();
   await testInvalidPatchRepairRetryCanCommit();
+  await testAddInstanceValidationRetryPromptNamesInstanceId();
   await testBeatsOnlyInvariantRejectsSeconds();
   await testPromptIncludesRequiredContext();
   await testLargeSelectedClipPromptIsCompact();
