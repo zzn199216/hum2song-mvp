@@ -21,13 +21,16 @@ assert(ArrangementController && ArrangementController.create, 'arrangement contr
 
 function makeProjectWithMelody(options){
   const opts = options && typeof options === 'object' ? options : {};
-  const noteCount = Number.isFinite(Number(opts.noteCount)) ? Math.max(1, Math.floor(Number(opts.noteCount))) : 2;
+  const hasExplicitNoteCount = Object.prototype.hasOwnProperty.call(opts, 'noteCount');
+  const noteCount = hasExplicitNoteCount && Number.isFinite(Number(opts.noteCount)) ? Math.max(1, Math.floor(Number(opts.noteCount))) : 8;
   const p2 = H2SProject.defaultProjectV2();
-  let notes = [
-    { id: 'm0', pitch: 64, velocity: 90, startBeat: 0, durationBeat: 1 },
-    { id: 'm1', pitch: 67, velocity: 90, startBeat: 1, durationBeat: 1 },
-  ];
-  if (noteCount !== 2){
+  let notes = [];
+  if (!hasExplicitNoteCount){
+    const pitches = [64, 67, 69, 72, 71, 67, 64, 62];
+    for (let i = 0; i < pitches.length; i++){
+      notes.push({ id: 'm' + i, pitch: pitches[i], velocity: 82 + (i % 4), startBeat: i, durationBeat: 1 });
+    }
+  } else {
     notes = [];
     for (let i = 0; i < noteCount; i++){
       notes.push({
@@ -138,32 +141,72 @@ function makeValidAccompanimentPatch(){
   };
 }
 
-async function testValidPatchOneCommit(){
+function makeBassDraft(spanBeat){
+  const span = Number.isFinite(Number(spanBeat)) ? Number(spanBeat) : 8;
+  const notes = [];
+  for (let beat = 0; beat < span; beat += 1){
+    notes.push({
+      startBeat: beat,
+      pitch: 40 + ((beat % 4 === 2) ? 7 : 0),
+      durationBeat: Math.min(0.9, span - beat),
+      velocity: 68,
+    });
+  }
+  return {
+    version: 1,
+    intent: 'bass',
+    style: 'simple',
+    parts: [{ type: 'bass', instrument: 'bass', notes }],
+  };
+}
+
+function makeBassDrumsDraft(spanBeat){
+  const span = Number.isFinite(Number(spanBeat)) ? Number(spanBeat) : 8;
+  const bass = makeBassDraft(span).parts[0];
+  const hits = [];
+  for (let beat = 0; beat < span; beat += 0.5){
+    hits.push({ startBeat: beat, drum: 'hat', durationBeat: 0.25, velocity: 46 });
+  }
+  for (let beat = 0; beat < span; beat += 1){
+    const mod = beat % 4;
+    if (mod === 0 || mod === 2) hits.push({ startBeat: beat, drum: 'kick', durationBeat: 0.25, velocity: 76 });
+    if (mod === 1 || mod === 3) hits.push({ startBeat: beat, drum: 'snare', durationBeat: 0.25, velocity: 72 });
+  }
+  return {
+    version: 1,
+    intent: 'bass_drums',
+    style: 'simple',
+    parts: [bass, { type: 'drums', instrument: 'drums', hits }],
+  };
+}
+
+function createdInstruments(patch){
+  return (patch && Array.isArray(patch.ops) ? patch.ops : [])
+    .filter((op) => op && op.op === 'createTrack')
+    .map((op) => String(op.instrument || ''));
+}
+
+function createdNotes(patch){
+  const out = [];
+  for (const op of (patch && patch.ops) || []){
+    if (!op || op.op !== 'createClip') continue;
+    const tracks = op.scoreBeat && Array.isArray(op.scoreBeat.tracks) ? op.scoreBeat.tracks : [];
+    for (const tr of tracks){
+      for (const note of (tr.notes || [])) out.push(note);
+    }
+  }
+  return out;
+}
+
+async function testValidDraftOneCommit(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
-  const patch = {
-    kind: 'arrangement_patch_v0',
-    version: 1,
-    ops: [
-      { op: 'createTrack', trackId: 'trk_acc_1', name: 'Accompaniment', instrument: 'bass' },
-      {
-        op: 'createClip',
-        clipId: 'clip_acc_1',
-        name: 'Accompaniment Clip',
-        scoreBeat: {
-          version: 2,
-          time_signature: '4/4',
-          tracks: [{ id: 'acc_t0', notes: [{ id: 'a0', pitch: 52, velocity: 72, startBeat: 0, durationBeat: 1 }] }],
-        },
-      },
-      { op: 'addInstance', instanceId: 'inst_acc_1', clipId: 'clip_acc_1', trackId: 'trk_acc_1', startBeat: 8 },
-    ],
-  };
+  const draft = makeBassDraft(8);
   setMockLlm({
     callChatCompletions: async () => {
       llmCalls += 1;
-      return { text: '```json\n' + JSON.stringify(patch) + '\n```' };
+      return { text: '```json\n' + JSON.stringify(draft) + '\n```' };
     },
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
@@ -173,38 +216,42 @@ async function testValidPatchOneCommit(){
 
   const beforeMelody = JSON.stringify(p2.clips[melodyClip.id].score);
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add soft pad' });
-  assert(res.ok === true, 'valid patch should succeed');
+  assert(res.ok === true, 'valid draft should succeed');
   assert(harness.getCommitCount() === 1, 'should commit once');
   assert(llmCalls === 1, 'one llm call by default');
-  assert(Array.isArray(res.summary.createdTrackIds) && res.summary.createdTrackIds[0] === 'trk_acc_1', 'summary track ids');
+  assert(Array.isArray(res.summary.createdTrackIds) && res.summary.createdTrackIds.length === 1, 'summary track ids');
+  assert(res.rawDraft && res.rawDraft.version === 1, 'raw draft returned');
+  assert(res.rawPatch && res.rawPatch.kind === 'arrangement_patch_v0', 'draft packed into arrangement patch');
+  assert(createdNotes(res.rawPatch).every((note) => note.id), 'packer generated note ids');
   assert(res.qualityReport && res.qualityReport.ok === true, 'quality report present on success');
   assert(Array.isArray(res.qualityReport.warnings) && res.qualityReport.warnings.length === 0, 'baseline patch has no quality warnings');
   assert(JSON.stringify(harness.getProject().clips[melodyClip.id].score) === beforeMelody, 'melody clip remains unchanged');
 }
 
-async function testInvalidPatchNoCommit(){
+async function testInvalidDraftFallsBackAndCommits(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
-  const invalidPatch = { kind: 'arrangement_patch_v0', version: 1, ops: [{ op: 'deleteClip', clipId: melodyClip.id }] };
+  const invalidDraft = { version: 1, intent: 'bass', parts: [{ type: 'bass', notes: [{ startBeat: 0, pitch: 40, durationBeat: 1, velocity: 70, trackId: 'bad' }] }] };
   setMockLlm({
     callChatCompletions: async () => {
       llmCalls += 1;
-      return { text: '```json\n' + JSON.stringify(invalidPatch) + '\n```' };
+      return { text: '```json\n' + JSON.stringify(invalidDraft) + '\n```' };
     },
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
       return m ? JSON.parse(m[1]) : null;
     },
   });
-  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0' });
-  assert(res.ok === false && res.reason === 'patch_validation_failed', 'invalid patch rejected');
-  assert(harness.getCommitCount() === 0, 'no commit on invalid patch');
-  assert(llmCalls === 2, 'invalid patch should get one bounded repair retry');
-  assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes validation retry');
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
+  assert(res.ok === true, 'invalid draft falls back instead of failing');
+  assert(harness.getCommitCount() === 1, 'fallback commits once');
+  assert(llmCalls === 2, 'invalid draft gets one bounded repair retry before fallback');
+  assert(res.draftDebug && res.draftDebug.source === 'fallback', 'fallback source reported');
+  assert(createdNotes(res.rawPatch).length >= 4, 'fallback has enough bass notes');
 }
 
-async function testMalformedNoJsonNoCommit(){
+async function testMalformedNoJsonFallsBackAndCommits(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
@@ -215,11 +262,14 @@ async function testMalformedNoJsonNoCommit(){
     },
     extractJsonObject: () => null,
   });
-  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0' });
-  assert(res.ok === false && res.reason === 'llm_no_valid_json', 'no json rejected');
-  assert(harness.getCommitCount() === 0, 'no commit when malformed');
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add accompaniment' });
+  assert(res.ok === true, 'no json falls back instead of failing');
+  assert(harness.getCommitCount() === 1, 'fallback commits when malformed');
   assert(llmCalls === 2, 'malformed output should get one bounded repair retry');
   assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes repair retry');
+  assert(res.draftDebug && res.draftDebug.source === 'fallback', 'fallback source reported');
+  assert(createdInstruments(res.rawPatch).includes('bass'), 'generic fallback includes bass');
+  assert(createdInstruments(res.rawPatch).includes('drum'), 'generic fallback includes drums');
 }
 
 async function testMalformedLengthFinishReasonIsDiagnostic(){
@@ -233,25 +283,26 @@ async function testMalformedLengthFinishReasonIsDiagnostic(){
     },
     extractJsonObject: () => null,
   });
-  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0' });
-  assert(res.ok === false && res.reason === 'llm_no_valid_json', 'length-truncated malformed output rejected');
-  assert(res.detail === 'finish_reason_length', 'length finish reason should be surfaced as actionable detail');
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add drums' });
+  assert(res.ok === true, 'length-truncated malformed output falls back');
+  assert(res.reason === 'ok', 'fallback success is not a hard no_json failure');
   assert(res.llmDebug && res.llmDebug.finishReason === 'length', 'llmDebug includes finishReason');
   assert(llmCalls === 2, 'length-truncated malformed output still gets one repair retry');
+  assert(res.draftDebug && res.draftDebug.fallbackReason === 'finish_reason_length', 'fallback reason keeps length diagnostic');
 }
 
 async function testMalformedNoJsonRepairRetryCanCommit(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
-  const patch = makeValidAccompanimentPatch();
+  const draft = makeBassDraft(8);
   const calls = [];
   setMockLlm({
     callChatCompletions: async (_cfg, messages) => {
       llmCalls += 1;
       calls.push(messages);
       if (llmCalls === 1) return { text: 'I can add a bass line, but here is a prose answer instead.' };
-      return { text: '```json\n' + JSON.stringify(patch) + '\n```' };
+      return { text: '```json\n' + JSON.stringify(draft) + '\n```' };
     },
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
@@ -259,25 +310,25 @@ async function testMalformedNoJsonRepairRetryCanCommit(){
     },
   });
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
-  assert(res.ok === true, 'repair retry should apply valid arrangement patch');
+  assert(res.ok === true, 'repair retry should apply valid accompaniment draft');
   assert(harness.getCommitCount() === 1, 'repair retry commits once');
   assert(llmCalls === 2, 'one repair retry');
   assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes both attempts');
   assert(Array.isArray(calls[1]) && calls[1].length === 2, 'repair retry sends system + user only');
-  assert(String(calls[1][1].content || '').indexOf('Repair the previous Arrangement Patch v0 response') >= 0, 'repair instruction included');
+  assert(String(calls[1][1].content || '').indexOf('Repair the previous AccompanimentDraft v1 response') >= 0, 'draft repair instruction included');
   assert(String(calls[1][1].content || '').length < 1800, 'repair prompt stays bounded');
 }
 
-async function testInvalidPatchRepairRetryCanCommit(){
+async function testInvalidDraftRepairRetryCanCommit(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
-  const invalidPatch = { kind: 'arrangement_patch_v0', version: 1, ops: [{ op: 'deleteClip', clipId: melodyClip.id }] };
-  const patch = makeValidAccompanimentPatch();
+  const invalidDraft = { version: 1, intent: 'bass', parts: [{ type: 'bass', notes: [{ startBeat: 0, pitch: 40, durationBeat: 1, velocity: 70, clipId: 'bad' }] }] };
+  const draft = makeBassDraft(8);
   setMockLlm({
     callChatCompletions: async () => {
       llmCalls += 1;
-      const body = llmCalls === 1 ? invalidPatch : patch;
+      const body = llmCalls === 1 ? invalidDraft : draft;
       return { text: '```json\n' + JSON.stringify(body) + '\n```' };
     },
     extractJsonObject: (txt) => {
@@ -286,36 +337,26 @@ async function testInvalidPatchRepairRetryCanCommit(){
     },
   });
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
-  assert(res.ok === true, 'invalid first patch can be repaired');
+  assert(res.ok === true, 'invalid first draft can be repaired');
   assert(harness.getCommitCount() === 1, 'validation repair commits once');
   assert(llmCalls === 2, 'one validation repair retry');
   assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes validation retry');
+  assert(res.draftDebug && res.draftDebug.source === 'llm_repair', 'valid repair draft source reported');
 }
 
-async function testMissingAddInstanceIdIsNormalized(){
+async function testProjectIdsInDraftFallBackToGeneratedPatchIds(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
-  const invalidPatch = {
-    kind: 'arrangement_patch_v0',
+  const invalidDraft = {
     version: 1,
-    ops: [
-      { op: 'createTrack', trackId: 'trk_bad_inst', name: 'Bad', instrument: 'bass' },
-      {
-        op: 'createClip',
-        clipId: 'clip_bad_inst',
-        name: 'Bad Clip',
-        scoreBeat: { version: 2, tracks: [{ id: 'tb', notes: [{ id: 'b0', pitch: 48, velocity: 64, startBeat: 0, durationBeat: 1 }] }] },
-      },
-      { op: 'addInstance', id: 'wrong_key', clipId: 'clip_bad_inst', trackId: 'trk_bad_inst', startBeat: 8 },
-    ],
+    intent: 'bass',
+    parts: [{ type: 'bass', notes: [{ id: 'bad_note_id', startBeat: 0, pitch: 40, durationBeat: 1, velocity: 70 }] }],
   };
-  const patch = makeValidAccompanimentPatch();
   setMockLlm({
-    callChatCompletions: async (_cfg, messages) => {
+    callChatCompletions: async () => {
       llmCalls += 1;
-      const body = llmCalls === 1 ? invalidPatch : patch;
-      return { text: '```json\n' + JSON.stringify(body) + '\n```' };
+      return { text: '```json\n' + JSON.stringify(invalidDraft) + '\n```' };
     },
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
@@ -323,13 +364,15 @@ async function testMissingAddInstanceIdIsNormalized(){
     },
   });
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
-  assert(res.ok === true, 'missing instanceId first patch can be normalized');
-  assert(llmCalls === 1, 'ID-only normalization should not require a repair LLM call');
+  assert(res.ok === true, 'project IDs in draft fall back safely');
+  assert(llmCalls === 2, 'invalid ID-bearing draft gets one repair retry before fallback');
+  assert(res.draftDebug && res.draftDebug.source === 'fallback', 'fallback source after forbidden draft id');
   const addInstance = res.rawPatch.ops.find((op) => op && op.op === 'addInstance');
-  assert(addInstance && addInstance.instanceId, 'normalizer fills instanceId');
+  assert(addInstance && addInstance.instanceId, 'packer generated instanceId');
+  assert(createdNotes(res.rawPatch).every((note) => note.id && note.id !== 'bad_note_id'), 'packer owns note ids');
 }
 
-async function testGeneratedIdsAreNormalizedWithoutChangingMusic(){
+async function testPackedIdsAvoidExistingCollisionsWithoutChangingMusic(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const existingClip = H2SProject.createClipFromScoreBeat({
     version: 2,
@@ -339,30 +382,28 @@ async function testGeneratedIdsAreNormalizedWithoutChangingMusic(){
   p2.clipOrder.push(existingClip.id);
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
-  const modelPatch = {
-    kind: 'arrangement_patch_v0',
+  const modelDraft = {
     version: 1,
-    ops: [
-      { op: 'createTrack', trackId: 'trk_bass_01', name: 'Bass', instrument: 'bass', gainDb: -7 },
-      {
-        op: 'createClip',
-        clipId: 'clip_bass_01',
-        name: 'Bass Groove',
-        scoreBeat: {
-          version: 2,
-          tracks: [{ id: 'bass_t', notes: [
-            { pitch: 43, velocity: 68, startBeat: 0, durationBeat: 0.5 },
-            { pitch: 47, velocity: 66, startBeat: 1, durationBeat: 0.5 },
-          ] }],
-        },
-      },
-      { op: 'addInstance', instanceId: 'inst_bass_01', clipId: 'clip_bass_01', trackId: 'trk_bass_01', startBeat: 8 },
-    ],
+    intent: 'bass',
+    parts: [{
+      type: 'bass',
+      instrument: 'bass',
+      notes: [
+        { pitch: 43, velocity: 68, startBeat: 0, durationBeat: 1 },
+        { pitch: 47, velocity: 66, startBeat: 1, durationBeat: 1 },
+        { pitch: 43, velocity: 68, startBeat: 2, durationBeat: 1 },
+        { pitch: 47, velocity: 66, startBeat: 3, durationBeat: 1 },
+        { pitch: 43, velocity: 68, startBeat: 4, durationBeat: 1 },
+        { pitch: 47, velocity: 66, startBeat: 5, durationBeat: 1 },
+        { pitch: 43, velocity: 68, startBeat: 6, durationBeat: 1 },
+        { pitch: 47, velocity: 66, startBeat: 7, durationBeat: 1 },
+      ],
+    }],
   };
   setMockLlm({
     callChatCompletions: async () => {
       llmCalls += 1;
-      return { text: '```json\n' + JSON.stringify(modelPatch) + '\n```' };
+      return { text: '```json\n' + JSON.stringify(modelDraft) + '\n```' };
     },
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
@@ -370,8 +411,8 @@ async function testGeneratedIdsAreNormalizedWithoutChangingMusic(){
     },
   });
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
-  assert(res.ok === true, 'ID-only normalizer should make model patch apply');
-  assert(llmCalls === 1, 'ID-only normalization should not require a repair LLM call');
+  assert(res.ok === true, 'packer should make model draft apply');
+  assert(llmCalls === 1, 'valid draft should not require repair');
   const createClip = res.rawPatch.ops.find((op) => op && op.op === 'createClip');
   const addInstance = res.rawPatch.ops.find((op) => op && op.op === 'addInstance');
   assert(createClip.clipId !== 'clip_bass_01', 'createClip id should be rewritten when it collides with existing clip');
@@ -382,45 +423,34 @@ async function testGeneratedIdsAreNormalizedWithoutChangingMusic(){
   assert(notes[0].startBeat === 0 && notes[1].startBeat === 1, 'normalizer must not change note timing');
 }
 
-async function testBeatsOnlyInvariantRejectsSeconds(){
+async function testSecondsDraftFallsBackToBeatsOnlyPatch(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
-  const patchWithSeconds = {
-    kind: 'arrangement_patch_v0',
+  const draftWithSeconds = {
     version: 1,
-    ops: [
-      { op: 'createTrack', trackId: 'trk_acc_s', name: 'Acc', instrument: 'piano' },
-      {
-        op: 'createClip',
-        clipId: 'clip_acc_s',
-        name: 'Acc',
-        scoreBeat: {
-          version: 2,
-          tracks: [{ id: 't0', notes: [{ id: 'n0', pitch: 50, velocity: 70, startBeat: 0, durationBeat: 1, startSec: 0.1 }] }],
-        },
-      },
-      { op: 'addInstance', instanceId: 'inst_acc_s', clipId: 'clip_acc_s', trackId: 'trk_acc_s', startBeat: 8 },
-    ],
+    intent: 'bass',
+    parts: [{ type: 'bass', notes: [{ pitch: 50, velocity: 70, startBeat: 0, durationBeat: 1, startSec: 0.1 }] }],
   };
   setMockLlm({
-    callChatCompletions: async () => ({ text: '```json\n' + JSON.stringify(patchWithSeconds) + '\n```' }),
+    callChatCompletions: async () => ({ text: '```json\n' + JSON.stringify(draftWithSeconds) + '\n```' }),
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
       return m ? JSON.parse(m[1]) : null;
     },
   });
-  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0' });
-  assert(res.ok === false && res.reason === 'patch_validation_failed', 'seconds field should fail validation');
-  assert(String(res.detail).indexOf('seconds_fields_forbidden') >= 0, 'seconds rejection detail');
-  assert(harness.getCommitCount() === 0, 'no commit on seconds fields');
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
+  assert(res.ok === true, 'seconds draft falls back instead of hard failing');
+  assert(harness.getCommitCount() === 1, 'fallback commits on seconds fields');
+  assert(JSON.stringify(res.rawPatch).indexOf('startSec') < 0, 'packed fallback patch is beats-only');
+  assert(res.draftDebug && res.draftDebug.source === 'fallback', 'fallback source after seconds field');
 }
 
 async function testPromptIncludesRequiredContext(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
-  const patch = { kind: 'arrangement_patch_v0', version: 1, ops: [] };
+  const draft = makeBassDrumsDraft(8);
   setMockLlm({
-    callChatCompletions: async () => ({ text: '```json\n' + JSON.stringify(patch) + '\n```' }),
+    callChatCompletions: async () => ({ text: '```json\n' + JSON.stringify(draft) + '\n```' }),
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
       return m ? JSON.parse(m[1]) : null;
@@ -429,34 +459,32 @@ async function testPromptIncludesRequiredContext(){
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'simple chords' });
   assert(res.promptTrace && typeof res.promptTrace.userPrompt === 'string', 'prompt trace exists');
   const up = res.promptTrace.userPrompt;
-  assert(up.indexOf('Allowed operations:') >= 0, 'compact operation summary included');
+  assert(up.indexOf('AccompanimentDraft v1') >= 0, 'draft schema named');
   assert(up.indexOf('Allowed schema JSON') < 0, 'full expanded schema omitted');
   assert(up.indexOf('Output format contract:') >= 0, 'format contract block included');
   assert(up.indexOf('Minimal valid example') < 0, 'prompt must not include concrete musical examples');
   assert(up.indexOf('"pitch":48') < 0, 'prompt must not anchor bass pitch to C2');
   assert(up.indexOf('"durationBeat":1') < 0, 'prompt must not anchor generated duration to example');
   assert(up.indexOf('"velocity":64') < 0, 'prompt must not anchor generated velocity to example');
-  assert(up.indexOf('Operation object formats:') >= 0, 'format contract includes operation object formats');
-  assert(up.indexOf('createTrack: requires trackId, name, instrument') >= 0, 'format contract names createTrack fields');
-  assert(up.indexOf('createClip: requires clipId, name, scoreBeat') >= 0, 'format contract names createClip fields');
-  assert(up.indexOf('addInstance: requires instanceId, clipId, trackId, startBeat') >= 0, 'format contract names addInstance fields');
-  assert(/addInstance object must use the exact key instanceId/i.test(up), 'format contract names addInstance instanceId key');
-  assert(/Do not use "id" for addInstance/i.test(up), 'format contract forbids addInstance id alias');
-  assert(/instanceId.*unique/i.test(up), 'format contract requires unique instance IDs');
+  assert(up.indexOf('Draft object formats:') >= 0, 'format contract includes draft object formats');
+  assert(up.indexOf('parts') >= 0 && up.indexOf('type') >= 0, 'draft parts documented');
+  assert(up.indexOf('notes') >= 0 && up.indexOf('hits') >= 0, 'bass notes and drum hits documented');
+  assert(/must not contain trackId, clipId, instanceId, noteId, or id/i.test(up), 'draft forbids project ids');
+  assert(up.indexOf('Arrangement Patch v0') < 0 || up.indexOf('Do not output Arrangement Patch v0') >= 0, 'prompt does not ask model for final patch ids');
   assert(/one ```json fenced block/i.test(up), 'format contract requires one json fence');
   assert(/Music remains creative/i.test(up), 'format contract preserves creative freedom');
   assert(up.indexOf('exactly one note') < 0, 'prompt must not constrain note count to example');
   assert(up.indexOf('melodyNoteRowsBeatCSV') >= 0, 'compact note rows included');
   assert(up.indexOf('melodyNoteTableBeat') < 0, 'verbose note table omitted');
-  assert(/scoreBeat\.tracks\[\][^\n]*must include[^\n]*id/i.test(up), 'scoreBeat track id requirement explicit');
   assert(up.indexOf('bpm') >= 0, 'bpm included');
   assert(up.indexOf('instanceStartBeat') >= 0, 'instance start beat included');
   const sp = res.promptTrace.systemPrompt;
   assert(sp.indexOf('beats-only') >= 0, 'beats-only constraint included');
   assert(sp.indexOf('no startSec/durationSec/spanSec') >= 0, 'no seconds constraint included');
-  assert(sp.indexOf('additive-only') >= 0, 'additive-only constraint included');
+  assert(sp.indexOf('Do not output Arrangement Patch v0') >= 0, 'system prompt forbids direct patch output');
 
-  assert(up.indexOf('createTrack') >= 0 && up.indexOf('gainDb') >= 0, 'schema includes createTrack and gainDb');
+  assert(up.indexOf('createTrack') < 0, 'draft prompt does not ask for createTrack');
+  assert(up.indexOf('gainDb') < 0, 'draft prompt does not ask model for gainDb');
 
   assert(up.indexOf('Strategy for add_accompaniment_v0:') >= 0, 'add_accompaniment_v0 strategy block header');
   assert(/musically useful accompaniment/i.test(up), 'musically useful accompaniment guidance');
@@ -466,24 +494,15 @@ async function testPromptIncludesRequiredContext(){
   assert(/kick\/snare\/hat/i.test(up), 'drum part guidance');
   assert(/avoid over-constraining/i.test(up), 'explicitly avoids over-constraining musical choices');
   assert(up.indexOf('keep accompaniment sparse, supportive, and musically simple') < 0, 'system prompt no longer over-constrains sparse/simple');
-  assert(up.indexOf('gainDb optional -30..0') >= 0, 'schema documents optional gainDb range');
-  assert(up.indexOf('gainDb') >= 0, 'gainDb mentioned in prompt');
   assert(/below the melody/i.test(up), 'accompaniment balanced below melody');
-  assert(/-5\b/.test(up) && /-9\b/.test(up), 'suggested bass/dB ranges in strategy');
-  assert(up.indexOf('above 0 dB') >= 0, 'do not exceed 0 dB for accompaniment');
 
-  assert(/\b(bass|drum|lead|pad|pluck|default)\b/.test(up), 'canonical built-in instrument ids mentioned');
-  assert(up.indexOf('pluck') >= 0 && up.indexOf('Built-in instrument') >= 0, 'built-in instrument guidance block');
-  assert(/not drums/i.test(up) && /\bdrum\b/.test(up), 'prefer drum id, discourage drums');
+  assert(/\b(bass|drums)\b/.test(up), 'draft part ids mentioned');
   assert(/50[^\n]*72/.test(up) && /bass often 50/i.test(up), 'bass velocity range 50-72');
   assert(/hi-hat|auxiliary/i.test(up) && /35[^\n]*62/.test(up), 'aux/hat velocity range 35-62');
-  assert(/pad\/chords/i.test(up) && /40[^\n]*65/.test(up), 'pad/chords velocity range 40-65');
   assert(/kick\/snare|main hit/i.test(up) && /50[^\n]*78/.test(up), 'main drum hit velocity band');
   assert(/strongest notes/i.test(up) && /melody note rows/i.test(up), 'velocities below melody reference');
-  assert(/Do not rely on gainDb alone/i.test(up), 'gainDb and velocity both required for balance');
-  assert(/use two new tracks/i.test(up), 'explicit bass plus drums should use two tracks');
+  assert(/bass plus drums/i.test(up), 'explicit bass plus drums guidance');
   assert(/asks for one part/i.test(up), 'single track only when requested');
-  assert(/bass plus drums\/percussion/i.test(up) && /use two new tracks/i.test(up), 'two-track pairing guidance');
 
   assert(/selectedClip\.spanBeat.*target accompaniment length|target accompaniment length.*selectedClip\.spanBeat/i.test(up), 'spanBeat as target accompaniment length');
   assert(/cover most or all of the selected melody clip/i.test(up), 'cover most/all of melody clip');
@@ -496,8 +515,8 @@ async function testPromptIncludesRequiredContext(){
   assert(res.llmDebug.request.messagesCount === 2, 'diagnostics messagesCount');
   assert(res.llmDebug.request.totalChars > 0, 'diagnostics totalChars');
   assert(res.llmDebug.request.maxMessageChars > 0, 'diagnostics maxMessageChars');
-  assert(res.llmDebug.request.noteRowsTotal === 2, 'diagnostics noteRowsTotal');
-  assert(res.llmDebug.request.noteRowsSent === 2, 'diagnostics noteRowsSent');
+  assert(res.llmDebug.request.noteRowsTotal === 8, 'diagnostics noteRowsTotal');
+  assert(res.llmDebug.request.noteRowsSent === 8, 'diagnostics noteRowsSent');
   assert(res.llmDebug.request.promptMode === 'compact', 'diagnostics promptMode');
   const safeDiag = JSON.stringify(res.llmDebug.request);
   assert(safeDiag.indexOf('simple chords') < 0, 'diagnostics do not include user prompt text');
@@ -508,9 +527,9 @@ async function testPromptIncludesRequiredContext(){
 async function testLargeSelectedClipPromptIsCompact(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody({ noteCount: 220 });
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
-  const patch = { kind: 'arrangement_patch_v0', version: 1, ops: [] };
+  const draft = makeBassDrumsDraft(55);
   setMockCloudLlm({
-    callChatCompletions: async (_cfg, _messages) => ({ text: '```json\n' + JSON.stringify(patch) + '\n```' }),
+    callChatCompletions: async (_cfg, _messages) => ({ text: '```json\n' + JSON.stringify(draft) + '\n```' }),
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
       return m ? JSON.parse(m[1]) : null;
@@ -528,6 +547,7 @@ async function testLargeSelectedClipPromptIsCompact(){
     assert(up.indexOf('melodyNoteRowsBeatCSV') >= 0, 'compact CSV note rows included');
     assert(!/\{\s*"trackId"\s*:/.test(up), 'prompt does not include verbose per-note JSON objects');
     assert(up.indexOf('Allowed schema JSON') < 0, 'prompt does not include full expanded schema');
+    assert(up.indexOf('AccompanimentDraft v1') >= 0, 'large prompt still asks for draft schema');
   } finally {
     globalThis.H2S_CLOUD_MODE = false;
     globalThis.H2S_CLOUD_LLM_CLIENT = null;
@@ -565,9 +585,10 @@ async function testRejectsMissingOrAudioSelection(){
 async function testPromptTraceSanitized(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  const draft = makeBassDraft(8);
   setMockLlm({
     authToken: 'TOP_SECRET',
-    callChatCompletions: async () => ({ text: '```json\n{"kind":"arrangement_patch_v0","version":1,"ops":[]}\n```' }),
+    callChatCompletions: async () => ({ text: '```json\n' + JSON.stringify(draft) + '\n```' }),
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
       return m ? JSON.parse(m[1]) : null;
@@ -584,7 +605,7 @@ async function testCloudModeUsesCloudLlmBridge(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let cloudCalls = 0;
-  const patch = { kind: 'arrangement_patch_v0', version: 1, ops: [] };
+  const draft = makeBassDraft(8);
   setMockCloudLlm({
     callChatCompletions: async (cfg, _messages, opts) => {
       cloudCalls += 1;
@@ -592,7 +613,7 @@ async function testCloudModeUsesCloudLlmBridge(){
       assert(cfg && cfg.model === 'cloud-ai', 'cloud bridge cfg model');
       assert(cfg && cfg.modelProfileId === 'qwen36_plus', 'cloud bridge cfg should carry selected modelProfileId');
       assert(opts && opts.timeoutMs >= 180000, 'arrangement cloud LLM timeout should allow long patch generation');
-      return { text: '```json\n' + JSON.stringify(patch) + '\n```' };
+      return { text: '```json\n' + JSON.stringify(draft) + '\n```' };
     },
     extractJsonObject: (txt) => {
       const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
@@ -611,15 +632,15 @@ async function testCloudModeUsesCloudLlmBridge(){
 }
 
 async function main(){
-  await testValidPatchOneCommit();
-  await testInvalidPatchNoCommit();
-  await testMalformedNoJsonNoCommit();
+  await testValidDraftOneCommit();
+  await testInvalidDraftFallsBackAndCommits();
+  await testMalformedNoJsonFallsBackAndCommits();
   await testMalformedLengthFinishReasonIsDiagnostic();
   await testMalformedNoJsonRepairRetryCanCommit();
-  await testInvalidPatchRepairRetryCanCommit();
-  await testMissingAddInstanceIdIsNormalized();
-  await testGeneratedIdsAreNormalizedWithoutChangingMusic();
-  await testBeatsOnlyInvariantRejectsSeconds();
+  await testInvalidDraftRepairRetryCanCommit();
+  await testProjectIdsInDraftFallBackToGeneratedPatchIds();
+  await testPackedIdsAvoidExistingCollisionsWithoutChangingMusic();
+  await testSecondsDraftFallsBackToBeatsOnlyPatch();
   await testPromptIncludesRequiredContext();
   await testLargeSelectedClipPromptIsCompact();
   await testRejectsMissingOrAudioSelection();
