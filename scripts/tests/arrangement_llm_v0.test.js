@@ -292,7 +292,7 @@ async function testInvalidPatchRepairRetryCanCommit(){
   assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes validation retry');
 }
 
-async function testAddInstanceValidationRetryPromptNamesInstanceId(){
+async function testMissingAddInstanceIdIsNormalized(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
@@ -311,11 +311,9 @@ async function testAddInstanceValidationRetryPromptNamesInstanceId(){
     ],
   };
   const patch = makeValidAccompanimentPatch();
-  const calls = [];
   setMockLlm({
     callChatCompletions: async (_cfg, messages) => {
       llmCalls += 1;
-      calls.push(messages);
       const body = llmCalls === 1 ? invalidPatch : patch;
       return { text: '```json\n' + JSON.stringify(body) + '\n```' };
     },
@@ -325,12 +323,63 @@ async function testAddInstanceValidationRetryPromptNamesInstanceId(){
     },
   });
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
-  assert(res.ok === true, 'missing instanceId first patch can be repaired');
-  assert(llmCalls === 2, 'one validation retry');
-  const repairUser = String(calls[1] && calls[1][1] && calls[1][1].content || '');
-  assert(repairUser.indexOf('"op":"addInstance","instanceId"') >= 0, 'repair prompt shows exact addInstance instanceId key');
-  assert(/Do not use "id" for addInstance/i.test(repairUser), 'repair prompt forbids id alias for addInstance');
-  assert(/unique instanceId/i.test(repairUser), 'repair prompt requires unique instanceId');
+  assert(res.ok === true, 'missing instanceId first patch can be normalized');
+  assert(llmCalls === 1, 'ID-only normalization should not require a repair LLM call');
+  const addInstance = res.rawPatch.ops.find((op) => op && op.op === 'addInstance');
+  assert(addInstance && addInstance.instanceId, 'normalizer fills instanceId');
+}
+
+async function testGeneratedIdsAreNormalizedWithoutChangingMusic(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+  const existingClip = H2SProject.createClipFromScoreBeat({
+    version: 2,
+    tracks: [{ id: 'existing_t', notes: [{ id: 'existing_n', pitch: 60, velocity: 70, startBeat: 0, durationBeat: 1 }] }],
+  }, { id: 'clip_bass_01', name: 'Existing Bass' });
+  p2.clips[existingClip.id] = existingClip;
+  p2.clipOrder.push(existingClip.id);
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  let llmCalls = 0;
+  const modelPatch = {
+    kind: 'arrangement_patch_v0',
+    version: 1,
+    ops: [
+      { op: 'createTrack', trackId: 'trk_bass_01', name: 'Bass', instrument: 'bass', gainDb: -7 },
+      {
+        op: 'createClip',
+        clipId: 'clip_bass_01',
+        name: 'Bass Groove',
+        scoreBeat: {
+          version: 2,
+          tracks: [{ id: 'bass_t', notes: [
+            { pitch: 43, velocity: 68, startBeat: 0, durationBeat: 0.5 },
+            { pitch: 47, velocity: 66, startBeat: 1, durationBeat: 0.5 },
+          ] }],
+        },
+      },
+      { op: 'addInstance', instanceId: 'inst_bass_01', clipId: 'clip_bass_01', trackId: 'trk_bass_01', startBeat: 8 },
+    ],
+  };
+  setMockLlm({
+    callChatCompletions: async () => {
+      llmCalls += 1;
+      return { text: '```json\n' + JSON.stringify(modelPatch) + '\n```' };
+    },
+    extractJsonObject: (txt) => {
+      const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  });
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
+  assert(res.ok === true, 'ID-only normalizer should make model patch apply');
+  assert(llmCalls === 1, 'ID-only normalization should not require a repair LLM call');
+  const createClip = res.rawPatch.ops.find((op) => op && op.op === 'createClip');
+  const addInstance = res.rawPatch.ops.find((op) => op && op.op === 'addInstance');
+  assert(createClip.clipId !== 'clip_bass_01', 'createClip id should be rewritten when it collides with existing clip');
+  assert(addInstance.clipId === createClip.clipId, 'addInstance clipId should follow rewritten createClip id');
+  const notes = createClip.scoreBeat.tracks[0].notes;
+  assert(notes[0].id && notes[1].id && notes[0].id !== notes[1].id, 'missing note ids should be filled uniquely');
+  assert(notes[0].pitch === 43 && notes[1].pitch === 47, 'normalizer must not change musical pitches');
+  assert(notes[0].startBeat === 0 && notes[1].startBeat === 1, 'normalizer must not change note timing');
 }
 
 async function testBeatsOnlyInvariantRejectsSeconds(){
@@ -568,7 +617,8 @@ async function main(){
   await testMalformedLengthFinishReasonIsDiagnostic();
   await testMalformedNoJsonRepairRetryCanCommit();
   await testInvalidPatchRepairRetryCanCommit();
-  await testAddInstanceValidationRetryPromptNamesInstanceId();
+  await testMissingAddInstanceIdIsNormalized();
+  await testGeneratedIdsAreNormalizedWithoutChangingMusic();
   await testBeatsOnlyInvariantRejectsSeconds();
   await testPromptIncludesRequiredContext();
   await testLargeSelectedClipPromptIsCompact();

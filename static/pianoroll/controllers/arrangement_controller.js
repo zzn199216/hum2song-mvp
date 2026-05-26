@@ -189,6 +189,107 @@
     return out;
   }
 
+  function uniqueGeneratedId(projectApi, prefix, used){
+    const seen = used && typeof used.has === 'function' ? used : new Set();
+    for (let i = 0; i < 20; i++){
+      const raw = (projectApi && typeof projectApi.uid === 'function')
+        ? projectApi.uid(prefix)
+        : (prefix + Math.random().toString(16).slice(2, 10));
+      const id = safeTrim(raw);
+      if (id && !seen.has(id)){
+        seen.add(id);
+        return id;
+      }
+    }
+    let n = 1;
+    while (seen.has(prefix + n)) n++;
+    const fallback = prefix + n;
+    seen.add(fallback);
+    return fallback;
+  }
+
+  function normalizeGeneratedArrangementIds(projectV2, patch, projectApi){
+    if (!patch || typeof patch !== 'object' || !Array.isArray(patch.ops)) return patch;
+    const out = JSON.parse(JSON.stringify(patch));
+    const ops = Array.isArray(out.ops) ? out.ops : [];
+    const existingTracks = new Set((projectV2 && Array.isArray(projectV2.tracks) ? projectV2.tracks : []).map(function(t){
+      return safeTrim((t && (t.id || t.trackId)) || '');
+    }).filter(Boolean));
+    const existingClips = new Set(Object.keys(getClipMap(projectV2)).map(safeTrim).filter(Boolean));
+    const existingInstances = new Set((projectV2 && Array.isArray(projectV2.instances) ? projectV2.instances : []).map(function(inst){
+      return safeTrim(inst && inst.id);
+    }).filter(Boolean));
+
+    const usedTracks = new Set(existingTracks);
+    const usedClips = new Set(existingClips);
+    const usedInstances = new Set(existingInstances);
+    const trackMap = {};
+    const clipMap = {};
+
+    for (let i = 0; i < ops.length; i++){
+      const op = ops[i];
+      if (!op || typeof op !== 'object') continue;
+      if (String(op.op || '') === 'createTrack'){
+        const oldId = safeTrim(op.trackId);
+        if (!oldId || usedTracks.has(oldId)){
+          const nextId = uniqueGeneratedId(projectApi, 'trk_acc_', usedTracks);
+          if (oldId) trackMap[oldId] = nextId;
+          op.trackId = nextId;
+        } else {
+          usedTracks.add(oldId);
+        }
+      } else if (String(op.op || '') === 'createClip'){
+        const oldId = safeTrim(op.clipId);
+        if (!oldId || usedClips.has(oldId)){
+          const nextId = uniqueGeneratedId(projectApi, 'clip_acc_', usedClips);
+          if (oldId) clipMap[oldId] = nextId;
+          op.clipId = nextId;
+        } else {
+          usedClips.add(oldId);
+        }
+        const tracks = (op.scoreBeat && Array.isArray(op.scoreBeat.tracks)) ? op.scoreBeat.tracks : [];
+        const usedNoteIds = new Set();
+        for (let ti = 0; ti < tracks.length; ti++){
+          const tr = tracks[ti] || {};
+          if (!safeTrim(tr.id)) tr.id = uniqueGeneratedId(projectApi, 'score_trk_', new Set());
+          const notes = Array.isArray(tr.notes) ? tr.notes : [];
+          for (let ni = 0; ni < notes.length; ni++){
+            const note = notes[ni];
+            if (!note || typeof note !== 'object') continue;
+            const oldNoteId = safeTrim(note.id);
+            if (!oldNoteId || usedNoteIds.has(oldNoteId)){
+              note.id = uniqueGeneratedId(projectApi, 'n_acc_', usedNoteIds);
+            } else {
+              usedNoteIds.add(oldNoteId);
+            }
+          }
+        }
+      }
+    }
+
+    for (let i = 0; i < ops.length; i++){
+      const op = ops[i];
+      if (!op || typeof op !== 'object') continue;
+      const kind = String(op.op || '');
+      if (kind === 'addInstance'){
+        const oldInstId = safeTrim(op.instanceId);
+        if (!oldInstId || usedInstances.has(oldInstId)){
+          op.instanceId = uniqueGeneratedId(projectApi, 'inst_acc_', usedInstances);
+        } else {
+          usedInstances.add(oldInstId);
+        }
+        const cid = safeTrim(op.clipId);
+        const tid = safeTrim(op.trackId);
+        if (cid && clipMap[cid]) op.clipId = clipMap[cid];
+        if (tid && trackMap[tid]) op.trackId = trackMap[tid];
+      } else if (kind === 'setTrackInstrument'){
+        const tid = safeTrim(op.trackId);
+        if (tid && trackMap[tid]) op.trackId = trackMap[tid];
+      }
+    }
+    return out;
+  }
+
   /** Explicit default arrangement strategy (prompt-only; schema unchanged). */
   function buildAddAccompanimentV0StrategyBlock(){
     return [
@@ -557,7 +658,7 @@
         }
       }
 
-      let patch = parsedPatch;
+      let patch = normalizeGeneratedArrangementIds(projectV2, parsedPatch, H2SProject);
       let validation = ArrangementPatch.validateArrangementPatchV0(projectV2, patch, { H2SProject: H2SProject });
 
       let qualityReport = null;
@@ -607,7 +708,7 @@
               promptTrace: promptTrace,
             });
           }
-          patch = parsedPatch;
+          patch = normalizeGeneratedArrangementIds(projectV2, parsedPatch, H2SProject);
           validation = ArrangementPatch.validateArrangementPatchV0(projectV2, patch, { H2SProject: H2SProject });
           qualityReport = null;
           if (validation && validation.ok && ArrangementQuality && typeof ArrangementQuality.analyzeArrangementQualityV0 === 'function'){
