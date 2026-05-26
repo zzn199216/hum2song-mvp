@@ -117,6 +117,27 @@ function setMockCloudLlm(mock){
   };
 }
 
+function makeValidAccompanimentPatch(){
+  return {
+    kind: 'arrangement_patch_v0',
+    version: 1,
+    ops: [
+      { op: 'createTrack', trackId: 'trk_acc_retry', name: 'Accompaniment', instrument: 'bass' },
+      {
+        op: 'createClip',
+        clipId: 'clip_acc_retry',
+        name: 'Accompaniment Clip',
+        scoreBeat: {
+          version: 2,
+          time_signature: '4/4',
+          tracks: [{ id: 'acc_retry_t0', notes: [{ id: 'r0', pitch: 48, velocity: 64, startBeat: 0, durationBeat: 1 }] }],
+        },
+      },
+      { op: 'addInstance', instanceId: 'inst_acc_retry', clipId: 'clip_acc_retry', trackId: 'trk_acc_retry', startBeat: 8 },
+    ],
+  };
+}
+
 async function testValidPatchOneCommit(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
@@ -179,7 +200,8 @@ async function testInvalidPatchNoCommit(){
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0' });
   assert(res.ok === false && res.reason === 'patch_validation_failed', 'invalid patch rejected');
   assert(harness.getCommitCount() === 0, 'no commit on invalid patch');
-  assert(llmCalls === 1, 'still one call');
+  assert(llmCalls === 2, 'invalid patch should get one bounded repair retry');
+  assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes validation retry');
 }
 
 async function testMalformedNoJsonNoCommit(){
@@ -196,7 +218,60 @@ async function testMalformedNoJsonNoCommit(){
   const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0' });
   assert(res.ok === false && res.reason === 'llm_no_valid_json', 'no json rejected');
   assert(harness.getCommitCount() === 0, 'no commit when malformed');
-  assert(llmCalls === 1, 'one call only');
+  assert(llmCalls === 2, 'malformed output should get one bounded repair retry');
+  assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes repair retry');
+}
+
+async function testMalformedNoJsonRepairRetryCanCommit(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  let llmCalls = 0;
+  const patch = makeValidAccompanimentPatch();
+  const calls = [];
+  setMockLlm({
+    callChatCompletions: async (_cfg, messages) => {
+      llmCalls += 1;
+      calls.push(messages);
+      if (llmCalls === 1) return { text: 'I can add a bass line, but here is a prose answer instead.' };
+      return { text: '```json\n' + JSON.stringify(patch) + '\n```' };
+    },
+    extractJsonObject: (txt) => {
+      const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  });
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
+  assert(res.ok === true, 'repair retry should apply valid arrangement patch');
+  assert(harness.getCommitCount() === 1, 'repair retry commits once');
+  assert(llmCalls === 2, 'one repair retry');
+  assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes both attempts');
+  assert(Array.isArray(calls[1]) && calls[1].length === 2, 'repair retry sends system + user only');
+  assert(String(calls[1][1].content || '').indexOf('Repair the previous Arrangement Patch v0 response') >= 0, 'repair instruction included');
+  assert(String(calls[1][1].content || '').length < 1800, 'repair prompt stays bounded');
+}
+
+async function testInvalidPatchRepairRetryCanCommit(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  let llmCalls = 0;
+  const invalidPatch = { kind: 'arrangement_patch_v0', version: 1, ops: [{ op: 'deleteClip', clipId: melodyClip.id }] };
+  const patch = makeValidAccompanimentPatch();
+  setMockLlm({
+    callChatCompletions: async () => {
+      llmCalls += 1;
+      const body = llmCalls === 1 ? invalidPatch : patch;
+      return { text: '```json\n' + JSON.stringify(body) + '\n```' };
+    },
+    extractJsonObject: (txt) => {
+      const m = String(txt || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  });
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add bass' });
+  assert(res.ok === true, 'invalid first patch can be repaired');
+  assert(harness.getCommitCount() === 1, 'validation repair commits once');
+  assert(llmCalls === 2, 'one validation repair retry');
+  assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes validation retry');
 }
 
 async function testBeatsOnlyInvariantRejectsSeconds(){
@@ -416,6 +491,8 @@ async function main(){
   await testValidPatchOneCommit();
   await testInvalidPatchNoCommit();
   await testMalformedNoJsonNoCommit();
+  await testMalformedNoJsonRepairRetryCanCommit();
+  await testInvalidPatchRepairRetryCanCommit();
   await testBeatsOnlyInvariantRejectsSeconds();
   await testPromptIncludesRequiredContext();
   await testLargeSelectedClipPromptIsCompact();

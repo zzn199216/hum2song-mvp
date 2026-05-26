@@ -94,6 +94,13 @@
     return Math.round(n * 1000) / 1000;
   }
 
+  function boundedText(value, maxChars){
+    const s = asString(value);
+    const n = isFiniteNumber(Number(maxChars)) ? Math.max(0, Math.floor(Number(maxChars))) : 0;
+    if (!n || s.length <= n) return s;
+    return s.slice(0, n - 3) + '...';
+  }
+
   function buildMelodyNoteTable(scoreBeat, maxRows){
     const rows = [];
     const tracks = (scoreBeat && Array.isArray(scoreBeat.tracks)) ? scoreBeat.tracks : [];
@@ -283,6 +290,33 @@
     return { systemPrompt: systemPrompt, userPrompt: userPrompt, promptMode: 'compact', noteRowsSent: noteTable.length };
   }
 
+  function buildArrangementRepairMessages(reason, detail, previousText){
+    const repairSystem = [
+      'You repair Arrangement Patch v0 JSON for Hum2Song.',
+      'Output exactly ONE JSON object in a single ```json code block with no other text.',
+      'No <think>, no hidden reasoning, no explanation, no prose before or after.',
+    ].join('\n');
+    const repairUser = [
+      'Repair the previous Arrangement Patch v0 response.',
+      'Previous failure: ' + (safeTrim(reason) || 'invalid_output') + (safeTrim(detail) ? (': ' + boundedText(detail, 300)) : ''),
+      '',
+      'Return exactly this shape:',
+      '{"kind":"arrangement_patch_v0","version":1,"ops":[...]}',
+      '',
+      'Allowed ops only: createTrack, createClip, setTrackInstrument, addInstance.',
+      'Do not modify or delete existing melody material.',
+      'Use beats-only fields; do not output seconds fields.',
+      'Use only valid built-in instruments such as bass, drum, lead, pad, pluck, default.',
+      '',
+      'Previous model response, bounded:',
+      boundedText(previousText, 800),
+    ].join('\n');
+    return [
+      { role: 'system', content: repairSystem },
+      { role: 'user', content: repairUser },
+    ];
+  }
+
   function validateHooks(hooks){
     const req = ['getProjectV2', 'setProjectFromV2', 'getSelectedClipId', 'getSelectedInstanceId'];
     for (const k of req){
@@ -410,6 +444,7 @@
 
       let rawText = '';
       let parsedPatch = null;
+      let callCount = 1;
       statusLog('arrangement_v0: llm_request_started', Object.assign({ goal: goal }, requestDiagnostics));
       try {
         const llmRes = await llmClient.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 180000 });
@@ -420,7 +455,7 @@
           reason: 'llm_request_failed',
           detail: (err && err.message) ? String(err.message) : 'llm_request_failed',
           llmDebug: {
-            callCount: 1,
+            callCount: callCount,
             model: safeTrim(cfg.model),
             baseUrl: safeTrim(cfg.baseUrl),
             request: requestDiagnostics,
@@ -430,16 +465,39 @@
       }
 
       if (!parsedPatch || typeof parsedPatch !== 'object'){
-        return Object.assign({}, resultBase, {
-          reason: 'llm_no_valid_json',
-          detail: 'no_json_object_extracted',
-          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
-          promptTrace: promptTrace,
-        });
+        const firstRawText = rawText;
+        const repairMessages = buildArrangementRepairMessages('llm_no_valid_json', 'no_json_object_extracted', firstRawText);
+        callCount = 2;
+        statusLog('arrangement_v0: llm_repair_retry_started', { reason: 'llm_no_valid_json' });
+        try {
+          const retryRes = await llmClient.callChatCompletions(cfg, repairMessages, { temperature: 0.1, timeoutMs: 180000 });
+          rawText = (retryRes && typeof retryRes.text === 'string') ? retryRes.text : '';
+          parsedPatch = llmClient.extractJsonObject(rawText);
+        } catch (err){
+          return Object.assign({}, resultBase, {
+            reason: 'llm_request_failed',
+            detail: (err && err.message) ? String(err.message) : 'llm_request_failed',
+            llmDebug: {
+              callCount: callCount,
+              model: safeTrim(cfg.model),
+              baseUrl: safeTrim(cfg.baseUrl),
+              request: requestDiagnostics,
+            },
+            promptTrace: promptTrace,
+          });
+        }
+        if (!parsedPatch || typeof parsedPatch !== 'object'){
+          return Object.assign({}, resultBase, {
+            reason: 'llm_no_valid_json',
+            detail: 'no_json_object_extracted',
+            llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+            promptTrace: promptTrace,
+          });
+        }
       }
 
-      const patch = parsedPatch;
-      const validation = ArrangementPatch.validateArrangementPatchV0(projectV2, patch, { H2SProject: H2SProject });
+      let patch = parsedPatch;
+      let validation = ArrangementPatch.validateArrangementPatchV0(projectV2, patch, { H2SProject: H2SProject });
 
       let qualityReport = null;
       if (validation && validation.ok && ArrangementQuality && typeof ArrangementQuality.analyzeArrangementQualityV0 === 'function'){
@@ -456,11 +514,60 @@
       }
 
       if (!validation || !validation.ok){
+        if (callCount < 2){
+          const detail = (validation && Array.isArray(validation.errors)) ? validation.errors.slice(0, 10).join('; ') : 'validation_failed';
+          const repairMessages = buildArrangementRepairMessages('patch_validation_failed', detail, rawText);
+          callCount = 2;
+          statusLog('arrangement_v0: llm_repair_retry_started', { reason: 'patch_validation_failed' });
+          try {
+            const retryRes = await llmClient.callChatCompletions(cfg, repairMessages, { temperature: 0.1, timeoutMs: 180000 });
+            rawText = (retryRes && typeof retryRes.text === 'string') ? retryRes.text : '';
+            parsedPatch = llmClient.extractJsonObject(rawText);
+          } catch (err){
+            return Object.assign({}, resultBase, {
+              reason: 'llm_request_failed',
+              detail: (err && err.message) ? String(err.message) : 'llm_request_failed',
+              llmDebug: {
+                callCount: callCount,
+                model: safeTrim(cfg.model),
+                baseUrl: safeTrim(cfg.baseUrl),
+                request: requestDiagnostics,
+              },
+              promptTrace: promptTrace,
+            });
+          }
+          if (!parsedPatch || typeof parsedPatch !== 'object'){
+            return Object.assign({}, resultBase, {
+              reason: 'llm_no_valid_json',
+              detail: 'no_json_object_extracted',
+              llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+              promptTrace: promptTrace,
+            });
+          }
+          patch = parsedPatch;
+          validation = ArrangementPatch.validateArrangementPatchV0(projectV2, patch, { H2SProject: H2SProject });
+          qualityReport = null;
+          if (validation && validation.ok && ArrangementQuality && typeof ArrangementQuality.analyzeArrangementQualityV0 === 'function'){
+            const melStats = melodyVelocityStats(selectedScore);
+            qualityReport = ArrangementQuality.analyzeArrangementQualityV0(
+              projectV2,
+              patch,
+              {
+                selectedClipSpanBeat: selectedClipSpanBeat,
+                melodyMaxVelocity: melStats.maxVelocity > 0 ? melStats.maxVelocity : null,
+              },
+              { H2SProject: H2SProject }
+            );
+          }
+        }
+      }
+
+      if (!validation || !validation.ok){
         return Object.assign({}, resultBase, {
           reason: 'patch_validation_failed',
           detail: (validation && Array.isArray(validation.errors)) ? validation.errors.slice(0, 10).join('; ') : 'validation_failed',
           arrangementOutcome: validation || null,
-          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+          llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
           promptTrace: promptTrace,
           rawPatch: patch,
           qualityReport: qualityReport,
@@ -473,7 +580,7 @@
           reason: 'patch_apply_failed',
           detail: (applied && Array.isArray(applied.errors)) ? applied.errors.slice(0, 10).join('; ') : 'apply_failed',
           arrangementOutcome: applied || null,
-          llmDebug: { callCount: 1, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
+          llmDebug: { callCount: callCount, model: safeTrim(cfg.model), baseUrl: safeTrim(cfg.baseUrl), outputChars: rawText.length, request: requestDiagnostics },
           promptTrace: promptTrace,
           rawPatch: patch,
           qualityReport: qualityReport,
@@ -496,7 +603,7 @@
         arrangementOutcome: applied,
         summary: summary,
         llmDebug: {
-          callCount: 1,
+          callCount: callCount,
           model: safeTrim(cfg.model),
           baseUrl: safeTrim(cfg.baseUrl),
           outputChars: rawText.length,
