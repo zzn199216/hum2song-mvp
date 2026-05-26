@@ -94,8 +94,8 @@ function testAssistantTextIsAccompanimentFaq(text) {
   if (!text || typeof text !== 'string') return false;
   const s = String(text).trim();
   const low = s.toLowerCase();
-  if (/伴奏/.test(s) && /是什么|什么意思|什么叫|如何|怎么写|怎么做|怎么作|怎样|教程/.test(s)) return true;
-  if (/accompaniment/.test(low) && /what\s+is|what's|explain(\s+|$)|how\s+to\s+(write|make|create)/.test(low)) return true;
+  if (/伴奏/.test(s) && /是什么|什么意思|什么叫|如何|怎么|怎样|教程/.test(s)) return true;
+  if (/accompaniment/.test(low) && /what\s+is|what's|explain(\s+|$)|how\s+(?:to|do\s+i|can\s+i|should\s+i)\s+(write|make|create|add|generate)/.test(low)) return true;
   return false;
 }
 
@@ -107,6 +107,9 @@ function testAssistantHeuristicLikelyArrangementAction(text) {
   if (/加.{0,12}伴奏|伴奏.{0,8}加|配.{0,6}伴奏|添.{0,6}伴奏|来段伴奏|给.{0,8}加.{0,6}伴奏|加段伴奏|帮我加伴奏|添加伴奏|段伴奏/i.test(s)) return true;
   if (/add\s+accompaniment|accompaniment\s+to|add\s+support|make\s+(this\s+)?fuller|add\s+(a\s+)?chords?|add\s+(a\s+)?drums?/i.test(low)) return true;
   if (/加.{0,8}和弦|加.{0,8}鼓|加.{0,8}鼓点|配.{0,8}和弦|配.{0,8}鼓/.test(s)) return true;
+  if (/生成.{0,8}伴奏|伴奏.{0,8}生成|为.{0,12}生成.{0,8}伴奏|编曲/.test(s)) return true;
+  if (/加.{0,8}(?:bass|贝斯|低音)|添加.{0,8}(?:bass|贝斯|低音)|生成.{0,8}(?:bass|贝斯|低音)|写.{0,8}(?:bass|贝斯|低音)/i.test(s)) return true;
+  if (/generate\s+(?:an?\s+)?accompaniment|create\s+(?:an?\s+)?accompaniment|(?:create|generate|make|add)\s+(?:a\s+)?backing\s+track|\bbacking\s+track\b|add\s+(?:a\s+)?bass(?:line| line)?|(?:generate|create|write|compose)\s+(?:a\s+)?bass(?:line| line)?/i.test(low)) return true;
   return false;
 }
 
@@ -117,6 +120,14 @@ function testAssistantDirectBassIntent(text) {
   const hasBass = /\bbass\b|\bbassline\b|\bbass line\b|贝斯|低音/.test(low) || /贝斯|低音/.test(s);
   if (!hasBass) return false;
   return /\badd\b|\bcreate\b|\bgenerate\b|\bwrite\b|\bcompose\b|加|添加|给/.test(low) || /加|添加|给/.test(s);
+}
+
+function testAssistantDeterministicArrangementIntent(text) {
+  if (!text || typeof text !== 'string') return false;
+  if (testAssistantTextIsAccompanimentFaq(text)) return false;
+  return resolveAssistantAddAccompanimentIntentFromText(text)
+    || testAssistantDirectBassIntent(text)
+    || testAssistantHeuristicLikelyArrangementAction(text);
 }
 
 function testAssistantClearlyOptimizeLikeForSend(text) {
@@ -1096,7 +1107,7 @@ function createFakeApp(opts) {
     if (inp) inp.value = '';
     const _t = this._t;
     const self = this;
-    if (testAssistantDirectBassIntent(text)) return mirrorRunAddAccompanimentFlow(this, text, _t);
+    if (testAssistantDeterministicArrangementIntent(text)) return mirrorRunAddAccompanimentFlow(this, text, _t);
     const d = _tryAssistantBoundedSkillDispatchMirror(this, text, _t);
     if (d !== false) return d;
 
@@ -1110,7 +1121,7 @@ function createFakeApp(opts) {
       && client && typeof client.callChatCompletions === 'function' && typeof client.extractJsonObject === 'function');
 
     function finishOptimizeCard() {
-      if (testAssistantDirectBassIntent(text)) return mirrorRunAddAccompanimentFlow(self, text, _t);
+      if (testAssistantDeterministicArrangementIntent(text)) return mirrorRunAddAccompanimentFlow(self, text, _t);
       const clipId = self.state.selectedClipId;
       if (!clipId) {
         self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.selectClipFirst') });
@@ -1144,16 +1155,14 @@ function createFakeApp(opts) {
     }
 
     function fallbackRouter() {
-      const clearlyOpt = testAssistantClearlyOptimizeLikeForSend(text);
       const faq = testAssistantTextIsAccompanimentFaq(text);
-      const likelyArr = testAssistantHeuristicLikelyArrangementAction(text);
       if (faq) {
         self._aiAssistItems = self._aiAssistItems || [];
         self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.intentRouterAccompanimentFaq') });
         self.render();
         return Promise.resolve();
       }
-      if (likelyArr && !clearlyOpt) {
+      if (testAssistantDeterministicArrangementIntent(text)) {
         return mirrorRunAddAccompanimentFlow(self, text, _t);
       }
       return finishOptimizeCard();
@@ -1192,8 +1201,7 @@ function createFakeApp(opts) {
           self.render();
           return undefined;
         }
-        const likelyArr = testAssistantHeuristicLikelyArrangementAction(text);
-        if (clearlyOpt || !likelyArr) {
+        if (clearlyOpt || !testAssistantDeterministicArrangementIntent(text)) {
           return finishOptimizeCard();
         }
         return mirrorRunAddAccompanimentFlow(self, text, _t);
@@ -1209,7 +1217,7 @@ function createFakeApp(opts) {
     const card = (this._aiAssistItems || []).find(x => x.type === 'card' && String(x.clipId) === String(clipId) && (!promptText || x.promptText === promptText));
     if (!card) return;
     const text = (promptText !== '' && promptText !== null) ? promptText : (card.promptText || '');
-    if (testAssistantDirectBassIntent(text)) return mirrorRunAddAccompanimentFlow(this, text, this._t);
+    if (testAssistantDeterministicArrangementIntent(text)) return mirrorRunAddAccompanimentFlow(this, text, this._t);
     const runSnapshot = _buildAssistantRunExecutionSnapshot(card);
     card._assistantRunSnapshot = runSnapshot;
     if (card.reasoningLog && typeof card.reasoningLog === 'object') {
@@ -1325,6 +1333,34 @@ function createFakeApp(opts) {
     return prefix + clipName;
   };
   return { app, setOptimizeOptionsCalls, runCommandCalls, addBassCalls, addAccompanimentCalls, doc };
+}
+
+function makeValidArrangementProjectV2ForAssistTest() {
+  return {
+    instances: [{ id: 'ti', clipId: 'cm', startBeat: 0, trackId: 'tk' }],
+    clips: {
+      cm: { name: 'M', score: { tracks: [{ notes: [{ id: 'n', pitch: 60, velocity: 80, startBeat: 0, durationBeat: 1 }] }] } },
+    },
+  };
+}
+
+function assertAssistantPromptRoutesToArrangement(prompt) {
+  const validV2 = makeValidArrangementProjectV2ForAssistTest();
+  const { app, doc, addAccompanimentCalls, setOptimizeOptionsCalls } = createFakeApp({ projectV2Override: validV2 });
+  app.state.selectedInstanceId = 'ti';
+  app.state.selectedClipId = 'cm';
+  doc.getElementById('aiAssistInput').value = prompt;
+  return Promise.resolve(app._aiAssistSend()).then(() => {
+    assert(addAccompanimentCalls.length === 0, prompt + ' waits for confirmation before running arrangement');
+    assert(setOptimizeOptionsCalls.length === 0, prompt + ' must not create optimize options');
+    assert(!app._aiAssistItems.some((x) => x.type === 'card'), prompt + ' must not create an Optimize card');
+    const conf = app._aiAssistItems.find((x) => x.type === 'add_accompaniment_confirm');
+    assert(conf && conf.instanceId === 'ti' && conf.userPrompt === prompt, prompt + ' routes to arrangement confirm');
+    return app._aiAssistAddAccompanimentContinue(conf._confirmId).then(() => {
+      assert(addAccompanimentCalls.length === 1, prompt + ' dispatches arrangement after Continue');
+      assert(addAccompanimentCalls[0].runExtra.userPrompt === prompt, prompt + ' passes original prompt');
+    });
+  });
 }
 
 (function testDockElementsExist() {
@@ -2082,6 +2118,58 @@ function createFakeApp(opts) {
     });
 })().then(() => { console.log('PASS add drums => addAccompanimentFromSelected flow'); }).catch((e) => { console.error(e); process.exit(1); });
 
+(function testDeterministicAccompanimentPhrasesRouteToArrangementFlow() {
+  const prompts = [
+    '为这段音乐生成伴奏',
+    '生成伴奏',
+    '编曲',
+    '加伴奏',
+    '加 bass',
+    '加鼓点',
+    'generate accompaniment',
+    'create backing track',
+    'backing track',
+  ];
+  return prompts.reduce((p, prompt) => p.then(() => assertAssistantPromptRoutesToArrangement(prompt)), Promise.resolve());
+})().then(() => { console.log('PASS deterministic accompaniment phrases => arrangement flow'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testZhGenerateAccompanimentDoesNotCreateOptimizeCard() {
+  return assertAssistantPromptRoutesToArrangement('为这段音乐生成伴奏');
+})().then(() => { console.log('PASS 为这段音乐生成伴奏 => arrangement, no Optimize card'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testAccompanimentFaqQuestionsStayFaq() {
+  const validV2 = makeValidArrangementProjectV2ForAssistTest();
+  const prompts = ['如何加伴奏？', '怎么生成伴奏？', 'How do I add accompaniment?'];
+  return prompts.reduce((p, prompt) => p.then(() => {
+    const { app, doc, addAccompanimentCalls, setOptimizeOptionsCalls } = createFakeApp({ projectV2Override: validV2 });
+    app.state.selectedInstanceId = 'ti';
+    app.state.selectedClipId = 'cm';
+    doc.getElementById('aiAssistInput').value = prompt;
+    return Promise.resolve(app._aiAssistSend()).then(() => {
+      assert(addAccompanimentCalls.length === 0, prompt + ' must not run arrangement');
+      assert(setOptimizeOptionsCalls.length === 0, prompt + ' must not create optimize options');
+      assert(!app._aiAssistItems.some((x) => x.type === 'card'), prompt + ' must not create Optimize card');
+      assert(app._aiAssistItems.some((x) => x.type === 'sys' && x.text === 'FAQ_ACCOMP'), prompt + ' stays FAQ/help');
+    });
+  }), Promise.resolve());
+})().then(() => { console.log('PASS accompaniment how-to questions stay FAQ'); }).catch((e) => { console.error(e); process.exit(1); });
+
+(function testStaleOptimizeCardRunWithAccompanimentPromptReroutesToArrangement() {
+  const validV2 = makeValidArrangementProjectV2ForAssistTest();
+  const { app, addAccompanimentCalls, setOptimizeOptionsCalls, runCommandCalls } = createFakeApp({ projectV2Override: validV2 });
+  app.state.selectedInstanceId = 'ti';
+  app.state.selectedClipId = 'cm';
+  app._aiAssistItems.push({ type: 'card', clipId: 'cm', promptText: 'create backing track', createdAt: 1, runState: 'idle' });
+  const btnEl = { getAttribute: (a) => (a === 'data-prompt' ? 'create backing track' : null), disabled: false };
+  return app._aiAssistRun('cm', btnEl).then(() => {
+    assert(addAccompanimentCalls.length === 0, 'stale card waits for arrangement confirmation');
+    assert(setOptimizeOptionsCalls.length === 0, 'stale accompaniment card must not set optimize options');
+    assert(runCommandCalls.length === 0, 'stale accompaniment card must not run optimize command');
+    const conf = app._aiAssistItems.find((x) => x.type === 'add_accompaniment_confirm');
+    assert(conf && conf.instanceId === 'ti' && conf.userPrompt === 'create backing track', 'stale card reroutes to arrangement confirm');
+  });
+})().then(() => { console.log('PASS stale Optimize card accompaniment Run reroutes to arrangement'); }).catch((e) => { console.error(e); process.exit(1); });
+
 (function testAppJsBoundedResolverRegistryAndOrder() {
   const fs = require('fs');
   const appPath = path.join(__dirname, '../../static/pianoroll/app.js');
@@ -2095,8 +2183,10 @@ function createFakeApp(opts) {
   assert(s.includes('_tryAssistantBoundedSkillDispatch(this, text, _t)'), '_aiAssistSend calls bounded dispatch');
   assert(s.includes('_assistantCallIntentRouterLlm'), 'intent router calls LLM');
   assert(s.includes('_assistantFinishOptimizeCardPath'), 'optimize card path extracted');
-  assert(s.includes('_assistantIsDirectBassIntent(text)'), '_aiAssistSend recognizes direct bass before optimize');
-  assert(s.includes('_assistantDispatchAddAccompanimentFlow(this, text, _t)'), 'direct bass send routes through arrangement flow');
+  assert(s.includes('function _assistantIsDeterministicArrangementIntent'), 'app has canonical deterministic arrangement matcher');
+  assert(s.includes('_assistantIsDirectBassIntent(text)'), 'canonical arrangement matcher includes direct bass');
+  assert(s.includes('_assistantIsDeterministicArrangementIntent(text)'), '_aiAssistSend recognizes deterministic arrangement intents before optimize');
+  assert(s.includes('_assistantDispatchAddAccompanimentFlow(this, text, _t)'), 'deterministic arrangement send routes through arrangement flow');
   assert(!s.includes('_assistantDispatchAddBassFlow(this, text, _t)'), 'assistant send must not call deterministic addBassFromSelected flow');
   assert(s.includes("type: 'add_accompaniment_confirm'"), 'add accompaniment uses inline confirm item, not window.confirm');
   assert(s.includes('data-act="aiAddAccompanimentContinue"') && s.includes('data-act="aiAddAccompanimentCancel"'), 'dock renders Continue/Cancel for add accompaniment');

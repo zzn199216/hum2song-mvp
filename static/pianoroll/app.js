@@ -366,8 +366,8 @@
     if (!text || typeof text !== 'string') return false;
     const s = String(text).trim();
     const low = s.toLowerCase();
-    if (/伴奏/.test(s) && /是什么|什么意思|什么叫|如何|怎么写|怎么做|怎么作|怎样|教程/.test(s)) return true;
-    if (/accompaniment/.test(low) && /what\s+is|what's|explain(\s+|$)|how\s+to\s+(write|make|create)/.test(low)) return true;
+    if (/伴奏/.test(s) && /是什么|什么意思|什么叫|如何|怎么|怎样|教程/.test(s)) return true;
+    if (/accompaniment/.test(low) && /what\s+is|what's|explain(\s+|$)|how\s+(?:to|do\s+i|can\s+i|should\s+i)\s+(write|make|create|add|generate)/.test(low)) return true;
     return false;
   }
 
@@ -380,6 +380,9 @@
     if (/加.{0,12}伴奏|伴奏.{0,8}加|配.{0,6}伴奏|添.{0,6}伴奏|来段伴奏|给.{0,8}加.{0,6}伴奏|加段伴奏|帮我加伴奏|添加伴奏|段伴奏/i.test(s)) return true;
     if (/add\s+accompaniment|accompaniment\s+to|add\s+support|make\s+(this\s+)?fuller|add\s+(a\s+)?chords?|add\s+(a\s+)?drums?/i.test(low)) return true;
     if (/加.{0,8}和弦|加.{0,8}鼓|加.{0,8}鼓点|配.{0,8}和弦|配.{0,8}鼓/.test(s)) return true;
+    if (/生成.{0,8}伴奏|伴奏.{0,8}生成|为.{0,12}生成.{0,8}伴奏|编曲/.test(s)) return true;
+    if (/加.{0,8}(?:bass|贝斯|低音)|添加.{0,8}(?:bass|贝斯|低音)|生成.{0,8}(?:bass|贝斯|低音)|写.{0,8}(?:bass|贝斯|低音)/i.test(s)) return true;
+    if (/generate\s+(?:an?\s+)?accompaniment|create\s+(?:an?\s+)?accompaniment|(?:create|generate|make|add)\s+(?:a\s+)?backing\s+track|\bbacking\s+track\b|add\s+(?:a\s+)?bass(?:line| line)?|(?:generate|create|write|compose)\s+(?:a\s+)?bass(?:line| line)?/i.test(low)) return true;
     return false;
   }
 
@@ -391,6 +394,14 @@
     const hasBass = /\bbass\b|\bbassline\b|\bbass line\b|贝斯|低音/.test(low) || /贝斯|低音/.test(s);
     if (!hasBass) return false;
     return /\badd\b|\bcreate\b|\bgenerate\b|\bwrite\b|\bcompose\b|加|添加|给/.test(low) || /加|添加|给/.test(s);
+  }
+
+  function _assistantIsDeterministicArrangementIntent(text){
+    if (!text || typeof text !== 'string') return false;
+    if (_assistantTextIsAccompanimentFaq(text)) return false;
+    return _resolveAssistantAddAccompanimentIntentFromText(text)
+      || _assistantIsDirectBassIntent(text)
+      || _assistantHeuristicLikelyArrangementAction(text);
   }
 
   /**
@@ -1065,7 +1076,7 @@
 
   /** Create Assistant Optimize card + optional AI plan (existing path; mutates self._aiAssistItems). */
   function _assistantFinishOptimizeCardPath(self, text, _t){
-    if (_assistantIsDirectBassIntent(text)){
+    if (_assistantIsDeterministicArrangementIntent(text)){
       _assistantDispatchAddAccompanimentFlow(self, text, _t);
       return;
     }
@@ -1102,16 +1113,14 @@
 
   /** When intent router LLM is missing, errors, or yields non-add_accompaniment for arrangement-like text. */
   function _assistantIntentRouterFallbackSend(self, text, _t){
-    const clearlyOpt = _assistantClearlyOptimizeLikeForSend(text);
     const faq = _assistantTextIsAccompanimentFaq(text);
-    const likelyArr = _assistantHeuristicLikelyArrangementAction(text);
     if (faq){
       self._aiAssistItems = self._aiAssistItems || [];
       self._aiAssistItems.push({ type: 'sys', text: _t('aiAssist.intentRouterAccompanimentFaq') });
       self.render();
       return;
     }
-    if (likelyArr && !clearlyOpt){
+    if (_assistantIsDeterministicArrangementIntent(text)){
       _assistantDispatchAddAccompanimentFlow(self, text, _t);
       return;
     }
@@ -4350,7 +4359,7 @@ ensureTrackButtons(){
       if (!text) return;
       inp.value = '';
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
-      if (_assistantIsDirectBassIntent(text)){
+      if (_assistantIsDeterministicArrangementIntent(text)){
         _assistantDispatchAddAccompanimentFlow(this, text, _t);
         return;
       }
@@ -4375,8 +4384,7 @@ ensureTrackButtons(){
             self.render();
             return;
           }
-          const likelyArr = _assistantHeuristicLikelyArrangementAction(text);
-          if (clearlyOpt || !likelyArr){
+          if (clearlyOpt || !_assistantIsDeterministicArrangementIntent(text)){
             _assistantFinishOptimizeCardPath(self, text, _t);
             return;
           }
@@ -4395,7 +4403,7 @@ ensureTrackButtons(){
       if (!card) return;
       const text = (promptText !== '' && promptText !== null) ? promptText : (card.promptText || '');
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
-      if (_assistantIsDirectBassIntent(text)){
+      if (_assistantIsDeterministicArrangementIntent(text)){
         _assistantDispatchAddAccompanimentFlow(this, text, _t);
         return;
       }
