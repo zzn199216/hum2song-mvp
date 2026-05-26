@@ -221,45 +221,28 @@
   }
 
   function buildArrangementOutputFormatContractBlock(){
-    const example = {
-      kind: 'arrangement_patch_v0',
-      version: 1,
-      ops: [
-        { op: 'createTrack', trackId: 'trk_acc_1', name: 'Accompaniment', instrument: 'bass', gainDb: -7 },
-        {
-          op: 'createClip',
-          clipId: 'clip_acc_1',
-          name: 'Accompaniment Clip',
-          scoreBeat: {
-            version: 2,
-            tracks: [{
-              id: 'acc_t0',
-              notes: [
-                { id: 'a0', pitch: 48, velocity: 64, startBeat: 0, durationBeat: 1 },
-              ],
-            }],
-          },
-        },
-        { op: 'addInstance', instanceId: 'inst_acc_1', clipId: 'clip_acc_1', trackId: 'trk_acc_1', startBeat: 0 },
-      ],
-    };
     return [
       'Output format contract:',
       '- Return exactly one ```json fenced block and nothing else before or after it.',
       '- The JSON inside the fence must be one object, not an array and not prose.',
       '- Top-level fields must include kind, version, and ops.',
+      '',
+      'Operation object formats:',
+      '- createTrack: requires trackId, name, instrument; gainDb is optional.',
+      '- createClip: requires clipId, name, scoreBeat.',
+      '- scoreBeat: requires version and tracks; each track requires id and notes.',
+      '- note: requires id, pitch, velocity, startBeat, durationBeat.',
+      '- addInstance: requires instanceId, clipId, trackId, startBeat; transpose is optional.',
+      '- setTrackInstrument: requires trackId and instrument; use only if needed.',
+      '',
       '- Each createClip scoreBeat note must include id, pitch, velocity, startBeat, and durationBeat.',
       '- Each addInstance object must use the exact key instanceId, plus clipId, trackId, and startBeat.',
       '- Do not use "id" for addInstance; "id" is only for scoreBeat tracks/notes inside createClip.',
       '- Every createTrack.trackId, createClip.clipId, addInstance.instanceId, and note id must be new and unique.',
       '- Use beat timing fields only; never use startSec, durationSec, spanSec, or any seconds field.',
       '- Music remains creative: choose rhythm, pitch, density, contour, velocity, instruments, and variation from the melody/context.',
-      '- Do not copy the example music literally; it is only a formatting example.',
-      '',
-      'Minimal valid example:',
-      '```json',
-      JSON.stringify(example),
-      '```',
+      '- Derive musical content from Context compact JSON and melodyNoteRowsBeatCSV, especially selectedClip.spanBeat.',
+      '- Do not copy placeholder values; this prompt intentionally gives no concrete musical notes.',
     ].join('\n');
   }
 
