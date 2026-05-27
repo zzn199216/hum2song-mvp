@@ -763,6 +763,108 @@ async function testCloudSmallClipPromptStaysBounded(){
   }
 }
 
+async function testLongClip252NotesSendsAllEditableRows(){
+  loadAgentController();
+  const { project: proj, clip } = makeClipWithNoteCount(252);
+  const state = { project: proj };
+  const cid = clip.id;
+  const capture = installPatchLlmMock({ version: 1, clipId: cid, ops: [] }, { velocityOnly: false });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make it more musical' });
+  assert(res && res.ok === true, '252-note clip should not be pre-blocked');
+  assert(capture.messages && capture.messages.length === 2, '252-note clip should reach LLM request');
+  assert(res.llmPromptTrace && res.llmPromptTrace.requestStats.noteRowsTotal === 252, '252-note total rows tracked');
+  assert(res.llmPromptTrace.requestStats.noteRowsSent === 252, '252-note clip exposes every editable note under cap');
+  const userPrompt = String(capture.messages[1].content || '');
+  assert(userPrompt.indexOf('editable_note_00_cloud_smoke') >= 0, 'first note listed');
+  assert(userPrompt.indexOf('editable_note_251_cloud_smoke') >= 0, 'last 252nd note listed');
+  assert(userPrompt.indexOf('first 252 editable notes') < 0, 'under-cap clip should not claim bounded first rows');
+}
+
+async function testLongClipAbove512ShowsHonestBoundedContext(){
+  loadAgentController();
+  const { project: proj, clip } = makeClipWithNoteCount(520);
+  const state = { project: proj };
+  const cid = clip.id;
+  const capture = installPatchLlmMock({ version: 1, clipId: cid, ops: [] }, { velocityOnly: false });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make it more musical' });
+  assert(res && res.ok === true, 'above-cap clip should still be attempted');
+  assert(res.llmPromptTrace && res.llmPromptTrace.requestStats.noteRowsTotal === 520, 'above-cap total rows tracked');
+  assert(res.llmPromptTrace.requestStats.noteRowsSent === 512, 'above-cap prompt is bounded at 512 rows');
+  const userPrompt = String(capture.messages[1].content || '');
+  assert(userPrompt.indexOf('first 512 editable notes') >= 0, 'prompt declares bounded note table');
+  assert(userPrompt.indexOf('Clip has 520 notes total; context is bounded to the listed editable notes') >= 0, 'prompt explains only listed notes are editable');
+  assert(userPrompt.indexOf('editable_note_511_cloud_smoke') >= 0, 'last listed note at cap is present');
+  assert(userPrompt.indexOf('editable_note_512_cloud_smoke') < 0, 'first note beyond cap is not listed');
+}
+
+async function testOptimizePromptDoesNotForceFixedModesOrHighestValueWording(){
+  loadAgentController();
+  const { project: proj, clip } = makeClipWithNoteCount(4);
+  const state = { project: proj };
+  const cid = clip.id;
+  const capture = installPatchLlmMock({ version: 1, clipId: cid, ops: [] }, { velocityOnly: false });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make it more musical' });
+  assert(res && res.ok === true, 'freeform optimize request succeeds');
+  const serialized = JSON.stringify(capture.messages || []).toLowerCase();
+  assert(serialized.indexOf('fix_pitch') < 0, 'prompt should not force fix_pitch mode');
+  assert(serialized.indexOf('tighten_rhythm') < 0, 'prompt should not force tighten_rhythm mode');
+  assert(serialized.indexOf('velocity_shape') < 0, 'prompt should not force velocity_shape mode');
+  assert(serialized.indexOf('highest-value edits') < 0, 'prompt should not use highest-value edits wording');
+  assert(res.llmPromptTrace.requestStats.noteRowsSent === 4, 'small clip still sends all rows');
+}
+
+async function testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchanged(){
+  loadAgentController();
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const { project: proj, clip } = makeClip();
+  let project = proj;
+  const cid = clip.id;
+  const before = JSON.stringify(project.clips[cid].score);
+  const beforeRevisionId = project.clips[cid].revisionId;
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', velocity: 70 }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+  let callN = 0;
+
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => {
+      callN++;
+      return { text: rawText, raw: { choices: [{ finish_reason: 'length' }] } };
+    },
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  const ctrl = AgentController.create({
+    getProjectV2: () => project,
+    setProjectFromV2: (p) => { project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make it smoother' });
+  assert(res && res.ok === false && res.reason === 'truncated_generation', 'length finish fails safely even with parseable JSON');
+  assertLlmOutcomeContract(res, 'truncated_generation');
+  assert(res.detail === 'finish_reason_length', 'top-level detail keeps finish_reason_length');
+  assert(res.patchSummary.detail === 'finish_reason_length', 'patchSummary detail keeps finish_reason_length');
+  assert(res.patchSummary.llm.partialJsonDiscarded === true, 'patchSummary records discarded parseable partial JSON');
+  assert(res.llmDebug.partialJsonDiscarded === true, 'llmDebug records discarded parseable partial JSON');
+  assert(res.llmDebug.totalAttempts === 1, 'truncated response is not retried');
+  assert(callN === 1, 'only one provider call on length finish');
+  assert(JSON.stringify(project.clips[cid].score) === before, 'truncated parseable output leaves original unchanged');
+  assert(project.clips[cid].revisionId === beforeRevisionId, 'truncated parseable output does not create revision');
+}
+
 async function testNoOpOutcome(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
@@ -1610,10 +1712,14 @@ async function main(){
   await testAddNoteOutsideClipRejectedAndClipUnchanged();
   await testAddNoteDensityCapRejectedAndClipUnchanged();
   await testCloudSmallClipPromptStaysBounded();
+  await testLongClip252NotesSendsAllEditableRows();
+  await testLongClipAbove512ShowsHonestBoundedContext();
+  await testOptimizePromptDoesNotForceFixedModesOrHighestValueWording();
   await testNoOpOutcome();
   await testPlainJsonObjectWithoutFenceAccepted();
   await testFailedExtract();
   await testLengthFinishWithoutJsonReportsTruncatedGeneration();
+  await testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchanged();
   await testThinkBlockStrippedBeforeJsonExtraction();
   await testRetryRecoverFromFailedExtract();
   await testFailedExtractRepairRetryUsesPreviousResponse();

@@ -273,7 +273,9 @@
         const opsTypesStr = Object.keys(opsByType).length ? Object.keys(opsByType).map(function(k){ return k + '=' + opsByType[k]; }).join(', ') : (opsTotal > 0 ? '?' : '0');
         const changedNotesStr = parsed ? String(noteIds.size + addedNoId) : '(unknown)';
         const fieldsStr = parsed ? (fieldsTouched.size ? Array.from(fieldsTouched).sort().join(', ') : '-') : '?';
-        return 'attempts=' + attempts + ' reason=' + reason + modeLabel + ' ops=' + opsTotal + ' (' + opsTypesStr + ') changedNotes=' + changedNotesStr + ' fieldsTouched=' + fieldsStr;
+        const finishReason = (debug.finishReason != null && typeof debug.finishReason === 'string' && debug.finishReason) ? ' finishReason=' + debug.finishReason : '';
+        const partialDiscarded = debug.partialJsonDiscarded === true ? ' partialJsonDiscarded=true' : '';
+        return 'attempts=' + attempts + ' reason=' + reason + finishReason + partialDiscarded + modeLabel + ' ops=' + opsTotal + ' (' + opsTypesStr + ') changedNotes=' + changedNotesStr + ' fieldsTouched=' + fieldsStr;
       }
 
       function loadLlmDebugUI(){
@@ -316,6 +318,8 @@
             clipId: (clipId && typeof clipId === 'string') ? clipId : '',
             attemptCount: (llmDebug.attemptCount != null) ? Number(llmDebug.attemptCount) : 1,
             reason: (llmDebug.reason && typeof llmDebug.reason === 'string') ? llmDebug.reason : '',
+            finishReason: (llmDebug.finishReason && typeof llmDebug.finishReason === 'string') ? llmDebug.finishReason : '',
+            partialJsonDiscarded: llmDebug.partialJsonDiscarded === true,
             safeModeResolved: typeof llmDebug.safeModeResolved === 'boolean' ? llmDebug.safeModeResolved : undefined,
             rawText: rawText.length > 4000 ? rawText.slice(0, 4000) : rawText,
             extractedJson: extractedJson.length > 4000 ? extractedJson.slice(0, 4000) : extractedJson,
@@ -1832,6 +1836,10 @@
         const r = (reason != null && typeof reason === 'string') ? reason : '';
         if (/llm_config_missing|llm_client_not_loaded/i.test(r)) return 'Please configure Base URL and Model in Advanced → LLM Settings.';
         if (/unsupported_request/i.test(r)) return 'This optimize request is not supported here.';
+        if (/truncated_generation|finish_reason_length/i.test(r)) {
+          const msg = t('lastOpt.fail.truncated_generation');
+          return msg !== 'lastOpt.fail.truncated_generation' ? msg : 'AI output was truncated, so nothing was applied. Retry, or choose a shorter clip.';
+        }
         if (/llm_no_valid_json/i.test(r)) return 'LLM response did not contain a valid JSON patch.';
         if (/quality_velocity_only/i.test(r)) return getQualityGateFailureMessage(true);
         if (/request input is too large|request is too large|413/i.test(r)) return 'The AI request is too large. Try selecting a shorter clip or clearing assistant history.';

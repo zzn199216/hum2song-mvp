@@ -70,6 +70,7 @@ if (fs.existsSync(enPath) && fs.existsSync(zhPath)){
   assert(en['cloudAi.tier.standard'] === 'Standard', 'en standard tier should be localized');
   assert(en['cloudAi.tier.quality'] === 'Quality', 'en quality tier should be localized');
   assert(en['cloudAi.tier.internal'] === 'Internal', 'en internal tier should be localized');
+  assert(zh['lastOpt.fail.truncated_generation'] === 'AI 输出被截断，未应用到工程。你可以重试，或选择更短片段。', 'zh truncated generation copy should be product-facing');
 }
 
 // Studio index: beginner hint bar (first-open guidance)

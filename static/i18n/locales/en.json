@@ -427,6 +427,7 @@
   "lastOpt.fail.apply_failed": "Could not apply changes",
   "lastOpt.fail.beginNewClipRevision_failed": "Could not save new version",
   "lastOpt.fail.patch_rejected": "The AI returned an incomplete edit format, so nothing was applied. Try again with a more specific request.",
+  "lastOpt.fail.truncated_generation": "AI output was truncated, so nothing was applied. Retry, or choose a shorter clip.",
   "lastOpt.fail.no_rollback": "Undo unavailable",
 
   "lastOpt.details": "Details",

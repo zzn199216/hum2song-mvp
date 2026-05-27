@@ -427,6 +427,7 @@
   "lastOpt.fail.apply_failed": "无法应用更改",
   "lastOpt.fail.beginNewClipRevision_failed": "无法保存新版本",
   "lastOpt.fail.patch_rejected": "AI 返回的修改格式不完整，已拒绝应用。请换一种更具体的描述再试。",
+  "lastOpt.fail.truncated_generation": "AI 输出被截断，未应用到工程。你可以重试，或选择更短片段。",
   "lastOpt.fail.no_rollback": "无法撤销",
 
   "lastOpt.details": "详情",

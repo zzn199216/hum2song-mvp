@@ -2569,6 +2569,8 @@ async optimizeClip(clipId, optOverride){
       'invalid_pitch_or_velocity': 'opt.rejectDetail.invalidPitchOrVelocity',
       'no_meaningful_change': 'opt.rejectDetail.noMeaningfulChange',
       'validation_failed': 'opt.rejectDetail.validationFailed',
+      'truncated_generation': 'lastOpt.fail.truncated_generation',
+      'finish_reason_length': 'lastOpt.fail.truncated_generation',
     };
     const mappedKey = map[reasonStr] || map[detailStr];
     if (mappedKey){
@@ -2591,7 +2593,7 @@ async optimizeClip(clipId, optOverride){
       : (res && res.error != null) ? String(res.error) : '';
     const d = (res && res.detail != null) ? String(res.detail) : '';
     if (r === 'unsupported_request' && d) return d;
-    if (r === 'patch_rejected' || r === 'invalid_note_reference' || r === 'unsupported_operation' || r === 'too_destructive' || r === 'invalid_timing' || r === 'invalid_pitch_or_velocity' || r === 'no_meaningful_change' || r === 'validation_failed'){
+    if (r === 'patch_rejected' || r === 'invalid_note_reference' || r === 'unsupported_operation' || r === 'too_destructive' || r === 'invalid_timing' || r === 'invalid_pitch_or_velocity' || r === 'no_meaningful_change' || r === 'validation_failed' || r === 'truncated_generation'){
       const friendly = this._friendlyOptimizeRejection(r, d, t);
       if (friendly) return friendly;
     }
@@ -5325,7 +5327,7 @@ renderTimeline(){
           if (ps.hasStructuralChange === true) parts.push(_t('opt.structure'));
         }
         if (ps.reason && ps.reason !== 'ok' && ps.reason !== 'empty_ops') parts.push(`reason: ${escapeHtml(String(ps.reason))}`);
-        if (ps.reason === 'patch_rejected' || ps.reason === 'invalid_note_reference' || ps.reason === 'unsupported_operation' || ps.reason === 'too_destructive' || ps.reason === 'invalid_timing' || ps.reason === 'invalid_pitch_or_velocity' || ps.reason === 'no_meaningful_change' || ps.reason === 'validation_failed'){
+        if (ps.reason === 'patch_rejected' || ps.reason === 'invalid_note_reference' || ps.reason === 'unsupported_operation' || ps.reason === 'too_destructive' || ps.reason === 'invalid_timing' || ps.reason === 'invalid_pitch_or_velocity' || ps.reason === 'no_meaningful_change' || ps.reason === 'validation_failed' || ps.reason === 'truncated_generation'){
           const friendly = this._friendlyOptimizeRejection(ps.reason, (ps.detail != null ? ps.detail : (ps.llm && ps.llm.detail != null ? ps.llm.detail : '')), _t);
           if (friendly) parts.push(escapeHtml(friendly));
         }

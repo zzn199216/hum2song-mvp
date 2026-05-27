@@ -36,7 +36,7 @@
 
   /** PR-6a: default user prompt when none provided (frontend-only, node-safe). */
   const DEFAULT_OPTIMIZE_USER_PROMPT = 'Apply safe dynamics and timing improvements.';
-  const LLM_V0_MAX_PROMPT_NOTE_ROWS = 80;
+  const LLM_V0_MAX_PROMPT_NOTE_ROWS = 512;
   const LLM_V0_REPAIR_RESPONSE_MAX_CHARS = 800;
 
   function _chatMessageStats(messages){
@@ -88,6 +88,33 @@
     const first = choices && choices[0] && typeof choices[0] === 'object' ? choices[0] : null;
     if (first && typeof first.finish_reason === 'string') return first.finish_reason;
     return '';
+  }
+
+  function _isLengthFinishReason(finishReason){
+    return String(finishReason || '').toLowerCase() === 'length';
+  }
+
+  function _truncatedGenerationResult(patchSummaryBase, partialJsonDiscarded){
+    const discarded = partialJsonDiscarded === true;
+    return {
+      ok: false,
+      reason: 'truncated_generation',
+      detail: 'finish_reason_length',
+      partialJsonDiscarded: discarded,
+      patchSummary: Object.assign({}, patchSummaryBase, {
+        status: 'failed',
+        reason: 'truncated_generation',
+        ops: 0,
+        byOp: {},
+        examples: [],
+        detail: 'finish_reason_length',
+        partialJsonDiscarded: discarded,
+      }, _llmOutcomeExtra('truncated_generation', {
+        reason: 'truncated_generation',
+        detail: 'finish_reason_length',
+        partialJsonDiscarded: discarded,
+      })),
+    };
   }
 
   function _boundedModelResponse(text){
@@ -1154,26 +1181,31 @@
           const text = (res && typeof res.text === 'string') ? res.text : '';
           const extractionText = _stripThinkBlocks(text);
           const finishReason = _finishReasonFromResponse(res);
+          if (debugCapture) debugCapture.finishReason = finishReason || '';
           if (debugCapture) debugCapture.rawText = text;
+          if (_isLengthFinishReason(finishReason)){
+            let partialJsonDiscarded = false;
+            try {
+              const maybePartial = client.extractJsonObject(extractionText);
+              partialJsonDiscarded = !!(maybePartial && typeof maybePartial === 'object');
+            } catch(_partialErr) {
+              partialJsonDiscarded = false;
+            }
+            if (debugCapture){
+              debugCapture.extractedJson = null;
+              debugCapture.partialJsonDiscarded = partialJsonDiscarded;
+              debugCapture.invalidJsonDiagnostics = _invalidJsonDiagnostics(
+                text,
+                partialJsonDiscarded ? 'partial_json_discarded' : 'finish_reason_length',
+                false
+              );
+            }
+            return _truncatedGenerationResult(patchSummaryBase, partialJsonDiscarded);
+          }
           const patchObj = client.extractJsonObject(extractionText);
           if (!patchObj || typeof patchObj !== 'object'){
             if (debugCapture) debugCapture.extractedJson = null;
             if (debugCapture) debugCapture.invalidJsonDiagnostics = _invalidJsonDiagnostics(text, 'no_json', false);
-            if (String(finishReason).toLowerCase() === 'length'){
-              return {
-                ok: false,
-                reason: 'truncated_generation',
-                detail: 'finish_reason_length',
-                patchSummary: Object.assign({}, patchSummaryBase, {
-                  status: 'failed',
-                  reason: 'truncated_generation',
-                  ops: 0,
-                  byOp: {},
-                  examples: [],
-                  detail: 'finish_reason_length',
-                }, _llmOutcomeExtra('truncated_generation', { detail: 'finish_reason_length' })),
-              };
-            }
             return {
               ok: false,
               reason: 'llm_no_valid_json',
@@ -1391,7 +1423,7 @@
 
       // PR-8B-2: Retry logic - only retry for JSON extraction or validation failures
       // PR-8C: Capture debug data for final attempt (incl. safeModeResolved for console-friendly verification)
-      const debugCapture = { rawText: '', extractedJson: null, validateErrors: [], invalidJsonDiagnostics: null };
+      const debugCapture = { rawText: '', extractedJson: null, validateErrors: [], invalidJsonDiagnostics: null, finishReason: '', partialJsonDiscarded: false };
       const attemptLog = [];
       return attemptOnce(1, null, debugCapture).then(function(res1){
         if (res1.ok){
@@ -1404,6 +1436,8 @@
             extractedJson: debugCapture.extractedJson || null,
             errors: debugCapture.validateErrors || [],
             invalidJsonDiagnostics: debugCapture.invalidJsonDiagnostics || null,
+            finishReason: debugCapture.finishReason || '',
+            partialJsonDiscarded: debugCapture.partialJsonDiscarded === true,
             safeModeResolved: safeMode,
             requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
           };
@@ -1444,6 +1478,8 @@
           debugCapture.extractedJson = null;
           debugCapture.validateErrors = [];
           debugCapture.invalidJsonDiagnostics = null;
+          debugCapture.finishReason = '';
+          debugCapture.partialJsonDiscarded = false;
           attemptLog.push(_llmAttemptSnapshot(1, res1));
           const repairFromText = res1.reason === 'llm_no_valid_json' ? firstRawTextForRepair : null;
           return attemptOnce(2, fixDetail, debugCapture, repairFromText).then(function(res2){
@@ -1459,6 +1495,8 @@
               extractedJson: debugCapture.extractedJson || null,
               errors: debugCapture.validateErrors || [],
               invalidJsonDiagnostics: finalInvalidJsonDiagnostics || null,
+              finishReason: debugCapture.finishReason || '',
+              partialJsonDiscarded: debugCapture.partialJsonDiscarded === true,
               safeModeResolved: safeMode,
               requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
             };
@@ -1477,6 +1515,8 @@
           extractedJson: debugCapture.extractedJson || null,
           errors: debugCapture.validateErrors || [],
           invalidJsonDiagnostics: debugCapture.invalidJsonDiagnostics || null,
+          finishReason: debugCapture.finishReason || '',
+          partialJsonDiscarded: debugCapture.partialJsonDiscarded === true,
           safeModeResolved: safeMode,
           requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
         };
