@@ -43,6 +43,18 @@
     return Math.round(Number(n) * 1000) / 1000;
   }
 
+  function allowedTailOverrunBeat(spanBeat){
+    var span = Number(spanBeat);
+    if (!isFiniteNumber(span) || span <= 0) return 0.5;
+    return Math.min(2.0, Math.max(0.5, span * 0.05));
+  }
+
+  function allowedTailBoundaryBeat(spanBeat){
+    var span = Number(spanBeat);
+    if (!isFiniteNumber(span) || span <= 0) span = 0;
+    return span + allowedTailOverrunBeat(span);
+  }
+
   function deepClone(x){
     if (!x) return x;
     try { return JSON.parse(JSON.stringify(x)); } catch (_) { return x; }
@@ -140,8 +152,11 @@
     if (!isFiniteNumber(durationBeat) || durationBeat <= 0) errors.push('draft.note.durationBeat_invalid:' + partIndex + ':' + eventIndex);
     if (!isFiniteNumber(pitch) || pitch < 0 || pitch > 127) errors.push('draft.note.pitch_invalid:' + partIndex + ':' + eventIndex);
     if (!isFiniteNumber(velocity) || velocity < 1 || velocity > 127) errors.push('draft.note.velocity_invalid:' + partIndex + ':' + eventIndex);
-    if (span > 0 && isFiniteNumber(startBeat) && isFiniteNumber(durationBeat) && startBeat + durationBeat > span + 0.001){
-      errors.push('draft.note.outside_selected_span:' + partIndex + ':' + eventIndex);
+    if (span > 0 && isFiniteNumber(startBeat) && isFiniteNumber(durationBeat)){
+      var boundary = allowedTailBoundaryBeat(span);
+      if (startBeat >= boundary - 0.001 || startBeat + durationBeat > boundary + 0.001){
+        errors.push('draft.note.outside_selected_span:' + partIndex + ':' + eventIndex);
+      }
     }
   }
 
@@ -158,8 +173,11 @@
     if (!isFiniteNumber(durationBeat) || durationBeat <= 0) errors.push('draft.hit.durationBeat_invalid:' + partIndex + ':' + eventIndex);
     if (!DRUM_PITCH[drum]) errors.push('draft.hit.drum_invalid:' + partIndex + ':' + eventIndex);
     if (!isFiniteNumber(velocity) || velocity < 1 || velocity > 127) errors.push('draft.hit.velocity_invalid:' + partIndex + ':' + eventIndex);
-    if (span > 0 && isFiniteNumber(startBeat) && isFiniteNumber(durationBeat) && startBeat + durationBeat > span + 0.001){
-      errors.push('draft.hit.outside_selected_span:' + partIndex + ':' + eventIndex);
+    if (span > 0 && isFiniteNumber(startBeat) && isFiniteNumber(durationBeat)){
+      var boundary = allowedTailBoundaryBeat(span);
+      if (startBeat >= boundary - 0.001 || startBeat + durationBeat > boundary + 0.001){
+        errors.push('draft.hit.outside_selected_span:' + partIndex + ':' + eventIndex);
+      }
     }
   }
 
@@ -286,9 +304,14 @@
     var offsets = [0, 0, 7, 0, 5, 7, 0, 7];
     var notes = [];
     var maxNotes = 96;
+    var boundary = allowedTailBoundaryBeat(span);
     for (var t = 0; t < span - 0.001 && notes.length < maxNotes; t += step){
       var idx = Math.floor(t / step) % offsets.length;
-      var dur = Math.min(step * 0.88, Math.max(0.25, span - t));
+      var remaining = boundary - t;
+      if (remaining <= 0.0625) continue;
+      var dur = Math.min(step * 0.88, Math.max(0.25, remaining));
+      if (t + dur > boundary + 0.001) dur = boundary - t;
+      if (dur < 0.0625) continue;
       notes.push({
         startBeat: compact(t),
         pitch: bassPitchForPc(rootPc, offsets[idx]),
@@ -300,11 +323,17 @@
   }
 
   function pushDrumHit(hits, span, startBeat, drum, velocity){
-    if (startBeat < -0.001 || startBeat >= span - 0.001) return;
+    var boundary = allowedTailBoundaryBeat(span);
+    if (startBeat < -0.001 || startBeat >= boundary - 0.001) return;
+    var remaining = boundary - startBeat;
+    if (remaining <= 0.0625) return;
+    var durationBeat = Math.min(0.25, Math.max(0.125, compact(remaining)));
+    if (startBeat + durationBeat > boundary + 0.001) durationBeat = compact(boundary - startBeat);
+    if (durationBeat < 0.0625) return;
     hits.push({
       startBeat: compact(startBeat),
       drum: drum,
-      durationBeat: Math.min(0.25, Math.max(0.125, compact(span - startBeat))),
+      durationBeat: compact(durationBeat),
       velocity: velocity,
     });
   }
@@ -493,6 +522,7 @@
     packAccompanimentDraftV1ToArrangementPatchV0: packAccompanimentDraftV1ToArrangementPatchV0,
     createDeterministicAccompanimentDraftV1: createDeterministicAccompanimentDraftV1,
     inferIntentFromText: inferIntentFromText,
+    allowedTailOverrunBeat: allowedTailOverrunBeat,
     drumPitchMap: function(){ return deepClone(DRUM_PITCH); },
   };
 });

@@ -272,6 +272,33 @@ async function testMalformedNoJsonFallsBackAndCommits(){
   assert(createdInstruments(res.rawPatch).includes('drum'), 'generic fallback includes drums');
 }
 
+async function testFallbackDrumsAllowsBoundedTailAtConvertedSpan(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody({ noteCount: 252 });
+  p2.clips[melodyClip.id].meta = Object.assign({}, p2.clips[melodyClip.id].meta || {}, { spanBeat: 36.545 });
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  let llmCalls = 0;
+  setMockLlm({
+    callChatCompletions: async () => {
+      llmCalls += 1;
+      return { text: 'prose without a json draft' };
+    },
+    extractJsonObject: () => null,
+  });
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: 'add drums' });
+  assert(res.ok === true, '36.545 beat fallback drums should apply with bounded musical tails');
+  assert(harness.getCommitCount() === 1, 'fallback commits once for 36.545 span');
+  assert(llmCalls === 2, 'malformed output still gets one repair retry');
+  assert(res.draftDebug && res.draftDebug.source === 'fallback', 'fallback source reported for 36.545 span');
+  assert(JSON.stringify(res).indexOf('outside_selected_span') < 0, 'bounded fallback tail must not report outside_selected_span');
+  const maxEnd = createdNotes(res.rawPatch).reduce((acc, note) => {
+    const start = Number(note && note.startBeat);
+    const dur = Number(note && note.durationBeat);
+    if (!Number.isFinite(start) || !Number.isFinite(dur)) return acc;
+    return Math.max(acc, start + dur);
+  }, 0);
+  assert(maxEnd <= 36.545 + 1.82725 + 0.001, 'fallback notes stay inside allowed tail boundary');
+}
+
 async function testMalformedLengthFinishReasonIsDiagnostic(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
@@ -635,6 +662,7 @@ async function main(){
   await testValidDraftOneCommit();
   await testInvalidDraftFallsBackAndCommits();
   await testMalformedNoJsonFallsBackAndCommits();
+  await testFallbackDrumsAllowsBoundedTailAtConvertedSpan();
   await testMalformedLengthFinishReasonIsDiagnostic();
   await testMalformedNoJsonRepairRetryCanCommit();
   await testInvalidDraftRepairRetryCanCommit();

@@ -12,6 +12,7 @@ if (typeof globalThis.window === 'undefined') globalThis.window = {};
 require(path.resolve(__dirname, '../../static/pianoroll/project.js'));
 const H2SProject = globalThis.window.H2SProject;
 const ArrangementPatch = require(path.resolve(__dirname, '../../static/pianoroll/core/arrangement_patch_v0.js'));
+const ArrangementQuality = require(path.resolve(__dirname, '../../static/pianoroll/core/arrangement_quality_v0.js'));
 const Draft = require(path.resolve(__dirname, '../../static/pianoroll/core/accompaniment_draft_v1.js'));
 
 assert(H2SProject, 'H2SProject loaded');
@@ -76,6 +77,68 @@ function flattenPatchNotes(patch){
 function assertPatchValid(project, patch){
   const validation = ArrangementPatch.validateArrangementPatchV0(project, patch, { H2SProject });
   assert(validation && validation.ok, 'packed patch must validate: ' + ((validation && validation.errors || []).join('; ')));
+}
+
+function hasErrorPrefix(validation, prefix){
+  return !!(validation && validation.errors || []).some((err) => String(err).indexOf(prefix) === 0);
+}
+
+function validateDraft(draft, spanBeat, userPrompt){
+  return Draft.validateAccompanimentDraftV1(draft, {
+    userPrompt: userPrompt || 'add accompaniment',
+    selectedClipSpanBeat: spanBeat,
+  });
+}
+
+function makeBassDraftEndingAt(spanBeat, endBeat){
+  const notes = [];
+  for (let t = 0; t < spanBeat - 0.001; t += 2){
+    notes.push({
+      startBeat: Number(t.toFixed(3)),
+      pitch: 40 + ((Math.floor(t / 2) % 4) * 2),
+      durationBeat: 1,
+      velocity: 68,
+    });
+  }
+  const tailStart = Math.max(0, Math.min(spanBeat - 0.001, endBeat - 0.25));
+  notes.push({
+    startBeat: Number(tailStart.toFixed(3)),
+    pitch: 36,
+    durationBeat: Number((endBeat - tailStart).toFixed(3)),
+    velocity: 70,
+  });
+  return {
+    version: 1,
+    intent: 'bass',
+    style: 'test',
+    parts: [{ type: 'bass', instrument: 'bass', notes }],
+  };
+}
+
+function makeDrumDraftEndingAt(spanBeat, endBeat){
+  const hits = [];
+  const step = spanBeat >= 6 ? 0.5 : 1;
+  for (let t = 0; t < spanBeat - 0.001; t += step){
+    hits.push({
+      startBeat: Number(t.toFixed(3)),
+      drum: 'hat',
+      durationBeat: 0.125,
+      velocity: 46,
+    });
+  }
+  const tailStart = Math.max(0, Math.min(spanBeat - 0.001, endBeat - 0.25));
+  hits.push({
+    startBeat: Number(tailStart.toFixed(3)),
+    drum: 'crash',
+    durationBeat: Number((endBeat - tailStart).toFixed(3)),
+    velocity: 70,
+  });
+  return {
+    version: 1,
+    intent: 'drums',
+    style: 'test',
+    parts: [{ type: 'drums', instrument: 'drums', hits }],
+  };
 }
 
 async function main(){
@@ -221,6 +284,92 @@ async function main(){
     const validation = Draft.validateAccompanimentDraftV1(sparse, { userPrompt: 'add bass', selectedClipSpanBeat: 16 });
     assert(validation.ok === false, 'one-note long bass draft rejected');
     assert(validation.errors.some((e) => e.indexOf('too_few_bass_notes') >= 0 || e.indexOf('short_coverage') >= 0), 'sparse draft quality code');
+  }
+
+  {
+    assert(typeof Draft.allowedTailOverrunBeat === 'function', 'tail overrun helper exported');
+    assert(Draft.allowedTailOverrunBeat(4) === 0.5, '4 beat clip allows 0.5 beat tail');
+    assert(Math.abs(Draft.allowedTailOverrunBeat(36.545) - 1.82725) < 0.000001, '36.545 beat clip allows 5% tail');
+    assert(Draft.allowedTailOverrunBeat(80) === 2, '80 beat clip caps tail at 2 beats');
+  }
+
+  {
+    const valid = validateDraft(makeBassDraftEndingAt(4, 4.4), 4, 'add bass');
+    assert(valid.ok === true, 'span 4 bass ending at 4.4 passes');
+
+    const invalid = validateDraft(makeBassDraftEndingAt(4, 4.7), 4, 'add bass');
+    assert(invalid.ok === false, 'span 4 bass ending at 4.7 fails');
+    assert(hasErrorPrefix(invalid, 'draft.note.outside_selected_span'), 'excessive bass tail reports outside span');
+  }
+
+  {
+    const valid = validateDraft(makeDrumDraftEndingAt(36.545, 37.5), 36.545, 'add drums');
+    assert(valid.ok === true, 'span 36.545 drum ending at 37.5 passes');
+
+    const invalid = validateDraft(makeDrumDraftEndingAt(36.545, 39.0), 36.545, 'add drums');
+    assert(invalid.ok === false, 'span 36.545 drum ending at 39.0 fails');
+    assert(hasErrorPrefix(invalid, 'draft.hit.outside_selected_span'), 'excessive drum tail reports outside span');
+  }
+
+  {
+    const valid = validateDraft(makeBassDraftEndingAt(80, 81.9), 80, 'add bass');
+    assert(valid.ok === true, 'span 80 bass ending at 81.9 passes');
+
+    const invalid = validateDraft(makeBassDraftEndingAt(80, 82.5), 80, 'add bass');
+    assert(invalid.ok === false, 'span 80 bass ending at 82.5 fails');
+    assert(hasErrorPrefix(invalid, 'draft.note.outside_selected_span'), 'over capped tail reports outside span');
+  }
+
+  {
+    const draft = {
+      version: 1,
+      intent: 'bass',
+      style: 'test',
+      parts: [{
+        type: 'bass',
+        instrument: 'bass',
+        notes: [
+          { startBeat: 0, pitch: 40, durationBeat: 1, velocity: 68 },
+          { startBeat: 2, pitch: 43, durationBeat: 1, velocity: 68 },
+          { startBeat: 4.6, pitch: 36, durationBeat: 0.1, velocity: 68 },
+        ],
+      }],
+    };
+    const validation = validateDraft(draft, 4, 'add bass');
+    assert(validation.ok === false, 'event starting after allowed tail boundary fails');
+    assert(hasErrorPrefix(validation, 'draft.note.outside_selected_span'), 'late event reports outside span');
+  }
+
+  {
+    const draft = Draft.createDeterministicAccompanimentDraftV1({
+      userPrompt: 'add drums',
+      intent: 'drums',
+      selectedClipSpanBeat: 36.545,
+      melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
+    });
+    const validation = validateDraft(draft, 36.545, 'add drums');
+    assert(validation.ok === true, 'fallback drums near 36.545 beat phrase end validate');
+  }
+
+  {
+    const { p2 } = makeProjectWithMelody();
+    const draft = Draft.createDeterministicAccompanimentDraftV1({
+      userPrompt: 'add accompaniment',
+      intent: 'accompaniment',
+      selectedClipSpanBeat: 36.545,
+      melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
+    });
+    const res = pack(p2, draft, { selectedClipSpanBeat: 36.545, userPrompt: 'add accompaniment' });
+    assert(res.ok === true, 'fallback bass and drums pack for 36.545 span: ' + (res.errors || []).join('; '));
+    assertPatchValid(p2, res.patch);
+
+    const quality = ArrangementQuality.analyzeArrangementQualityV0(p2, res.patch, {
+      selectedClipSpanBeat: 36.545,
+      userPrompt: 'add accompaniment',
+    });
+    const hardCodes = new Set(['empty_clip', 'orphan_clip', 'short_coverage', 'sparse_notes', 'overly_dense']);
+    const hardWarnings = (quality.warnings || []).filter((warning) => hardCodes.has(warning && warning.code));
+    assert(hardWarnings.length === 0, 'fallback bass and drums pass quality gates: ' + JSON.stringify(hardWarnings));
   }
 
   console.log('PASS accompaniment_draft_v1.test.js');
