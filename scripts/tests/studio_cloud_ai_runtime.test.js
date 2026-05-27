@@ -52,6 +52,9 @@ assert(scriptVersion('controllers/selection_controller.js') === 'ai-optimize-mus
 
 assert(index.indexOf('studio_asset_version.js') < index.indexOf('i18n.js'), 'asset version should load before i18n.js');
 assert(index.indexOf('studio_asset_version.js') < index.indexOf('app.js?v=' + scriptVersion('app.js')), 'asset version should load before app.js');
+assert(index.includes('/static/pianoroll/core/accompaniment_draft_v1.js?v=draft-v1'), 'index.html should load AccompanimentDraft v1 browser core');
+assert(index.indexOf('core/accompaniment_draft_v1.js') > index.indexOf('core/arrangement_quality_v0.js'), 'AccompanimentDraft v1 should load after arrangement quality helpers');
+assert(index.indexOf('core/accompaniment_draft_v1.js') < index.indexOf('controllers/arrangement_controller.js'), 'AccompanimentDraft v1 should load before arrangement controller');
 assert(index.includes('params.get(\'cloudMode\') === \'1\''), 'index.html should bootstrap cloudMode before app.js');
 assert(index.includes('hum2song\\.cn'), 'index.html bootstrap should detect Hum2Song Cloud embed referrer');
 
