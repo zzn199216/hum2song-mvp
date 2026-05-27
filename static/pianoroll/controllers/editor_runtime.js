@@ -313,6 +313,9 @@
           const rawText = (llmDebug.rawText && typeof llmDebug.rawText === 'string') ? llmDebug.rawText : '';
           const extractedJson = (llmDebug.extractedJson && typeof llmDebug.extractedJson === 'string') ? llmDebug.extractedJson : '';
           const errors = (llmDebug.errors && Array.isArray(llmDebug.errors)) ? llmDebug.errors : [];
+          const previewHead = (llmDebug.rawModelOutputPreviewHead && typeof llmDebug.rawModelOutputPreviewHead === 'string') ? llmDebug.rawModelOutputPreviewHead : '';
+          const previewTail = (llmDebug.rawModelOutputPreviewTail && typeof llmDebug.rawModelOutputPreviewTail === 'string') ? llmDebug.rawModelOutputPreviewTail : '';
+          const previewLen = (llmDebug.rawModelOutputLength != null && isFinite(Number(llmDebug.rawModelOutputLength))) ? Number(llmDebug.rawModelOutputLength) : null;
           const debug = {
             ts: Date.now(),
             clipId: (clipId && typeof clipId === 'string') ? clipId : '',
@@ -321,6 +324,9 @@
             finishReason: (llmDebug.finishReason && typeof llmDebug.finishReason === 'string') ? llmDebug.finishReason : '',
             partialJsonDiscarded: llmDebug.partialJsonDiscarded === true,
             safeModeResolved: typeof llmDebug.safeModeResolved === 'boolean' ? llmDebug.safeModeResolved : undefined,
+            rawModelOutputPreviewHead: previewHead.length > 5000 ? previewHead.slice(0, 5000) : previewHead,
+            rawModelOutputPreviewTail: previewTail.length > 5000 ? previewTail.slice(previewTail.length - 5000) : previewTail,
+            rawModelOutputLength: previewLen,
             rawText: rawText.length > 4000 ? rawText.slice(0, 4000) : rawText,
             extractedJson: extractedJson.length > 4000 ? extractedJson.slice(0, 4000) : extractedJson,
             errors: errors.slice(0, 20),

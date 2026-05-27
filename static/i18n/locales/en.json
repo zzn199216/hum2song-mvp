@@ -467,6 +467,12 @@
   "lastOpt.detail.promptMetaNone": "No prompt metadata.",
   "lastOpt.detail.lblFinalSystemPrompt": "Final system prompt",
   "lastOpt.detail.lblFinalUserPrompt": "Final user prompt",
+  "lastOpt.detail.lblTruncatedPreview": "Truncated output preview",
+  "lastOpt.detail.lblPreviewLength": "Output length",
+  "lastOpt.detail.lblPreviewFinish": "Finish reason",
+  "lastOpt.detail.lblPreviewPartial": "Partial JSON discarded",
+  "lastOpt.detail.lblPreviewHead": "Preview head",
+  "lastOpt.detail.lblPreviewTail": "Preview tail",
 
   "timeline.bpm": "BPM",
   "timeline.snap": "Snap",

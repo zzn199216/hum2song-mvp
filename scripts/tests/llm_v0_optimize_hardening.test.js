@@ -5,6 +5,7 @@
  * Bounded llm_v0 hardening: patchSummary.llm.outcome + top-level llmOutcome (not phase1Deterministic).
  */
 const path = require('path');
+const fs = require('fs');
 
 function assert(cond, msg){
   if (!cond) throw new Error(msg || 'assertion failed');
@@ -160,6 +161,10 @@ function installPatchLlmMock(patch, opts){
     loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: o.velocityOnly === true }),
   };
   return capture;
+}
+
+function agentControllerSource(){
+  return fs.readFileSync(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'), 'utf8');
 }
 
 function makeOptimizeController(projectRef){
@@ -790,9 +795,14 @@ async function testLongClip252NotesSendsAllEditableRows(){
   assert(oldAllowedBlock.length > 1000, 'old 252-note Allowed noteIds block was prompt bloat');
 }
 
-async function testLongClipAbove512ShowsHonestBoundedContext(){
+async function testLlmV0PromptNoteRowCapIs2000(){
+  const src = agentControllerSource();
+  assert(/\bLLM_V0_MAX_PROMPT_NOTE_ROWS\s*=\s*2000\b/.test(src), 'llm_v0 prompt note row cap must be 2000');
+}
+
+async function testLongClipAbove2000ShowsHonestBoundedContext(){
   loadAgentController();
-  const { project: proj, clip } = makeClipWithNoteCount(520);
+  const { project: proj, clip } = makeClipWithNoteCount(2005);
   const state = { project: proj };
   const cid = clip.id;
   const capture = installPatchLlmMock({ version: 1, clipId: cid, ops: [] }, { velocityOnly: false });
@@ -800,14 +810,14 @@ async function testLongClipAbove512ShowsHonestBoundedContext(){
 
   const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make it more musical' });
   assert(res && res.ok === true, 'above-cap clip should still be attempted');
-  assert(res.llmPromptTrace && res.llmPromptTrace.requestStats.noteRowsTotal === 520, 'above-cap total rows tracked');
-  assert(res.llmPromptTrace.requestStats.noteRowsSent === 512, 'above-cap prompt is bounded at 512 rows');
+  assert(res.llmPromptTrace && res.llmPromptTrace.requestStats.noteRowsTotal === 2005, 'above-cap total rows tracked');
+  assert(res.llmPromptTrace.requestStats.noteRowsSent === 2000, 'above-cap prompt is bounded at 2000 rows');
   const userPrompt = String(capture.messages[1].content || '');
-  assert(userPrompt.indexOf('first 512 editable notes') >= 0, 'prompt declares bounded note table');
-  assert(userPrompt.indexOf('Clip has 520 notes total; context is bounded to the listed editable notes') >= 0, 'prompt explains only listed notes are editable');
+  assert(userPrompt.indexOf('first 2000 editable notes') >= 0, 'prompt declares bounded note table');
+  assert(userPrompt.indexOf('Clip has 2005 notes total; context is bounded to the listed editable notes') >= 0, 'prompt explains only listed notes are editable');
   assert(userPrompt.indexOf('Allowed noteIds') < 0, 'above-cap prompt should not include separate Allowed noteIds block');
-  assert(userPrompt.indexOf('editable_note_511_cloud_smoke') >= 0, 'last listed note at cap is present');
-  assert(userPrompt.indexOf('editable_note_512_cloud_smoke') < 0, 'first note beyond cap is not listed');
+  assert(userPrompt.indexOf('editable_note_1999_cloud_smoke') >= 0, 'last listed note at cap is present');
+  assert(userPrompt.indexOf('editable_note_2000_cloud_smoke') < 0, 'first note beyond cap is not listed');
 }
 
 async function testOptimizePromptDoesNotForceFixedModesOrHighestValueWording(){
@@ -908,7 +918,7 @@ async function testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchan
   const before = JSON.stringify(project.clips[cid].score);
   const beforeRevisionId = project.clips[cid].revisionId;
   const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', velocity: 70 }] };
-  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+  const rawText = 'HEAD-' + 'a'.repeat(4500) + '\n```json\n' + JSON.stringify(patch) + '\n```\nTAIL-' + 'z'.repeat(4500);
   let callN = 0;
 
   globalThis.H2S_LLM_CLIENT = {
@@ -939,6 +949,18 @@ async function testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchan
   assert(res.patchSummary.detail === 'finish_reason_length', 'patchSummary detail keeps finish_reason_length');
   assert(res.patchSummary.llm.partialJsonDiscarded === true, 'patchSummary records discarded parseable partial JSON');
   assert(res.llmDebug.partialJsonDiscarded === true, 'llmDebug records discarded parseable partial JSON');
+  assert(res.llmDebug.finishReason === 'length', 'llmDebug records length finish reason');
+  assert(res.llmDebug.rawModelOutputLength === rawText.length, 'llmDebug records raw model output length');
+  assert(typeof res.llmDebug.rawModelOutputPreviewHead === 'string', 'llmDebug includes preview head');
+  assert(typeof res.llmDebug.rawModelOutputPreviewTail === 'string', 'llmDebug includes preview tail');
+  assert(res.llmDebug.rawModelOutputPreviewHead.length <= 5000, 'preview head is bounded');
+  assert(res.llmDebug.rawModelOutputPreviewTail.length <= 5000, 'preview tail is bounded');
+  assert(res.llmDebug.rawModelOutputPreviewHead === rawText.slice(0, res.llmDebug.rawModelOutputPreviewHead.length), 'preview head is from start');
+  assert(res.llmDebug.rawModelOutputPreviewTail === rawText.slice(rawText.length - res.llmDebug.rawModelOutputPreviewTail.length), 'preview tail is from end');
+  assert(res.patchSummary.llm.finishReason === 'length', 'patchSummary llm records length finish reason');
+  assert(res.patchSummary.llm.rawModelOutputLength === rawText.length, 'patchSummary llm records raw model output length');
+  assert(res.patchSummary.llm.rawModelOutputPreviewHead === res.llmDebug.rawModelOutputPreviewHead, 'patchSummary llm carries preview head');
+  assert(res.patchSummary.llm.rawModelOutputPreviewTail === res.llmDebug.rawModelOutputPreviewTail, 'patchSummary llm carries preview tail');
   assert(res.llmDebug.totalAttempts === 1, 'truncated response is not retried');
   assert(callN === 1, 'only one provider call on length finish');
   assert(JSON.stringify(project.clips[cid].score) === before, 'truncated parseable output leaves original unchanged');
@@ -1775,6 +1797,7 @@ async function testFailedRevision(){
 }
 
 async function main(){
+  await testLlmV0PromptNoteRowCapIs2000();
   await testAppliedOutcome();
   await testUserTextPromptDisablesVelocityOnlySafeMode();
   await testVagueMakeBetterCanApplyMultiDimensionalPatch();
@@ -1794,7 +1817,7 @@ async function main(){
   await testAddNoteDensityCapRejectedAndClipUnchanged();
   await testCloudSmallClipPromptStaysBounded();
   await testLongClip252NotesSendsAllEditableRows();
-  await testLongClipAbove512ShowsHonestBoundedContext();
+  await testLongClipAbove2000ShowsHonestBoundedContext();
   await testOptimizePromptDoesNotForceFixedModesOrHighestValueWording();
   await testExistingNoteOpsWithValidNoteIdsStillApply();
   await testExistingNoteOpsCanUseIdxFromNoteTable();

@@ -36,8 +36,9 @@
 
   /** PR-6a: default user prompt when none provided (frontend-only, node-safe). */
   const DEFAULT_OPTIMIZE_USER_PROMPT = 'Apply safe dynamics and timing improvements.';
-  const LLM_V0_MAX_PROMPT_NOTE_ROWS = 512;
+  const LLM_V0_MAX_PROMPT_NOTE_ROWS = 2000;
   const LLM_V0_REPAIR_RESPONSE_MAX_CHARS = 800;
+  const LLM_V0_TRUNCATED_OUTPUT_PREVIEW_CHARS = 4000;
 
   function _chatMessageStats(messages){
     const arr = Array.isArray(messages) ? messages : [];
@@ -94,8 +95,38 @@
     return String(finishReason || '').toLowerCase() === 'length';
   }
 
-  function _truncatedGenerationResult(patchSummaryBase, partialJsonDiscarded){
+  function _redactSensitiveDiagnosticText(text){
+    let s = typeof text === 'string' ? text : '';
+    if (!s) return '';
+    s = s.replace(/("(?:api[_-]?key|token|authorization|cookie)"\s*:\s*")[^"]*(")/ig, '$1[REDACTED]$2');
+    s = s.replace(/(authorization\s*[:=]\s*)[^\n\r]*/ig, '$1[REDACTED]');
+    s = s.replace(/(api[_-]?key\s*[:=]\s*)[^\s,;]+/ig, '$1[REDACTED]');
+    s = s.replace(/(token\s*[:=]\s*)[^\s,;]+/ig, '$1[REDACTED]');
+    s = s.replace(/(cookie\s*[:=]\s*)[^\n\r]*/ig, '$1[REDACTED]');
+    return s;
+  }
+
+  function _truncatedModelOutputDiagnostics(text, finishReason, partialJsonDiscarded){
+    const s = typeof text === 'string' ? text : '';
+    const max = LLM_V0_TRUNCATED_OUTPUT_PREVIEW_CHARS;
+    const tailStart = Math.max(0, s.length - max);
+    return {
+      rawModelOutputPreviewHead: _redactSensitiveDiagnosticText(s.slice(0, max)),
+      rawModelOutputPreviewTail: _redactSensitiveDiagnosticText(s.slice(tailStart)),
+      rawModelOutputLength: s.length,
+      finishReason: finishReason || '',
+      partialJsonDiscarded: partialJsonDiscarded === true,
+    };
+  }
+
+  function _truncatedGenerationResult(patchSummaryBase, partialJsonDiscarded, outputDiagnostics){
     const discarded = partialJsonDiscarded === true;
+    const diag = outputDiagnostics && typeof outputDiagnostics === 'object' ? outputDiagnostics : {};
+    const llmDiag = Object.assign({}, diag, {
+      reason: 'truncated_generation',
+      detail: 'finish_reason_length',
+      partialJsonDiscarded: discarded,
+    });
     return {
       ok: false,
       reason: 'truncated_generation',
@@ -109,11 +140,7 @@
         examples: [],
         detail: 'finish_reason_length',
         partialJsonDiscarded: discarded,
-      }, _llmOutcomeExtra('truncated_generation', {
-        reason: 'truncated_generation',
-        detail: 'finish_reason_length',
-        partialJsonDiscarded: discarded,
-      })),
+      }, _llmOutcomeExtra('truncated_generation', llmDiag)),
     };
   }
 
@@ -1209,16 +1236,20 @@
             } catch(_partialErr) {
               partialJsonDiscarded = false;
             }
+            const outputDiagnostics = _truncatedModelOutputDiagnostics(text, finishReason, partialJsonDiscarded);
             if (debugCapture){
               debugCapture.extractedJson = null;
               debugCapture.partialJsonDiscarded = partialJsonDiscarded;
+              debugCapture.rawModelOutputPreviewHead = outputDiagnostics.rawModelOutputPreviewHead;
+              debugCapture.rawModelOutputPreviewTail = outputDiagnostics.rawModelOutputPreviewTail;
+              debugCapture.rawModelOutputLength = outputDiagnostics.rawModelOutputLength;
               debugCapture.invalidJsonDiagnostics = _invalidJsonDiagnostics(
                 text,
                 partialJsonDiscarded ? 'partial_json_discarded' : 'finish_reason_length',
                 false
               );
             }
-            return _truncatedGenerationResult(patchSummaryBase, partialJsonDiscarded);
+            return _truncatedGenerationResult(patchSummaryBase, partialJsonDiscarded, outputDiagnostics);
           }
           const patchObj = client.extractJsonObject(extractionText);
           if (!patchObj || typeof patchObj !== 'object'){
@@ -1461,7 +1492,17 @@
 
       // PR-8B-2: Retry logic - only retry for JSON extraction or validation failures
       // PR-8C: Capture debug data for final attempt (incl. safeModeResolved for console-friendly verification)
-      const debugCapture = { rawText: '', extractedJson: null, validateErrors: [], invalidJsonDiagnostics: null, finishReason: '', partialJsonDiscarded: false };
+      const debugCapture = {
+        rawText: '',
+        extractedJson: null,
+        validateErrors: [],
+        invalidJsonDiagnostics: null,
+        finishReason: '',
+        partialJsonDiscarded: false,
+        rawModelOutputPreviewHead: '',
+        rawModelOutputPreviewTail: '',
+        rawModelOutputLength: null,
+      };
       const attemptLog = [];
       return attemptOnce(1, null, debugCapture).then(function(res1){
         if (res1.ok){
@@ -1476,6 +1517,9 @@
             invalidJsonDiagnostics: debugCapture.invalidJsonDiagnostics || null,
             finishReason: debugCapture.finishReason || '',
             partialJsonDiscarded: debugCapture.partialJsonDiscarded === true,
+            rawModelOutputPreviewHead: debugCapture.rawModelOutputPreviewHead || '',
+            rawModelOutputPreviewTail: debugCapture.rawModelOutputPreviewTail || '',
+            rawModelOutputLength: debugCapture.rawModelOutputLength,
             safeModeResolved: safeMode,
             requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
           };
@@ -1518,6 +1562,9 @@
           debugCapture.invalidJsonDiagnostics = null;
           debugCapture.finishReason = '';
           debugCapture.partialJsonDiscarded = false;
+          debugCapture.rawModelOutputPreviewHead = '';
+          debugCapture.rawModelOutputPreviewTail = '';
+          debugCapture.rawModelOutputLength = null;
           attemptLog.push(_llmAttemptSnapshot(1, res1));
           const repairFromText = res1.reason === 'llm_no_valid_json' ? firstRawTextForRepair : null;
           return attemptOnce(2, fixDetail, debugCapture, repairFromText).then(function(res2){
@@ -1535,6 +1582,9 @@
               invalidJsonDiagnostics: finalInvalidJsonDiagnostics || null,
               finishReason: debugCapture.finishReason || '',
               partialJsonDiscarded: debugCapture.partialJsonDiscarded === true,
+              rawModelOutputPreviewHead: debugCapture.rawModelOutputPreviewHead || '',
+              rawModelOutputPreviewTail: debugCapture.rawModelOutputPreviewTail || '',
+              rawModelOutputLength: debugCapture.rawModelOutputLength,
               safeModeResolved: safeMode,
               requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
             };
@@ -1555,6 +1605,9 @@
           invalidJsonDiagnostics: debugCapture.invalidJsonDiagnostics || null,
           finishReason: debugCapture.finishReason || '',
           partialJsonDiscarded: debugCapture.partialJsonDiscarded === true,
+          rawModelOutputPreviewHead: debugCapture.rawModelOutputPreviewHead || '',
+          rawModelOutputPreviewTail: debugCapture.rawModelOutputPreviewTail || '',
+          rawModelOutputLength: debugCapture.rawModelOutputLength,
           safeModeResolved: safeMode,
           requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
         };

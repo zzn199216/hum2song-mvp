@@ -2830,6 +2830,51 @@ async optimizeClip(clipId, optOverride){
       row.appendChild(val);
       body.appendChild(row);
     };
+    const addTruncatedPreviewSection = (preview) => {
+      if (!preview || typeof preview !== 'object') return;
+      const head = typeof preview.rawModelOutputPreviewHead === 'string' ? preview.rawModelOutputPreviewHead : '';
+      const tail = typeof preview.rawModelOutputPreviewTail === 'string' ? preview.rawModelOutputPreviewTail : '';
+      if (!head && !tail && preview.rawModelOutputLength == null) return;
+      const row = document.createElement('div');
+      row.className = 'lastOptDetailRow';
+      const lbl = document.createElement('span');
+      lbl.className = 'lbl';
+      lbl.textContent = t('lastOpt.detail.lblTruncatedPreview');
+      const val = document.createElement('div');
+      val.className = 'val lastOptPromptTrace';
+      const meta = document.createElement('div');
+      meta.className = 'lastOptPromptTraceMeta';
+      const metaParts = [];
+      if (preview.rawModelOutputLength != null && Number.isFinite(Number(preview.rawModelOutputLength))){
+        metaParts.push(t('lastOpt.detail.lblPreviewLength') + ': ' + String(Math.floor(Number(preview.rawModelOutputLength))));
+      }
+      if (preview.finishReason != null && String(preview.finishReason).trim()){
+        metaParts.push(t('lastOpt.detail.lblPreviewFinish') + ': ' + String(preview.finishReason).slice(0, 48));
+      }
+      if (preview.partialJsonDiscarded === true){
+        metaParts.push(t('lastOpt.detail.lblPreviewPartial') + ': true');
+      }
+      meta.textContent = metaParts.join(' | ');
+      val.appendChild(meta);
+      const makePreviewBlock = (summary, value) => {
+        const wrap = document.createElement('details');
+        wrap.className = 'lastOptPromptTraceBlock';
+        const sum = document.createElement('summary');
+        sum.textContent = summary;
+        const ta = document.createElement('textarea');
+        ta.className = 'lastOptPromptTraceText';
+        ta.readOnly = true;
+        ta.value = String(value || '');
+        wrap.appendChild(sum);
+        wrap.appendChild(ta);
+        return wrap;
+      };
+      if (head) val.appendChild(makePreviewBlock(t('lastOpt.detail.lblPreviewHead'), head));
+      if (tail) val.appendChild(makePreviewBlock(t('lastOpt.detail.lblPreviewTail'), tail));
+      row.appendChild(lbl);
+      row.appendChild(val);
+      body.appendChild(row);
+    };
     const addPromptTraceSection = (promptTrace) => {
       const row = document.createElement('div');
       row.className = 'lastOptDetailRow';
@@ -2980,6 +3025,17 @@ async optimizeClip(clipId, optOverride){
         addRow('lastOpt.detail.lblRetries', t('lastOpt.detail.retryFmt')
           .replace('{total}', String(Math.min(Math.floor(total), 99)))
           .replace('{final}', (finalIdx != null && Number.isFinite(finalIdx)) ? String(Math.floor(finalIdx)) : '—'));
+      }
+      const debug = res.llmDebug && typeof res.llmDebug === 'object' ? res.llmDebug : null;
+      const previewSrc = debug || llmB;
+      if (previewSrc && previewSrc.finishReason === 'length'){
+        addTruncatedPreviewSection({
+          rawModelOutputPreviewHead: previewSrc.rawModelOutputPreviewHead,
+          rawModelOutputPreviewTail: previewSrc.rawModelOutputPreviewTail,
+          rawModelOutputLength: previewSrc.rawModelOutputLength,
+          finishReason: previewSrc.finishReason,
+          partialJsonDiscarded: previewSrc.partialJsonDiscarded === true,
+        });
       }
       addPromptTraceSection(s.promptTrace || null);
     }
