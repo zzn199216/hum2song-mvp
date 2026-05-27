@@ -40,6 +40,19 @@
   const LLM_V0_REPAIR_RESPONSE_MAX_CHARS = 800;
   const LLM_V0_TRUNCATED_OUTPUT_PREVIEW_CHARS = 4000;
 
+  function _positiveIntOrNull(value){
+    const n = Number(value);
+    if (!isFinite(n) || n < 1) return null;
+    return Math.floor(n);
+  }
+
+  function _llmV0MaxOutputTokensForNoteCount(noteCount){
+    const n = _positiveIntOrNull(noteCount);
+    if (n != null && n > 300) return 65536;
+    if (n != null && n > 100) return 32768;
+    return 8192;
+  }
+
   function _chatMessageStats(messages){
     const arr = Array.isArray(messages) ? messages : [];
     let totalChars = 0;
@@ -142,6 +155,62 @@
         partialJsonDiscarded: discarded,
       }, _llmOutcomeExtra('truncated_generation', llmDiag)),
     };
+  }
+
+  function _rawField(res, key){
+    if (res && typeof res === 'object' && Object.prototype.hasOwnProperty.call(res, key)) return res[key];
+    const raw = res && res.raw && typeof res.raw === 'object' ? res.raw : null;
+    if (raw && Object.prototype.hasOwnProperty.call(raw, key)) return raw[key];
+    return undefined;
+  }
+
+  function _llmResponseDiagnostics(res, requestedMaxOutputTokens){
+    const out = {};
+    const requested = _positiveIntOrNull(_rawField(res, 'requestedMaxOutputTokens')) || _positiveIntOrNull(requestedMaxOutputTokens);
+    const effective = _positiveIntOrNull(_rawField(res, 'effectiveMaxOutputTokens'));
+    const providerMax = _positiveIntOrNull(_rawField(res, 'providerMaxOutputTokens'));
+    if (requested != null) out.requestedMaxOutputTokens = requested;
+    if (effective != null) out.effectiveMaxOutputTokens = effective;
+    if (providerMax != null) out.providerMaxOutputTokens = providerMax;
+    ['outputTokenLimitReason', 'providerId', 'modelTier', 'modelProfileId', 'resolvedModelProfileId'].forEach(function(k){
+      const v = _rawField(res, k);
+      if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 80);
+    });
+    return out;
+  }
+
+  function _copyLlmDiagnosticsFromDebug(out){
+    if (!out || !out.patchSummary || !out.patchSummary.llm || !out.llmDebug) return;
+    [
+      'requestedMaxOutputTokens',
+      'effectiveMaxOutputTokens',
+      'providerMaxOutputTokens',
+      'outputTokenLimitReason',
+      'providerId',
+      'modelTier',
+      'modelProfileId',
+      'resolvedModelProfileId',
+    ].forEach(function(k){
+      if (out.llmDebug[k] != null) out.patchSummary.llm[k] = out.llmDebug[k];
+    });
+  }
+
+  function _debugResponseDiagnostics(debugCapture){
+    const out = {};
+    if (!debugCapture || typeof debugCapture !== 'object') return out;
+    [
+      'requestedMaxOutputTokens',
+      'effectiveMaxOutputTokens',
+      'providerMaxOutputTokens',
+      'outputTokenLimitReason',
+      'providerId',
+      'modelTier',
+      'modelProfileId',
+      'resolvedModelProfileId',
+    ].forEach(function(k){
+      if (debugCapture[k] != null) out[k] = debugCapture[k];
+    });
+    return out;
   }
 
   function _boundedModelResponse(text){
@@ -393,6 +462,7 @@
     if (out.patchSummary && out.patchSummary.llm){
       Object.assign(out.patchSummary.llm, block);
     }
+    _copyLlmDiagnosticsFromDebug(out);
   }
 
   /** Config / client fail-fast before any chat-completions attempt: zero attempts, explicit flag. */
@@ -1093,6 +1163,7 @@
       const finalPitchMin = (meta && typeof meta.pitchMin === 'number') ? meta.pitchMin : pitchMin;
       const finalPitchMax = (meta && typeof meta.pitchMax === 'number') ? meta.pitchMax : pitchMax;
       const finalSpanBeat = (meta && typeof meta.spanBeat === 'number') ? meta.spanBeat : maxSpanBeat;
+      const requestedMaxOutputTokens = _llmV0MaxOutputTokensForNoteCount(finalNoteCount);
       const p2 = opts.getProjectV2 && typeof opts.getProjectV2 === 'function' ? opts.getProjectV2() : project;
       const bpm = (p2 && typeof p2.bpm === 'number' && p2.bpm > 0) ? p2.bpm : 120;
 
@@ -1102,10 +1173,10 @@
       if (safeMode){
         // Safe mode: ONLY setNote ops, ONLY velocity field allowed
         systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in a single ```json ... ``` block. No <think>, no hidden reasoning, no explanation, no prose before or after. ' +
-          'Schema: {"version":1,"clipId":"<clipId>","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}. ' +
+          'Schema: {"version":1,"clipId":"<clipId>","ops":[{"op":"setNote","idx":0,"velocity":1-127}]}. ' +
           'Safe mode: only setNote velocity edits are allowed. Do not include pitch,startBeat,durationBeat,addNote,deleteNote,moveNote. ' +
           'Shape dynamics musically within those safety limits; avoid tiny no-op changes when the user asks for expression. ' +
-          'Use noteId values from the NOTE TABLE; idx from the NOTE TABLE may replace noteId.';
+          'Prefer idx values from the NOTE TABLE; noteId remains accepted for compatibility.';
       } else {
         // Normal mode: reversible musical edits, including bounded note creation.
         systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in one ```json``` block; no <think>, reasoning, explanation, or prose. ' +
@@ -1114,7 +1185,7 @@
           'Every ops item must include "op". Example addNote: {"op":"addNote","note":{"pitch":64,"startBeat":0,"durationBeat":1,"velocity":70}}. ' +
           'Use addNote for chords/harmony/passing tones/octaves/fullness; not ordinary cleanup. ' +
           'addNote stays inside the current clip, may omit trackId for primary track, must omit note.id, and must not create tracks or change timeline/timebase/tempo/project fields. ' +
-          'All numbers finite beats-only; never seconds. For setNote/moveNote/deleteNote, use noteId or idx values from the NOTE TABLE.';
+          'All numbers finite beats-only; never seconds. For setNote/moveNote/deleteNote, prefer idx values from the NOTE TABLE; noteId remains accepted for compatibility.';
       }
 
       // PR-8B-1: User message with structured clip hint and editable note table
@@ -1146,7 +1217,7 @@
         }
       }
       if (promptNoteRows.length > 0){
-        clipHint += '\nFor setNote/moveNote/deleteNote, use noteId values from the NOTE TABLE above. You may use idx from the NOTE TABLE instead of noteId.\n';
+        clipHint += '\nFor setNote/moveNote/deleteNote, prefer idx values from the NOTE TABLE above. noteId remains accepted for compatibility.\n';
         clipHint += 'For addNote, do not provide noteId; the app will generate one.\n';
         if (finalNoteCount > LLM_V0_MAX_PROMPT_NOTE_ROWS){
           clipHint += '\n(Clip has ' + String(finalNoteCount) + ' notes total; context is bounded to the listed editable notes. For existing-note ops, use only NOTE TABLE rows.)\n';
@@ -1190,7 +1261,7 @@
           attemptSystemMsg = repairSystemMsg;
           userContent = _buildRepairUserContent(repairFromText, clip && clip.id, safeMode);
         } else if (attemptIndex === 2 && extraFixHint){
-          const fixPrefix = 'The previous output was invalid for this reason: ' + extraFixHint + '\n\nFix the JSON patch ONLY.\nOutput EXACTLY ONE final JSON object in a single ```json``` block. No <think>, no hidden reasoning, no commentary.\nEnsure it matches the required schema and uses noteId or idx values from the NOTE TABLE for existing-note ops.\n\n---\n\n';
+          const fixPrefix = 'The previous output was invalid for this reason: ' + extraFixHint + '\n\nFix the JSON patch ONLY.\nOutput EXACTLY ONE final JSON object in a single ```json``` block. No <think>, no hidden reasoning, no commentary.\nEnsure it matches the required schema and uses idx (preferred) or noteId values from the NOTE TABLE for existing-note ops.\n\n---\n\n';
           userContent = fixPrefix + baseUserContent;
         }
         const messages = [
@@ -1200,6 +1271,7 @@
         const requestStats = Object.assign(_chatMessageStats(messages), {
           noteRowsTotal: noteRows.length,
           noteRowsSent: Math.min(noteRows.length, LLM_V0_MAX_PROMPT_NOTE_ROWS),
+          requestedMaxOutputTokens: requestedMaxOutputTokens,
         });
 
         try {
@@ -1222,8 +1294,17 @@
           if (ROOT.H2S_CLOUD_MODE && typeof console !== 'undefined' && console && typeof console.info === 'function'){
             console.info('[h2s-llm-v0] cloud request', requestStats);
           }
-          const res = await client.callChatCompletions(cfg, messages, { temperature: 0.2, timeoutMs: 600000 });
+          const res = await client.callChatCompletions(cfg, messages, {
+            temperature: 0.2,
+            timeoutMs: 600000,
+            maxOutputTokens: requestedMaxOutputTokens,
+            requestedMaxOutputTokens: requestedMaxOutputTokens,
+            task: 'studio_ai_optimize',
+            noteCount: finalNoteCount,
+          });
           const text = (res && typeof res.text === 'string') ? res.text : '';
+          const responseDiagnostics = _llmResponseDiagnostics(res, requestedMaxOutputTokens);
+          if (debugCapture) Object.assign(debugCapture, responseDiagnostics);
           const extractionText = _stripThinkBlocks(text);
           const finishReason = _finishReasonFromResponse(res);
           if (debugCapture) debugCapture.finishReason = finishReason || '';
@@ -1502,6 +1583,14 @@
         rawModelOutputPreviewHead: '',
         rawModelOutputPreviewTail: '',
         rawModelOutputLength: null,
+        requestedMaxOutputTokens: requestedMaxOutputTokens,
+        effectiveMaxOutputTokens: null,
+        providerMaxOutputTokens: null,
+        outputTokenLimitReason: '',
+        providerId: '',
+        modelTier: '',
+        modelProfileId: '',
+        resolvedModelProfileId: '',
       };
       const attemptLog = [];
       return attemptOnce(1, null, debugCapture).then(function(res1){
@@ -1509,7 +1598,7 @@
           attemptLog.push(_llmAttemptSnapshot(1, res1));
           const out = Object.assign({}, res1);
           out.executionPath = 'llm';
-          out.llmDebug = {
+          out.llmDebug = Object.assign({
             reason: res1.reason || 'ok',
             rawText: debugCapture.rawText || '',
             extractedJson: debugCapture.extractedJson || null,
@@ -1522,7 +1611,7 @@
             rawModelOutputLength: debugCapture.rawModelOutputLength,
             safeModeResolved: safeMode,
             requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
-          };
+          }, _debugResponseDiagnostics(debugCapture));
           _attachLlmRetryFields(out, attemptLog);
           if (promptTraceCapture.lastAttempt) out.llmPromptTrace = promptTraceCapture.lastAttempt;
           return _attachLlmOutcomeToReturn(out);
@@ -1565,6 +1654,14 @@
           debugCapture.rawModelOutputPreviewHead = '';
           debugCapture.rawModelOutputPreviewTail = '';
           debugCapture.rawModelOutputLength = null;
+          debugCapture.requestedMaxOutputTokens = requestedMaxOutputTokens;
+          debugCapture.effectiveMaxOutputTokens = null;
+          debugCapture.providerMaxOutputTokens = null;
+          debugCapture.outputTokenLimitReason = '';
+          debugCapture.providerId = '';
+          debugCapture.modelTier = '';
+          debugCapture.modelProfileId = '';
+          debugCapture.resolvedModelProfileId = '';
           attemptLog.push(_llmAttemptSnapshot(1, res1));
           const repairFromText = res1.reason === 'llm_no_valid_json' ? firstRawTextForRepair : null;
           return attemptOnce(2, fixDetail, debugCapture, repairFromText).then(function(res2){
@@ -1574,7 +1671,7 @@
               : firstInvalidJsonDiagnostics;
             const out = Object.assign({}, res2);
             out.executionPath = 'llm';
-            out.llmDebug = {
+            out.llmDebug = Object.assign({
               reason: res2.reason || 'ok',
               rawText: debugCapture.rawText || '',
               extractedJson: debugCapture.extractedJson || null,
@@ -1587,7 +1684,7 @@
               rawModelOutputLength: debugCapture.rawModelOutputLength,
               safeModeResolved: safeMode,
               requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
-            };
+            }, _debugResponseDiagnostics(debugCapture));
             _attachLlmRetryFields(out, attemptLog);
             if (promptTraceCapture.lastAttempt) out.llmPromptTrace = promptTraceCapture.lastAttempt;
             return _attachLlmOutcomeToReturn(out);
@@ -1597,7 +1694,7 @@
         attemptLog.push(_llmAttemptSnapshot(1, res1));
         const out = Object.assign({}, res1);
         out.executionPath = 'llm';
-        out.llmDebug = {
+        out.llmDebug = Object.assign({
           reason: res1.reason || 'unknown',
           rawText: debugCapture.rawText || '',
           extractedJson: debugCapture.extractedJson || null,
@@ -1610,7 +1707,7 @@
           rawModelOutputLength: debugCapture.rawModelOutputLength,
           safeModeResolved: safeMode,
           requestStats: promptTraceCapture.lastAttempt ? promptTraceCapture.lastAttempt.requestStats : undefined,
-        };
+        }, _debugResponseDiagnostics(debugCapture));
         _attachLlmRetryFields(out, attemptLog);
         if (promptTraceCapture.lastAttempt) out.llmPromptTrace = promptTraceCapture.lastAttempt;
         return _attachLlmOutcomeToReturn(out);

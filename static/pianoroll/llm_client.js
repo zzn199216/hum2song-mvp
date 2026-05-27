@@ -111,6 +111,10 @@
       messages: Array.isArray(messages) ? messages : [],
       temperature: temperature,
     };
+    var maxOutputTokens = typeof opts.maxOutputTokens === "number" && isFinite(opts.maxOutputTokens) && opts.maxOutputTokens > 0
+      ? Math.floor(opts.maxOutputTokens)
+      : null;
+    if (maxOutputTokens != null) body.max_tokens = maxOutputTokens;
 
     var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timeoutId = null;

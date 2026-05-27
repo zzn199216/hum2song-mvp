@@ -148,11 +148,12 @@ function extractJsonFromFence(text){
 function installPatchLlmMock(patch, opts){
   const o = opts || {};
   const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
-  const capture = { cfg: null, messages: null };
+  const capture = { cfg: null, messages: null, opts: null };
   globalThis.H2S_LLM_CLIENT = {
-    callChatCompletions: async (cfg, messages) => {
+    callChatCompletions: async (cfg, messages, callOpts) => {
       capture.cfg = cfg;
       capture.messages = messages;
+      capture.opts = callOpts || null;
       return { text: rawText };
     },
     extractJsonObject: extractJsonFromFence,
@@ -725,9 +726,10 @@ async function testCloudSmallClipPromptStaysBounded(){
     loadLlmConfig: () => ({ baseUrl: '', model: '', authToken: 'LOCAL_TOKEN_SHOULD_NOT_BE_USED', modelProfileId: 'minimax_m27_highspeed' }),
   };
   globalThis.H2S_CLOUD_LLM_CLIENT = {
-    callChatCompletions: async (cfg, messages) => {
+    callChatCompletions: async (cfg, messages, callOpts) => {
       capturedCfg = cfg;
       capturedMessages = messages;
+      capturedCfg.callOpts = callOpts || null;
       return { text: rawText };
     },
     extractJsonObject: (text) => {
@@ -751,6 +753,9 @@ async function testCloudSmallClipPromptStaysBounded(){
     });
     assert(res && res.ok === true, 'cloud optimize succeeds');
     assert(capturedCfg && capturedCfg.modelProfileId === 'minimax_m27_highspeed', 'cloud optimize should carry selected modelProfileId');
+    assert(capturedCfg.callOpts && capturedCfg.callOpts.maxOutputTokens === 8192, '24-note optimize requests 8192 output tokens');
+    assert(capturedCfg.callOpts && capturedCfg.callOpts.task === 'studio_ai_optimize', 'cloud optimize sends task metadata');
+    assert(capturedCfg.callOpts && capturedCfg.callOpts.noteCount === 24, 'cloud optimize sends note count metadata');
     assert(Array.isArray(capturedMessages), 'cloud messages captured');
     assert(capturedMessages.length === 2, 'cloud request sends system + user messages only');
     const totalChars = capturedMessages.reduce((sum, m) => sum + String(m.content || '').length, 0);
@@ -781,10 +786,15 @@ async function testLongClip252NotesSendsAllEditableRows(){
   assert(capture.messages && capture.messages.length === 2, '252-note clip should reach LLM request');
   assert(res.llmPromptTrace && res.llmPromptTrace.requestStats.noteRowsTotal === 252, '252-note total rows tracked');
   assert(res.llmPromptTrace.requestStats.noteRowsSent === 252, '252-note clip exposes every editable note under cap');
+  assert(res.llmPromptTrace.requestStats.requestedMaxOutputTokens === 32768, '252-note clip requests 32768 output tokens');
+  assert(capture.opts && capture.opts.maxOutputTokens === 32768, '252-note optimize sends 32768 output token hint');
+  assert(capture.opts && capture.opts.task === 'studio_ai_optimize', '252-note optimize sends task metadata');
+  assert(capture.opts && capture.opts.noteCount === 252, '252-note optimize sends note count metadata');
   const userPrompt = String(capture.messages[1].content || '');
   assert(userPrompt.indexOf('Allowed noteIds') < 0, 'prompt should not include separate Allowed noteIds block');
   assert(userPrompt.indexOf('idx,trackId,noteId,pitch,startBeat,durationBeat,velocity') >= 0, 'NOTE TABLE keeps noteId and adds idx');
-  assert(userPrompt.indexOf('For setNote/moveNote/deleteNote, use noteId values from the NOTE TABLE above.') >= 0, 'prompt has concise noteId instruction');
+  assert(userPrompt.indexOf('For setNote/moveNote/deleteNote, prefer idx values from the NOTE TABLE above.') >= 0, 'prompt prefers concise idx references');
+  assert(userPrompt.indexOf('noteId remains accepted for compatibility.') >= 0, 'prompt keeps noteId compatibility');
   assert(userPrompt.indexOf('For addNote, do not provide noteId; the app will generate one.') >= 0, 'prompt tells addNote to omit noteId');
   assert(userPrompt.indexOf('editable_note_00_cloud_smoke') >= 0, 'first note listed');
   assert(userPrompt.indexOf('editable_note_251_cloud_smoke') >= 0, 'last 252nd note listed');
@@ -818,6 +828,7 @@ async function testLongClipAbove2000ShowsHonestBoundedContext(){
   assert(userPrompt.indexOf('Allowed noteIds') < 0, 'above-cap prompt should not include separate Allowed noteIds block');
   assert(userPrompt.indexOf('editable_note_1999_cloud_smoke') >= 0, 'last listed note at cap is present');
   assert(userPrompt.indexOf('editable_note_2000_cloud_smoke') < 0, 'first note beyond cap is not listed');
+  assert(capture.opts && capture.opts.maxOutputTokens === 65536, 'above-300-note optimize sends 65536 output token hint');
 }
 
 async function testOptimizePromptDoesNotForceFixedModesOrHighestValueWording(){
@@ -924,7 +935,17 @@ async function testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchan
   globalThis.H2S_LLM_CLIENT = {
     callChatCompletions: async () => {
       callN++;
-      return { text: rawText, raw: { choices: [{ finish_reason: 'length' }] } };
+      return {
+        text: rawText,
+        raw: {
+          choices: [{ finish_reason: 'length' }],
+          providerId: 'qwen',
+          modelProfileId: 'auto',
+          resolvedModelProfileId: 'qwen36_flash',
+          requestedMaxOutputTokens: 8192,
+          effectiveMaxOutputTokens: 4096,
+        },
+      };
     },
     extractJsonObject: (text) => {
       const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
@@ -950,6 +971,11 @@ async function testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchan
   assert(res.patchSummary.llm.partialJsonDiscarded === true, 'patchSummary records discarded parseable partial JSON');
   assert(res.llmDebug.partialJsonDiscarded === true, 'llmDebug records discarded parseable partial JSON');
   assert(res.llmDebug.finishReason === 'length', 'llmDebug records length finish reason');
+  assert(res.llmDebug.requestedMaxOutputTokens === 8192, 'llmDebug records requested output token budget');
+  assert(res.llmDebug.effectiveMaxOutputTokens === 4096, 'llmDebug records effective output token budget');
+  assert(res.llmDebug.providerId === 'qwen', 'llmDebug records provider');
+  assert(res.llmDebug.modelProfileId === 'auto', 'llmDebug records model profile');
+  assert(res.llmDebug.resolvedModelProfileId === 'qwen36_flash', 'llmDebug records resolved model profile');
   assert(res.llmDebug.rawModelOutputLength === rawText.length, 'llmDebug records raw model output length');
   assert(typeof res.llmDebug.rawModelOutputPreviewHead === 'string', 'llmDebug includes preview head');
   assert(typeof res.llmDebug.rawModelOutputPreviewTail === 'string', 'llmDebug includes preview tail');
@@ -958,6 +984,8 @@ async function testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchan
   assert(res.llmDebug.rawModelOutputPreviewHead === rawText.slice(0, res.llmDebug.rawModelOutputPreviewHead.length), 'preview head is from start');
   assert(res.llmDebug.rawModelOutputPreviewTail === rawText.slice(rawText.length - res.llmDebug.rawModelOutputPreviewTail.length), 'preview tail is from end');
   assert(res.patchSummary.llm.finishReason === 'length', 'patchSummary llm records length finish reason');
+  assert(res.patchSummary.llm.requestedMaxOutputTokens === 8192, 'patchSummary llm records requested output token budget');
+  assert(res.patchSummary.llm.effectiveMaxOutputTokens === 4096, 'patchSummary llm records effective output token budget');
   assert(res.patchSummary.llm.rawModelOutputLength === rawText.length, 'patchSummary llm records raw model output length');
   assert(res.patchSummary.llm.rawModelOutputPreviewHead === res.llmDebug.rawModelOutputPreviewHead, 'patchSummary llm carries preview head');
   assert(res.patchSummary.llm.rawModelOutputPreviewTail === res.llmDebug.rawModelOutputPreviewTail, 'patchSummary llm carries preview tail');

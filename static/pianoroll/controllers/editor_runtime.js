@@ -275,7 +275,12 @@
         const fieldsStr = parsed ? (fieldsTouched.size ? Array.from(fieldsTouched).sort().join(', ') : '-') : '?';
         const finishReason = (debug.finishReason != null && typeof debug.finishReason === 'string' && debug.finishReason) ? ' finishReason=' + debug.finishReason : '';
         const partialDiscarded = debug.partialJsonDiscarded === true ? ' partialJsonDiscarded=true' : '';
-        return 'attempts=' + attempts + ' reason=' + reason + finishReason + partialDiscarded + modeLabel + ' ops=' + opsTotal + ' (' + opsTypesStr + ') changedNotes=' + changedNotesStr + ' fieldsTouched=' + fieldsStr;
+        const reqTok = debug.requestedMaxOutputTokens != null && isFinite(Number(debug.requestedMaxOutputTokens)) ? Math.floor(Number(debug.requestedMaxOutputTokens)) : null;
+        const effTok = debug.effectiveMaxOutputTokens != null && isFinite(Number(debug.effectiveMaxOutputTokens)) ? Math.floor(Number(debug.effectiveMaxOutputTokens)) : null;
+        const tokenLine = (reqTok != null || effTok != null) ? (' outputTokens=' + (reqTok != null ? String(reqTok) : '?') + '->' + (effTok != null ? String(effTok) : '?')) : '';
+        const providerLine = debug.providerId ? (' provider=' + String(debug.providerId).slice(0, 48)) : '';
+        const profileLine = debug.modelProfileId ? (' modelProfile=' + String(debug.modelProfileId).slice(0, 48)) : '';
+        return 'attempts=' + attempts + ' reason=' + reason + finishReason + partialDiscarded + tokenLine + providerLine + profileLine + modeLabel + ' ops=' + opsTotal + ' (' + opsTypesStr + ') changedNotes=' + changedNotesStr + ' fieldsTouched=' + fieldsStr;
       }
 
       function loadLlmDebugUI(){
@@ -324,6 +329,14 @@
             finishReason: (llmDebug.finishReason && typeof llmDebug.finishReason === 'string') ? llmDebug.finishReason : '',
             partialJsonDiscarded: llmDebug.partialJsonDiscarded === true,
             safeModeResolved: typeof llmDebug.safeModeResolved === 'boolean' ? llmDebug.safeModeResolved : undefined,
+            requestedMaxOutputTokens: (llmDebug.requestedMaxOutputTokens != null && isFinite(Number(llmDebug.requestedMaxOutputTokens))) ? Math.floor(Number(llmDebug.requestedMaxOutputTokens)) : undefined,
+            effectiveMaxOutputTokens: (llmDebug.effectiveMaxOutputTokens != null && isFinite(Number(llmDebug.effectiveMaxOutputTokens))) ? Math.floor(Number(llmDebug.effectiveMaxOutputTokens)) : undefined,
+            providerMaxOutputTokens: (llmDebug.providerMaxOutputTokens != null && isFinite(Number(llmDebug.providerMaxOutputTokens))) ? Math.floor(Number(llmDebug.providerMaxOutputTokens)) : undefined,
+            outputTokenLimitReason: (llmDebug.outputTokenLimitReason && typeof llmDebug.outputTokenLimitReason === 'string') ? llmDebug.outputTokenLimitReason.slice(0, 80) : '',
+            providerId: (llmDebug.providerId && typeof llmDebug.providerId === 'string') ? llmDebug.providerId.slice(0, 80) : '',
+            modelTier: (llmDebug.modelTier && typeof llmDebug.modelTier === 'string') ? llmDebug.modelTier.slice(0, 80) : '',
+            modelProfileId: (llmDebug.modelProfileId && typeof llmDebug.modelProfileId === 'string') ? llmDebug.modelProfileId.slice(0, 80) : '',
+            resolvedModelProfileId: (llmDebug.resolvedModelProfileId && typeof llmDebug.resolvedModelProfileId === 'string') ? llmDebug.resolvedModelProfileId.slice(0, 80) : '',
             rawModelOutputPreviewHead: previewHead.length > 5000 ? previewHead.slice(0, 5000) : previewHead,
             rawModelOutputPreviewTail: previewTail.length > 5000 ? previewTail.slice(previewTail.length - 5000) : previewTail,
             rawModelOutputLength: previewLen,

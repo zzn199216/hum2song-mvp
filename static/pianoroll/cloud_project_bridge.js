@@ -169,6 +169,12 @@
     };
   }
 
+  function positiveIntOrNull(value) {
+    var n = Number(value);
+    if (!isFinite(n) || n < 1) return null;
+    return Math.floor(n);
+  }
+
   function friendlyCloudAiError(error) {
     var msg = typeof error === 'string' ? error : '';
     if (/request input is too large|request is too large|413/i.test(msg)) {
@@ -186,6 +192,9 @@
     }
     var modelProfileId = selectedCloudAiPresetId(cfg);
     if (!modelProfileId) return Promise.reject(new Error('cloud_ai_model_profile_missing'));
+    var requestedMaxOutputTokens = positiveIntOrNull(opts && (opts.requestedMaxOutputTokens != null ? opts.requestedMaxOutputTokens : opts.maxOutputTokens));
+    var noteCount = positiveIntOrNull(opts && opts.noteCount);
+    var task = opts && opts.task === 'studio_ai_optimize' ? 'studio_ai_optimize' : '';
     var presetId = 'free_basic';
     var safeMessages = Array.isArray(messages) ? messages.map(function (m) {
       if (!m || typeof m !== 'object') return null;
@@ -221,6 +230,14 @@
               usage: detail.usage || null,
               finish_reason: detail.finishReason || '',
               requestId: detail.requestId,
+              providerId: typeof detail.providerId === 'string' ? detail.providerId : '',
+              modelTier: typeof detail.modelTier === 'string' ? detail.modelTier : '',
+              modelProfileId: typeof detail.modelProfileId === 'string' ? detail.modelProfileId : '',
+              resolvedModelProfileId: typeof detail.resolvedModelProfileId === 'string' ? detail.resolvedModelProfileId : '',
+              requestedMaxOutputTokens: typeof detail.requestedMaxOutputTokens === 'number' ? detail.requestedMaxOutputTokens : undefined,
+              effectiveMaxOutputTokens: typeof detail.effectiveMaxOutputTokens === 'number' ? detail.effectiveMaxOutputTokens : undefined,
+              providerMaxOutputTokens: typeof detail.providerMaxOutputTokens === 'number' ? detail.providerMaxOutputTokens : undefined,
+              outputTokenLimitReason: typeof detail.outputTokenLimitReason === 'string' ? detail.outputTokenLimitReason : '',
             },
           });
           return;
@@ -239,6 +256,9 @@
           requestId: requestId,
           presetId: presetId,
           modelProfileId: modelProfileId,
+          requestedMaxOutputTokens: requestedMaxOutputTokens,
+          noteCount: noteCount,
+          task: task,
           messagesCount: diagnostics.messagesCount,
           totalChars: diagnostics.totalChars,
           maxMessageChars: diagnostics.maxMessageChars,
@@ -250,6 +270,9 @@
         requestId: requestId,
         presetId: presetId,
         modelProfileId: modelProfileId,
+        requestedMaxOutputTokens: requestedMaxOutputTokens,
+        noteCount: noteCount,
+        task: task,
         messages: safeMessages,
         diagnostics: diagnostics,
       }, '*');
@@ -388,6 +411,14 @@
           text: typeof data.text === 'string' ? data.text : '',
           usage: data.usage && typeof data.usage === 'object' ? data.usage : null,
           finishReason: typeof data.finishReason === 'string' ? data.finishReason : '',
+          providerId: typeof data.providerId === 'string' ? data.providerId : '',
+          modelTier: typeof data.modelTier === 'string' ? data.modelTier : '',
+          modelProfileId: typeof data.modelProfileId === 'string' ? data.modelProfileId : '',
+          resolvedModelProfileId: typeof data.resolvedModelProfileId === 'string' ? data.resolvedModelProfileId : '',
+          requestedMaxOutputTokens: typeof data.requestedMaxOutputTokens === 'number' ? data.requestedMaxOutputTokens : undefined,
+          effectiveMaxOutputTokens: typeof data.effectiveMaxOutputTokens === 'number' ? data.effectiveMaxOutputTokens : undefined,
+          providerMaxOutputTokens: typeof data.providerMaxOutputTokens === 'number' ? data.providerMaxOutputTokens : undefined,
+          outputTokenLimitReason: typeof data.outputTokenLimitReason === 'string' ? data.outputTokenLimitReason : '',
           status: typeof data.status === 'number' ? data.status : null,
           error: typeof data.error === 'string' ? data.error : null,
         };

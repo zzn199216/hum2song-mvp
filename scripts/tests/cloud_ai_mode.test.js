@@ -37,6 +37,10 @@ assert(bridge.includes('H2S_CLOUD_AI_STATUS_REQUEST_ID'), 'Cloud AI status respo
 assert(bridge.includes('data.requestId !== window.H2S_CLOUD_AI_STATUS_REQUEST_ID'), 'Mismatched Cloud AI status responses should be ignored');
 assert(bridge.includes("p.id === 'auto'"), 'interactive Cloud AI should prefer auto model profile');
 assert(bridge.includes("modelProfileId: modelProfileId"), 'Cloud AI chat requests should send selected modelProfileId');
+assert(bridge.includes("requestedMaxOutputTokens: requestedMaxOutputTokens"), 'Cloud AI chat requests should send requested output token budget');
+assert(bridge.includes("noteCount: noteCount"), 'Cloud AI chat requests should send note count metadata');
+assert(bridge.includes("task: task"), 'Cloud AI chat requests should send task metadata');
+assert(bridge.includes("effectiveMaxOutputTokens"), 'Cloud AI chat responses should preserve effective output token budget');
 assert(!bridge.includes("p.id === 'pro_quality' || p.id === 'preview_standard' || p.id === 'free_basic'"), 'interactive Cloud AI must not default internal/pro users to slow pro_quality');
 assert(bridge.includes("if (typeof data.requestId !== 'string' || !data.requestId) return;"), 'Cloud AI chat responses should dispatch by requestId instead of one global current id');
 assert(!bridge.includes("data.requestId !== window.H2S_CLOUD_AI_CHAT_REQUEST_ID"), 'Cloud AI chat responses must not drop late valid responses because a newer request changed the global id');

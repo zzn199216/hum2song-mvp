@@ -3028,6 +3028,23 @@ async optimizeClip(clipId, optOverride){
       }
       const debug = res.llmDebug && typeof res.llmDebug === 'object' ? res.llmDebug : null;
       const previewSrc = debug || llmB;
+      if (previewSrc){
+        const reqTok = previewSrc.requestedMaxOutputTokens != null && Number.isFinite(Number(previewSrc.requestedMaxOutputTokens))
+          ? Math.floor(Number(previewSrc.requestedMaxOutputTokens)) : null;
+        const effTok = previewSrc.effectiveMaxOutputTokens != null && Number.isFinite(Number(previewSrc.effectiveMaxOutputTokens))
+          ? Math.floor(Number(previewSrc.effectiveMaxOutputTokens)) : null;
+        if (reqTok != null || effTok != null){
+          let budgetLine = (reqTok != null ? String(reqTok) : '?') + ' -> ' + (effTok != null ? String(effTok) : '?');
+          if (previewSrc.outputTokenLimitReason) budgetLine += ' (' + String(previewSrc.outputTokenLimitReason).slice(0, 48) + ')';
+          addRow('lastOpt.detail.lblOutputBudget', budgetLine);
+        }
+        const providerParts = [];
+        if (previewSrc.providerId) providerParts.push(String(previewSrc.providerId).slice(0, 48));
+        if (previewSrc.modelProfileId) providerParts.push(String(previewSrc.modelProfileId).slice(0, 48));
+        if (previewSrc.resolvedModelProfileId && previewSrc.resolvedModelProfileId !== previewSrc.modelProfileId) providerParts.push(String(previewSrc.resolvedModelProfileId).slice(0, 48));
+        if (providerParts.length) addRow('lastOpt.detail.lblProviderModel', providerParts.join(' / '));
+        if (previewSrc.finishReason) addRow('lastOpt.detail.lblFinishReason', String(previewSrc.finishReason).slice(0, 48));
+      }
       if (previewSrc && previewSrc.finishReason === 'length'){
         addTruncatedPreviewSection({
           rawModelOutputPreviewHead: previewSrc.rawModelOutputPreviewHead,
