@@ -13,11 +13,15 @@ require(path.resolve(__dirname, '../../static/pianoroll/project.js'));
 const H2SProject = globalThis.window.H2SProject;
 const ArrangementPatch = require(path.resolve(__dirname, '../../static/pianoroll/core/arrangement_patch_v0.js'));
 const ArrangementQuality = require(path.resolve(__dirname, '../../static/pianoroll/core/arrangement_quality_v0.js'));
+const InstrumentManifest = require(path.resolve(__dirname, '../../static/pianoroll/core/instrument_manifest.js'));
 const Draft = require(path.resolve(__dirname, '../../static/pianoroll/core/accompaniment_draft_v1.js'));
 
 assert(H2SProject, 'H2SProject loaded');
 assert(ArrangementPatch && ArrangementPatch.validateArrangementPatchV0, 'arrangement patch loaded');
+assert(InstrumentManifest && InstrumentManifest.getSelectableInstrumentOptions, 'instrument manifest loaded');
 assert(Draft && typeof Draft.packAccompanimentDraftV1ToArrangementPatchV0 === 'function', 'draft module loaded');
+
+const BUILTIN_INSTRUMENT_OPTIONS = InstrumentManifest.getSelectableInstrumentOptions();
 
 function makeProjectWithMelody(){
   const p2 = H2SProject.defaultProjectV2();
@@ -77,6 +81,18 @@ function flattenPatchNotes(patch){
 function assertPatchValid(project, patch){
   const validation = ArrangementPatch.validateArrangementPatchV0(project, patch, { H2SProject });
   assert(validation && validation.ok, 'packed patch must validate: ' + ((validation && validation.errors || []).join('; ')));
+}
+
+function createTrackOps(patch){
+  return (patch && Array.isArray(patch.ops) ? patch.ops : []).filter((op) => op && op.op === 'createTrack');
+}
+
+function createClipOps(patch){
+  return (patch && Array.isArray(patch.ops) ? patch.ops : []).filter((op) => op && op.op === 'createClip');
+}
+
+function instrumentsFromPatch(patch){
+  return createTrackOps(patch).map((op) => String(op.instrument || ''));
 }
 
 function hasErrorPrefix(validation, prefix){
@@ -143,6 +159,47 @@ function makeDrumDraftEndingAt(spanBeat, endBeat){
 
 async function main(){
   {
+    assert(typeof Draft.createAccompanimentRolePlan === 'function', 'role planner exported');
+    assert(typeof Draft.resolveAccompanimentInstrument === 'function', 'instrument resolver exported');
+
+    const guitarPlan = Draft.createAccompanimentRolePlan({ userPrompt: '\u751f\u6210\u4e00\u6bb5\u5409\u4ed6\u4f34\u594f' });
+    assert(guitarPlan.requestedRoles.includes('guitar'), 'Chinese guitar prompt maps to guitar role');
+    assert(guitarPlan.requestedPartCount === 1, 'guitar prompt asks for one part');
+    assert(guitarPlan.patternRole === 'riff', 'guitar prompt uses riff/chord-style pattern role');
+    const guitarInst = Draft.resolveAccompanimentInstrument(guitarPlan, { instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(guitarInst.usedInstrument === 'sampler:tonejs:guitar-acoustic', 'guitar maps to sampled acoustic guitar');
+
+    const electricPlan = Draft.createAccompanimentRolePlan({ userPrompt: '\u52a0\u7535\u5409\u4ed6\u4f34\u594f' });
+    const electricInst = Draft.resolveAccompanimentInstrument(electricPlan, { instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(electricInst.usedInstrument === 'sampler:tonejs:guitar-electric', 'electric guitar maps to sampled electric guitar');
+
+    const pianoPlan = Draft.createAccompanimentRolePlan({ userPrompt: '\u52a0\u94a2\u7434\u4f34\u594f' });
+    const pianoInst = Draft.resolveAccompanimentInstrument(pianoPlan, { instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(pianoPlan.requestedRoles.includes('piano'), 'Chinese piano prompt maps to piano role');
+    assert(pianoInst.usedInstrument === 'default' || pianoInst.usedInstrument === 'sampler:tonejs:piano', 'piano maps to available piano/default');
+
+    const arpeggioPlan = Draft.createAccompanimentRolePlan({ userPrompt: '\u52a0\u5206\u89e3\u548c\u5f26' });
+    const arpeggioInst = Draft.resolveAccompanimentInstrument(arpeggioPlan, { instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(arpeggioPlan.requestedRoles.includes('arpeggio'), 'arpeggio prompt maps to arpeggio role');
+    assert(arpeggioPlan.patternRole === 'arpeggio', 'arpeggio prompt keeps arpeggio pattern role');
+    assert(arpeggioInst.usedInstrument === 'default' || arpeggioInst.usedInstrument === 'sampler:tonejs:piano', 'arpeggio maps to piano/default');
+
+    const stringsPlan = Draft.createAccompanimentRolePlan({ userPrompt: '\u52a0\u5f26\u4e50\u4f34\u594f' });
+    const stringsInst = Draft.resolveAccompanimentInstrument(stringsPlan, { instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(stringsPlan.requestedRoles.includes('strings'), 'strings prompt maps to strings role');
+    assert(stringsInst.usedInstrument === 'sampler:tonejs:strings', 'strings maps to sampled strings');
+
+    const noGuitarOptions = BUILTIN_INSTRUMENT_OPTIONS.filter((opt) => String(opt.value).indexOf('guitar') < 0);
+    const noGuitar = Draft.resolveAccompanimentInstrument(guitarPlan, { instrumentOptions: noGuitarOptions });
+    assert(noGuitar.usedInstrument === 'default', 'unavailable guitar falls back to default');
+    assert(noGuitar.fallbackReason, 'unavailable guitar records fallbackReason');
+
+    const rhythmPlan = Draft.createAccompanimentRolePlan({ userPrompt: '\u52a0 bass \u548c\u9f13\u70b9' });
+    assert(rhythmPlan.requestedRoles.includes('bass') && rhythmPlan.requestedRoles.includes('drums'), 'bass plus drums prompt keeps both roles');
+    assert(rhythmPlan.requestedPartCount === 2, 'bass plus drums asks for two parts');
+  }
+
+  {
     const { p2 } = makeProjectWithMelody();
     const draft = {
       version: 1,
@@ -163,7 +220,7 @@ async function main(){
         ],
       }],
     };
-    const res = pack(p2, draft);
+    const res = pack(p2, draft, { userPrompt: 'add bass' });
     assert(res.ok === true, 'valid bass draft packs');
     assertPatchValid(p2, res.patch);
     assert(res.patch.ops.filter((op) => op.op === 'createTrack').length === 1, 'bass creates one track');
@@ -215,10 +272,12 @@ async function main(){
       selectedClipSpanBeat: 8,
       melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
     });
-    const res = pack(p2, draft);
+    const res = pack(p2, draft, { userPrompt: 'add accompaniment' });
     assert(res.ok === true, 'deterministic generic accompaniment packs');
     assertPatchValid(p2, res.patch);
-    assert(res.patch.ops.filter((op) => op.op === 'createTrack').length === 2, 'generic fallback creates bass and drums');
+    assert(createTrackOps(res.patch).length === 1, 'generic fallback creates one accompaniment track');
+    assert(instrumentsFromPatch(res.patch).every((instr) => instr !== 'bass' && instr !== 'drum'), 'generic fallback does not silently create bass/drums');
+    assert(flattenPatchNotes(res.patch).every((note) => note.id), 'generated generic notes all have ids');
     const trackIds = new Set();
     const clipIds = new Set();
     const instanceIds = new Set();
@@ -250,7 +309,7 @@ async function main(){
       selectedClipSpanBeat: 8,
       melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }],
     });
-    const res = pack(p2, draft);
+    const res = pack(p2, draft, { userPrompt: 'add bass' });
     assert(res.ok === true, 'existing clip id collision avoided');
     const clipIds = res.patch.ops.filter((op) => op.op === 'createClip').map((op) => op.clipId);
     assert(!clipIds.includes('clip_acc_1'), 'packer does not collide with existing clip id');
@@ -284,6 +343,92 @@ async function main(){
     const validation = Draft.validateAccompanimentDraftV1(sparse, { userPrompt: 'add bass', selectedClipSpanBeat: 16 });
     assert(validation.ok === false, 'one-note long bass draft rejected');
     assert(validation.errors.some((e) => e.indexOf('too_few_bass_notes') >= 0 || e.indexOf('short_coverage') >= 0), 'sparse draft quality code');
+  }
+
+  {
+    const { p2 } = makeProjectWithMelody();
+    const draft = Draft.createDeterministicAccompanimentDraftV1({
+      userPrompt: '\u751f\u6210\u4e00\u6bb5\u5409\u4ed6\u4f34\u594f',
+      selectedClipSpanBeat: 8,
+      melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
+      instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS,
+    });
+    const validation = validateDraft(draft, 8, '\u751f\u6210\u4e00\u6bb5\u5409\u4ed6\u4f34\u594f');
+    assert(validation.ok === true, 'deterministic guitar draft validates');
+    assert(draft.parts.length === 1 && draft.parts[0].type === 'harmonic', 'guitar draft is a harmonic part');
+    assert(draft.parts[0].role === 'guitar', 'guitar draft keeps guitar role');
+    const res = pack(p2, draft, { userPrompt: '\u751f\u6210\u4e00\u6bb5\u5409\u4ed6\u4f34\u594f', instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(res.ok === true, 'deterministic guitar accompaniment packs');
+    assertPatchValid(p2, res.patch);
+    assert(createTrackOps(res.patch).length === 1, 'guitar prompt creates one track');
+    assert(instrumentsFromPatch(res.patch)[0] === 'sampler:tonejs:guitar-acoustic', 'guitar prompt uses sampled acoustic guitar');
+    assert(createTrackOps(res.patch)[0].name.indexOf('Guitar') >= 0, 'guitar track name reflects guitar intent');
+    assert(!instrumentsFromPatch(res.patch).includes('bass') && !instrumentsFromPatch(res.patch).includes('drum'), 'guitar prompt does not produce Bass + Drums');
+  }
+
+  {
+    const { p2 } = makeProjectWithMelody();
+    const draft = Draft.createDeterministicAccompanimentDraftV1({
+      userPrompt: '\u52a0\u94a2\u7434\u4f34\u594f',
+      selectedClipSpanBeat: 8,
+      melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
+      instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS,
+    });
+    const res = pack(p2, draft, { userPrompt: '\u52a0\u94a2\u7434\u4f34\u594f', instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(res.ok === true, 'piano accompaniment packs');
+    assertPatchValid(p2, res.patch);
+    assert(instrumentsFromPatch(res.patch)[0] === 'default' || instrumentsFromPatch(res.patch)[0] === 'sampler:tonejs:piano', 'piano prompt uses piano/default');
+    assert(createTrackOps(res.patch)[0].name.indexOf('Piano') >= 0 || createTrackOps(res.patch)[0].name.indexOf('Chord') >= 0, 'piano track name reflects piano/chord intent');
+  }
+
+  {
+    const { p2 } = makeProjectWithMelody();
+    const draft = Draft.createDeterministicAccompanimentDraftV1({
+      userPrompt: '\u52a0\u5206\u89e3\u548c\u5f26',
+      selectedClipSpanBeat: 8,
+      melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
+      instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS,
+    });
+    const res = pack(p2, draft, { userPrompt: '\u52a0\u5206\u89e3\u548c\u5f26', instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(res.ok === true, 'arpeggio accompaniment packs');
+    assertPatchValid(p2, res.patch);
+    assert(draft.parts[0].role === 'arpeggio', 'arpeggio draft keeps arpeggio role');
+    assert(createTrackOps(res.patch)[0].name.indexOf('Arpeggio') >= 0, 'arpeggio track name reflects arpeggio intent');
+  }
+
+  {
+    const { p2 } = makeProjectWithMelody();
+    const draft = Draft.createDeterministicAccompanimentDraftV1({
+      userPrompt: '\u52a0\u5f26\u4e50\u4f34\u594f',
+      selectedClipSpanBeat: 8,
+      melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
+      instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS,
+    });
+    const res = pack(p2, draft, { userPrompt: '\u52a0\u5f26\u4e50\u4f34\u594f', instrumentOptions: BUILTIN_INSTRUMENT_OPTIONS });
+    assert(res.ok === true, 'strings accompaniment packs');
+    assertPatchValid(p2, res.patch);
+    assert(instrumentsFromPatch(res.patch)[0] === 'sampler:tonejs:strings', 'strings prompt uses sampled strings');
+    assert(createTrackOps(res.patch)[0].name.indexOf('Strings') >= 0, 'strings track name reflects strings intent');
+  }
+
+  {
+    const { p2 } = makeProjectWithMelody();
+    const noGuitarOptions = BUILTIN_INSTRUMENT_OPTIONS.filter((opt) => String(opt.value).indexOf('guitar') < 0);
+    const draft = Draft.createDeterministicAccompanimentDraftV1({
+      userPrompt: '\u751f\u6210\u4e00\u6bb5\u5409\u4ed6\u4f34\u594f',
+      selectedClipSpanBeat: 8,
+      melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
+      instrumentOptions: noGuitarOptions,
+    });
+    const res = pack(p2, draft, {
+      userPrompt: '\u751f\u6210\u4e00\u6bb5\u5409\u4ed6\u4f34\u594f',
+      instrumentOptions: noGuitarOptions,
+    });
+    assert(res.ok === true, 'unavailable guitar fallback packs');
+    assertPatchValid(p2, res.patch);
+    assert(instrumentsFromPatch(res.patch)[0] === 'default', 'unavailable guitar emits only supported default instrument');
+    assert(createTrackOps(res.patch)[0].name.indexOf('Guitar-style') >= 0, 'fallback track still reflects guitar-style intent');
+    assert(res.draftValidation && res.draftValidation.summary && res.draftValidation.summary.fallbackReason, 'fallback reason recorded in validation summary');
   }
 
   {
@@ -360,8 +505,10 @@ async function main(){
       melodyNoteRows: [{ pitch: 64 }, { pitch: 67 }, { pitch: 69 }],
     });
     const res = pack(p2, draft, { selectedClipSpanBeat: 36.545, userPrompt: 'add accompaniment' });
-    assert(res.ok === true, 'fallback bass and drums pack for 36.545 span: ' + (res.errors || []).join('; '));
+    assert(res.ok === true, 'fallback generic harmonic accompaniment packs for 36.545 span: ' + (res.errors || []).join('; '));
     assertPatchValid(p2, res.patch);
+    assert(createTrackOps(res.patch).length === 1, '36.545 generic fallback creates one track');
+    assert(createClipOps(res.patch).length === 1, '36.545 generic fallback creates one clip');
 
     const quality = ArrangementQuality.analyzeArrangementQualityV0(p2, res.patch, {
       selectedClipSpanBeat: 36.545,
@@ -369,7 +516,7 @@ async function main(){
     });
     const hardCodes = new Set(['empty_clip', 'orphan_clip', 'short_coverage', 'sparse_notes', 'overly_dense']);
     const hardWarnings = (quality.warnings || []).filter((warning) => hardCodes.has(warning && warning.code));
-    assert(hardWarnings.length === 0, 'fallback bass and drums pass quality gates: ' + JSON.stringify(hardWarnings));
+    assert(hardWarnings.length === 0, 'fallback generic harmonic accompaniment passes quality gates: ' + JSON.stringify(hardWarnings));
   }
 
   console.log('PASS accompaniment_draft_v1.test.js');

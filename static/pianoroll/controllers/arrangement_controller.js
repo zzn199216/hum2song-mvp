@@ -301,21 +301,25 @@
     return [
       'Strategy for add_accompaniment_v0:',
       '- Default strategy: create a musically useful accompaniment, not only a minimal placeholder.',
-      '- Parts: if the user asks for bass plus drums/percussion, include both bass and drums parts. Use one part only when the user asks for one part or the musical idea clearly needs one.',
+      '- Parts: follow Context JSON accompanimentRequest.rolePlan. Generic accompaniment with no explicit instrument should use one harmonic accompaniment part by default, not Bass + Drums.',
+      '- Use one part when accompanimentRequest.rolePlan.requestedPartCount is 1 or the user asks for one part.',
+      '- Use Bass + Drums only when the user explicitly asks for bass plus drums/percussion.',
+      '- Explicit guitar, piano, chords, arpeggio, strings, or pad requests should use one harmonic part with the matching role.',
       '- Duration coverage: use Context JSON selectedClip.spanBeat as the target accompaniment length (beats).',
       '- Generated accompaniment should usually cover most or all of the selected melody clip.',
       '- Do not end accompaniment much earlier than the melody unless the user explicitly asks for a short fill.',
       '- Avoid leaving a large silent tail; ending slightly before or after the melody is OK.',
-      '- For bass, drum, and rhythm patterns, repeat or continue the pattern until near selectedClip.spanBeat.',
+      '- For bass, drum, harmonic, chord, arpeggio, guitar, string, and rhythm patterns, repeat or continue the pattern until near selectedClip.spanBeat.',
       '- If creating both bass and drums, both should roughly cover the selected clip unless one is explicitly a short fill.',
-      '- Draft part types are bass and drums. Use drums for the draft part type, not project instrument IDs.',
+      '- Draft part types are bass, drums, and harmonic. Use drums for the draft part type, not project instrument IDs.',
       '- Bass: use low-register notes with a clear repeating groove. Follow strong melody beats and imply root movement; avoid only whole-clip sustained notes.',
       '- Drums: use a recognizable kick/snare/hat or percussion pattern when drum is requested. Add small variations or fills every 4-8 bars when the clip is long enough.',
+      '- Harmonic: use role "guitar", "piano", "chords", "arpeggio", "strings", or "pad"; provide notes with startBeat, pitch, durationBeat, velocity.',
+      '- Available instruments are listed in Context JSON availableInstruments. You may suggest a draft instrument, but code validates and maps the final Studio track instrument.',
       '- Use short-to-medium rhythmic notes and enough activity to feel like an accompaniment, while leaving space for the melody.',
-      '- Avoid pad-only / block-chord-only output as the default.',
       '- Preserve melody as the main focus.',
       '- If adding chords/pad, keep them secondary and light.',
-      '- Velocity (MIDI 1-127) for draft events: bass often 50-72; kick/snare/main hits often 50-78; hi-hat/auxiliary hits often 35-62.',
+      '- Velocity (MIDI 1-127) for draft events: bass often 50-72; harmonic notes often 42-62; kick/snare/main hits often 50-78; hi-hat/auxiliary hits often 35-62.',
       '- Keep accompaniment velocities generally below the melody’s strongest notes (see melody note rows).',
       '- Avoid over-constraining musical choices: prefer coherent groove and variation over extreme sparsity.',
       '- Do not overpower the melody.',
@@ -335,9 +339,10 @@
       '- version: exactly 1.',
       '- intent: "bass", "drums", "bass_drums", or "accompaniment".',
       '- style: short string such as "simple", "pop", "sad", or "energetic".',
-      '- parts: array of one or two part objects.',
+      '- parts: array of one or more part objects matching the requested role plan.',
       '- bass part: type "bass", instrument "bass", notes with startBeat, pitch, durationBeat, velocity.',
       '- drums part: type "drums", instrument "drums", hits with startBeat, drum, durationBeat, velocity.',
+      '- harmonic part: type "harmonic", role "guitar" | "piano" | "chords" | "arpeggio" | "strings" | "pad", instrument suggestion, notes with startBeat, pitch, durationBeat, velocity.',
       '',
       '- Do not output Arrangement Patch v0. Code will generate the final patch.',
       '- Draft must not contain trackId, clipId, instanceId, noteId, or id.',
@@ -367,6 +372,16 @@
       },
       existingTracks: summarizeTracks(input.projectV2, 24),
       existingTimelineInstances: summarizeInstances(input.projectV2, 48),
+      accompanimentRequest: {
+        rolePlan: input.rolePlan || null,
+        instrumentSelection: input.instrumentSelection || null,
+      },
+      availableInstruments: Array.isArray(input.instrumentOptions) ? input.instrumentOptions.map(function(opt){
+        return {
+          value: safeTrim(opt && opt.value),
+          label: safeTrim(opt && opt.label) || safeTrim(opt && opt.labelKey) || safeTrim(opt && opt.value),
+        };
+      }).filter(function(opt){ return !!opt.value; }) : [],
     };
 
     const systemPrompt = [
@@ -378,12 +393,12 @@
       'Hard constraints:',
       '- version must be 1.',
       '- intent must be bass, drums, bass_drums, or accompaniment.',
-      '- parts may contain bass notes and/or drum hits only.',
+      '- parts may contain bass notes, drum hits, and/or harmonic notes.',
       '- beats-only: never output seconds fields (no startSec/durationSec/spanSec or any *sec field).',
       '- do not output trackId, clipId, instanceId, noteId, or id.',
       '- never modify or delete existing melody material.',
       '- keep accompaniment supportive, balanced, and musically coherent; do not default to extremely sparse placeholder parts.',
-      '- generated caps: max 2 parts and max 256 draft events total.',
+      '- generated caps: max 4 parts and max 256 draft events total.',
       '',
       'Return only the JSON code block.',
     ].join('\n');
@@ -407,9 +422,10 @@
       formatMelodyNoteRowsCsv(noteTable),
       '',
       'Return shape:',
-      '- {"version":1,"intent":"bass_drums","style":"simple","parts":[...]}',
+      '- {"version":1,"intent":"accompaniment","style":"simple","parts":[...]}',
       '- Bass events use notes with startBeat, pitch 0..127, durationBeat > 0, velocity 1..127.',
       '- Drum events use hits with startBeat, drum kick/snare/hat/open_hat/tom/crash/ride/clap, durationBeat > 0, velocity 1..127.',
+      '- Harmonic events use notes with startBeat, pitch 0..127, durationBeat > 0, velocity 1..127 and role matching accompanimentRequest.rolePlan.',
       '- Keep all event timing within selectedClip.spanBeat.',
       '- Do not include seconds fields or project ID fields. Do not modify or delete existing melody.',
     );
@@ -429,11 +445,12 @@
       'Previous failure: ' + (safeTrim(reason) || 'invalid_output') + (safeTrim(detail) ? (': ' + boundedText(detail, 300)) : ''),
       '',
       'Return exactly this shape:',
-      '{"version":1,"intent":"bass_drums","style":"simple","parts":[...]}',
+      '{"version":1,"intent":"accompaniment","style":"simple","parts":[...]}',
       '',
-      'Allowed part types: bass and drums.',
+      'Allowed part types: bass, drums, and harmonic.',
       'Bass part uses notes with startBeat, pitch, durationBeat, velocity.',
       'Drums part uses hits with startBeat, drum, durationBeat, velocity.',
+      'Harmonic part uses role plus notes with startBeat, pitch, durationBeat, velocity.',
       'Do not output trackId, clipId, instanceId, noteId, id, or any project structure.',
       'Do not modify or delete existing melody material.',
       'Use beats-only fields; do not output seconds fields.',
@@ -583,6 +600,15 @@
         ? Number(selectedClip.meta.spanBeat)
         : 0;
       const timeSignature = safeTrim(selectedScore.time_signature || null) || null;
+      const instrumentOptions = (typeof AccompanimentDraft.getSelectableInstrumentOptions === 'function')
+        ? AccompanimentDraft.getSelectableInstrumentOptions({})
+        : [];
+      const rolePlan = (typeof AccompanimentDraft.createAccompanimentRolePlan === 'function')
+        ? AccompanimentDraft.createAccompanimentRolePlan({ userPrompt: userPrompt })
+        : null;
+      const instrumentSelection = (typeof AccompanimentDraft.resolveAccompanimentInstrument === 'function')
+        ? AccompanimentDraft.resolveAccompanimentInstrument(rolePlan || { userPrompt: userPrompt }, { instrumentOptions: instrumentOptions })
+        : null;
       const promptBuilt = buildPromptContext({
         goal: goal,
         userPrompt: userPrompt,
@@ -593,6 +619,9 @@
         selectedInstanceStartBeat: Number(selectedInstance.startBeat || 0),
         timeSignature: timeSignature,
         bpm: bpm,
+        rolePlan: rolePlan,
+        instrumentSelection: instrumentSelection,
+        instrumentOptions: instrumentOptions,
       });
       const messages = [
         { role: 'system', content: promptBuilt.systemPrompt },
@@ -616,6 +645,9 @@
         timeSignature: timeSignature,
         bpm: bpm,
         melodyNoteRows: Array.isArray(promptBuilt.noteTable) ? promptBuilt.noteTable : [],
+        rolePlan: rolePlan,
+        instrumentSelection: instrumentSelection,
+        instrumentOptions: instrumentOptions,
       };
 
       function analyzeQualityForPatch(patch){
@@ -641,6 +673,7 @@
             detail: compactErrors(packed && packed.errors),
             patch: packed && packed.patch ? packed.patch : null,
             draftValidation: packed && packed.draftValidation ? packed.draftValidation : null,
+            metadata: packed && packed.metadata ? packed.metadata : null,
             qualityReport: null,
             validation: null,
             qualityBlockers: [],
@@ -655,6 +688,7 @@
             detail: compactErrors(validation && validation.errors) || 'validation_failed',
             patch: patch,
             draftValidation: packed.draftValidation || null,
+            metadata: packed.metadata || null,
             qualityReport: null,
             validation: validation || null,
             qualityBlockers: [],
@@ -669,6 +703,7 @@
             detail: blockers.join('; '),
             patch: patch,
             draftValidation: packed.draftValidation || null,
+            metadata: packed.metadata || null,
             qualityReport: qualityReport,
             validation: validation,
             qualityBlockers: blockers,
@@ -680,6 +715,7 @@
           detail: '',
           patch: patch,
           draftValidation: packed.draftValidation || null,
+          metadata: packed.metadata || null,
           qualityReport: qualityReport,
           validation: validation,
           qualityBlockers: [],
@@ -791,6 +827,9 @@
       const draftDebug = {
         source: draftSource,
         fallbackReason: draftSource === 'fallback' ? (fallbackReason || 'deterministic_fallback') : '',
+        rolePlan: rolePlan,
+        instrumentSelection: instrumentSelection,
+        metadata: packedOutcome && packedOutcome.metadata ? packedOutcome.metadata : null,
         draftValidation: packedOutcome && packedOutcome.draftValidation ? packedOutcome.draftValidation : draftValidation,
         qualityBlockers: packedOutcome && Array.isArray(packedOutcome.qualityBlockers) ? packedOutcome.qualityBlockers.slice() : [],
       };

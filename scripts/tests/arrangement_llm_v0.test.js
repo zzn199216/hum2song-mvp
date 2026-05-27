@@ -180,6 +180,42 @@ function makeBassDrumsDraft(spanBeat){
   };
 }
 
+function makeHarmonicDraft(spanBeat, role, instrument){
+  const span = Number.isFinite(Number(spanBeat)) ? Number(spanBeat) : 8;
+  const roleName = role || 'chords';
+  const inst = instrument || 'default';
+  const notes = [];
+  const chord = roleName === 'strings' ? [60, 67, 72] : [60, 64, 67];
+  if (roleName === 'arpeggio' || roleName === 'guitar'){
+    for (let beat = 0; beat < span; beat += 0.5){
+      const pitch = chord[(Math.floor(beat * 2)) % chord.length] + ((Math.floor(beat / 2) % 2) * 12);
+      notes.push({
+        startBeat: Math.round(beat * 1000) / 1000,
+        pitch,
+        durationBeat: Math.min(0.45, Math.max(0.125, span - beat)),
+        velocity: roleName === 'guitar' ? 58 : 54,
+      });
+    }
+  } else {
+    for (let beat = 0; beat < span; beat += 2){
+      for (const pitch of chord){
+        notes.push({
+          startBeat: Math.round(beat * 1000) / 1000,
+          pitch,
+          durationBeat: Math.min(1.75, Math.max(0.25, span - beat)),
+          velocity: roleName === 'strings' ? 48 : 52,
+        });
+      }
+    }
+  }
+  return {
+    version: 1,
+    intent: 'accompaniment',
+    style: 'simple',
+    parts: [{ type: 'harmonic', role: roleName, instrument: inst, notes }],
+  };
+}
+
 function createdInstruments(patch){
   return (patch && Array.isArray(patch.ops) ? patch.ops : [])
     .filter((op) => op && op.op === 'createTrack')
@@ -202,7 +238,7 @@ async function testValidDraftOneCommit(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let llmCalls = 0;
-  const draft = makeBassDraft(8);
+  const draft = makeHarmonicDraft(8, 'pad', 'pad');
   setMockLlm({
     callChatCompletions: async () => {
       llmCalls += 1;
@@ -221,6 +257,7 @@ async function testValidDraftOneCommit(){
   assert(llmCalls === 1, 'one llm call by default');
   assert(Array.isArray(res.summary.createdTrackIds) && res.summary.createdTrackIds.length === 1, 'summary track ids');
   assert(res.rawDraft && res.rawDraft.version === 1, 'raw draft returned');
+  assert(res.rawDraft.parts && res.rawDraft.parts[0] && res.rawDraft.parts[0].type === 'harmonic', 'harmonic draft accepted');
   assert(res.rawPatch && res.rawPatch.kind === 'arrangement_patch_v0', 'draft packed into arrangement patch');
   assert(createdNotes(res.rawPatch).every((note) => note.id), 'packer generated note ids');
   assert(res.qualityReport && res.qualityReport.ok === true, 'quality report present on success');
@@ -268,8 +305,70 @@ async function testMalformedNoJsonFallsBackAndCommits(){
   assert(llmCalls === 2, 'malformed output should get one bounded repair retry');
   assert(res.llmDebug && res.llmDebug.callCount === 2, 'debug call count includes repair retry');
   assert(res.draftDebug && res.draftDebug.source === 'fallback', 'fallback source reported');
-  assert(createdInstruments(res.rawPatch).includes('bass'), 'generic fallback includes bass');
-  assert(createdInstruments(res.rawPatch).includes('drum'), 'generic fallback includes drums');
+  assert(createdInstruments(res.rawPatch).length === 1, 'generic fallback creates one track');
+  assert(!createdInstruments(res.rawPatch).includes('bass'), 'generic fallback does not silently include bass');
+  assert(!createdInstruments(res.rawPatch).includes('drum'), 'generic fallback does not silently include drums');
+  assert(res.draftDebug.metadata && res.draftDebug.metadata.patternRole === 'chords', 'generic fallback records harmonic pattern role');
+}
+
+async function testExplicitGuitarFallbackUsesGuitarNotBassDrums(){
+  const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+  const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+  setMockLlm({
+    callChatCompletions: async () => ({ text: 'not json' }),
+    extractJsonObject: () => null,
+  });
+  const prompt = '\u751f\u6210\u4e00\u6bb5\u5409\u4ed6\u4f34\u594f';
+  const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: prompt });
+  assert(res.ok === true, 'guitar fallback succeeds');
+  assert(createdInstruments(res.rawPatch).length === 1, 'guitar fallback creates one track');
+  assert(createdInstruments(res.rawPatch)[0] === 'sampler:tonejs:guitar-acoustic', 'guitar fallback uses available guitar');
+  assert(!createdInstruments(res.rawPatch).includes('bass') && !createdInstruments(res.rawPatch).includes('drum'), 'guitar fallback is not Bass + Drums');
+  assert(res.rawDraft.parts[0].type === 'harmonic' && res.rawDraft.parts[0].role === 'guitar', 'guitar fallback emits harmonic guitar part');
+  assert(res.draftDebug.metadata && res.draftDebug.metadata.requestedRoles.includes('guitar'), 'guitar metadata records requested role');
+  assert(res.draftDebug.metadata.usedInstrument === 'sampler:tonejs:guitar-acoustic', 'guitar metadata records used instrument');
+}
+
+async function testExplicitPianoArpeggioStringsFallbacks(){
+  const cases = [
+    { prompt: '\u52a0\u94a2\u7434\u4f34\u594f', role: 'piano', instrumentOk: (x) => x === 'default' || x === 'sampler:tonejs:piano' },
+    { prompt: '\u52a0\u5206\u89e3\u548c\u5f26', role: 'arpeggio', instrumentOk: (x) => x === 'default' || x === 'sampler:tonejs:piano' },
+    { prompt: '\u52a0\u5f26\u4e50\u4f34\u594f', role: 'strings', instrumentOk: (x) => x === 'sampler:tonejs:strings' },
+  ];
+  for (const c of cases){
+    const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+    const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+    setMockLlm({
+      callChatCompletions: async () => ({ text: 'not json' }),
+      extractJsonObject: () => null,
+    });
+    const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: c.prompt });
+    assert(res.ok === true, c.role + ' fallback succeeds');
+    assert(createdInstruments(res.rawPatch).length === 1, c.role + ' fallback creates one track');
+    assert(c.instrumentOk(createdInstruments(res.rawPatch)[0]), c.role + ' fallback uses expected instrument');
+    assert(res.rawDraft.parts[0].type === 'harmonic', c.role + ' fallback emits harmonic part');
+    assert(res.draftDebug.metadata && res.draftDebug.metadata.requestedRoles.includes(c.role), c.role + ' metadata records requested role');
+  }
+}
+
+async function testExplicitRhythmFallbacksRemainRhythmOnly(){
+  const cases = [
+    { prompt: '\u52a0 bass', instruments: ['bass'] },
+    { prompt: '\u52a0\u9f13\u70b9', instruments: ['drum'] },
+    { prompt: '\u52a0 bass \u548c\u9f13\u70b9', instruments: ['bass', 'drum'] },
+  ];
+  for (const c of cases){
+    const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
+    const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
+    setMockLlm({
+      callChatCompletions: async () => ({ text: 'not json' }),
+      extractJsonObject: () => null,
+    });
+    const res = await harness.ctrl.runArrangementV0({ goal: 'add_accompaniment_v0', userPrompt: c.prompt });
+    assert(res.ok === true, c.prompt + ' fallback succeeds');
+    const instruments = createdInstruments(res.rawPatch).sort();
+    assert(JSON.stringify(instruments) === JSON.stringify(c.instruments.slice().sort()), c.prompt + ' emits requested rhythm instruments only');
+  }
 }
 
 async function testFallbackDrumsAllowsBoundedTailAtConvertedSpan(){
@@ -475,7 +574,7 @@ async function testSecondsDraftFallsBackToBeatsOnlyPatch(){
 async function testPromptIncludesRequiredContext(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
-  const draft = makeBassDrumsDraft(8);
+  const draft = makeHarmonicDraft(8, 'chords', 'default');
   setMockLlm({
     callChatCompletions: async () => ({ text: '```json\n' + JSON.stringify(draft) + '\n```' }),
     extractJsonObject: (txt) => {
@@ -495,7 +594,8 @@ async function testPromptIncludesRequiredContext(){
   assert(up.indexOf('"velocity":64') < 0, 'prompt must not anchor generated velocity to example');
   assert(up.indexOf('Draft object formats:') >= 0, 'format contract includes draft object formats');
   assert(up.indexOf('parts') >= 0 && up.indexOf('type') >= 0, 'draft parts documented');
-  assert(up.indexOf('notes') >= 0 && up.indexOf('hits') >= 0, 'bass notes and drum hits documented');
+  assert(up.indexOf('harmonic') >= 0, 'harmonic draft part documented');
+  assert(up.indexOf('notes') >= 0 && up.indexOf('hits') >= 0, 'notes and drum hits documented');
   assert(/must not contain trackId, clipId, instanceId, noteId, or id/i.test(up), 'draft forbids project ids');
   assert(up.indexOf('Arrangement Patch v0') < 0 || up.indexOf('Do not output Arrangement Patch v0') >= 0, 'prompt does not ask model for final patch ids');
   assert(/one ```json fenced block/i.test(up), 'format contract requires one json fence');
@@ -509,27 +609,30 @@ async function testPromptIncludesRequiredContext(){
   assert(sp.indexOf('beats-only') >= 0, 'beats-only constraint included');
   assert(sp.indexOf('no startSec/durationSec/spanSec') >= 0, 'no seconds constraint included');
   assert(sp.indexOf('Do not output Arrangement Patch v0') >= 0, 'system prompt forbids direct patch output');
+  assert(/harmonic/i.test(sp), 'system prompt allows harmonic accompaniment parts');
 
   assert(up.indexOf('createTrack') < 0, 'draft prompt does not ask for createTrack');
   assert(up.indexOf('gainDb') < 0, 'draft prompt does not ask model for gainDb');
 
   assert(up.indexOf('Strategy for add_accompaniment_v0:') >= 0, 'add_accompaniment_v0 strategy block header');
   assert(/musically useful accompaniment/i.test(up), 'musically useful accompaniment guidance');
-  assert(up.indexOf('Avoid pad-only') >= 0 || up.indexOf('block-chord-only') >= 0, 'discourages pad/block sustained default');
-  assert(/clear repeating groove/i.test(up), 'requests clear groove');
+  assert(/generic accompaniment/i.test(up) && /one harmonic/i.test(up), 'generic accompaniment defaults to one harmonic track');
+  assert(/guitar|piano|chords|arpeggio|strings/i.test(up), 'explicit harmonic roles are listed');
   assert(/variation|fill/i.test(up), 'allows variation/fills');
   assert(/kick\/snare\/hat/i.test(up), 'drum part guidance');
   assert(/avoid over-constraining/i.test(up), 'explicitly avoids over-constraining musical choices');
   assert(up.indexOf('keep accompaniment sparse, supportive, and musically simple') < 0, 'system prompt no longer over-constrains sparse/simple');
   assert(/below the melody/i.test(up), 'accompaniment balanced below melody');
 
-  assert(/\b(bass|drums)\b/.test(up), 'draft part ids mentioned');
+  assert(/\b(bass|drums|harmonic)\b/.test(up), 'draft part ids mentioned');
   assert(/50[^\n]*72/.test(up) && /bass often 50/i.test(up), 'bass velocity range 50-72');
   assert(/hi-hat|auxiliary/i.test(up) && /35[^\n]*62/.test(up), 'aux/hat velocity range 35-62');
   assert(/kick\/snare|main hit/i.test(up) && /50[^\n]*78/.test(up), 'main drum hit velocity band');
   assert(/strongest notes/i.test(up) && /melody note rows/i.test(up), 'velocities below melody reference');
   assert(/bass plus drums/i.test(up), 'explicit bass plus drums guidance');
   assert(/asks for one part/i.test(up), 'single track only when requested');
+  assert(/accompanimentRequest/i.test(up), 'role plan context included');
+  assert(/availableInstruments/i.test(up), 'available instrument options included');
 
   assert(/selectedClip\.spanBeat.*target accompaniment length|target accompaniment length.*selectedClip\.spanBeat/i.test(up), 'spanBeat as target accompaniment length');
   assert(/cover most or all of the selected melody clip/i.test(up), 'cover most/all of melody clip');
@@ -632,7 +735,7 @@ async function testCloudModeUsesCloudLlmBridge(){
   const { p2, melodyClip, melodyInst } = makeProjectWithMelody();
   const harness = makeControllerHarness({ project: p2, selectedClipId: melodyClip.id, selectedInstanceId: melodyInst.id });
   let cloudCalls = 0;
-  const draft = makeBassDraft(8);
+  const draft = makeHarmonicDraft(8, 'chords', 'default');
   setMockCloudLlm({
     callChatCompletions: async (cfg, _messages, opts) => {
       cloudCalls += 1;
@@ -662,6 +765,9 @@ async function main(){
   await testValidDraftOneCommit();
   await testInvalidDraftFallsBackAndCommits();
   await testMalformedNoJsonFallsBackAndCommits();
+  await testExplicitGuitarFallbackUsesGuitarNotBassDrums();
+  await testExplicitPianoArpeggioStringsFallbacks();
+  await testExplicitRhythmFallbacksRemainRhythmOnly();
   await testFallbackDrumsAllowsBoundedTailAtConvertedSpan();
   await testMalformedLengthFinishReasonIsDiagnostic();
   await testMalformedNoJsonRepairRetryCanCommit();

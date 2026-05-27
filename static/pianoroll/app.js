@@ -3097,6 +3097,8 @@ async optimizeClip(clipId, optOverride){
       summary: this._safeArrangementJsonClone(r.summary),
       llmDebug: this._safeArrangementJsonClone(r.llmDebug),
       promptTrace: this._safeArrangementJsonClone(r.promptTrace),
+      rawDraft: this._safeArrangementJsonClone(r.rawDraft),
+      draftDebug: this._safeArrangementJsonClone(r.draftDebug),
       rawPatch: this._safeArrangementJsonClone(r.rawPatch),
       arrangementOutcome: this._safeArrangementJsonClone(r.arrangementOutcome),
       qualityReport: this._safeArrangementJsonClone(r.qualityReport),
@@ -3158,6 +3160,23 @@ async optimizeClip(clipId, optOverride){
       addRow('arrange.detail.createdTracks', j('createdTrackIds'));
       addRow('arrange.detail.createdClips', j('createdClipIds'));
       addRow('arrange.detail.createdInstances', j('createdInstanceIds'));
+    }
+    const dd = snap.draftDebug && typeof snap.draftDebug === 'object' ? snap.draftDebug : null;
+    const meta = dd && dd.metadata && typeof dd.metadata === 'object'
+      ? dd.metadata
+      : (dd && dd.draftValidation && dd.draftValidation.summary && typeof dd.draftValidation.summary === 'object' ? dd.draftValidation.summary : null);
+    if (meta){
+      const roles = Array.isArray(meta.requestedRoles) ? meta.requestedRoles.join(', ') : '';
+      addRow('arrange.detail.requestedRoles', roles || '-');
+      addRow('arrange.detail.requestedInstrument', (meta.requestedInstrument != null && String(meta.requestedInstrument)) ? String(meta.requestedInstrument) : '-');
+      addRow('arrange.detail.usedInstrument', (meta.usedInstrument != null && String(meta.usedInstrument)) ? String(meta.usedInstrument) : '-');
+      addRow('arrange.detail.usedInstrumentLabel', (meta.usedInstrumentLabel != null && String(meta.usedInstrumentLabel)) ? String(meta.usedInstrumentLabel) : '-');
+      addRow('arrange.detail.fallbackReason', (meta.fallbackReason != null && String(meta.fallbackReason)) ? String(meta.fallbackReason).slice(0, 400) : '-');
+      addRow('arrange.detail.patternRole', (meta.patternRole != null && String(meta.patternRole)) ? String(meta.patternRole) : '-');
+      const noteCount = Number(meta.harmonicNoteCount || 0) + Number(meta.bassNoteCount || 0) + Number(meta.drumHitCount || 0);
+      addRow('arrange.detail.generatedNotes', String(noteCount || meta.totalEvents || 0));
+      const cov = meta.coverageByType && typeof meta.coverageByType === 'object' ? meta.coverageByType : null;
+      addRow('arrange.detail.coverage', cov ? JSON.stringify(cov) : '-');
     }
     const qr = snap.qualityReport && typeof snap.qualityReport === 'object' ? snap.qualityReport : null;
     if (qr){

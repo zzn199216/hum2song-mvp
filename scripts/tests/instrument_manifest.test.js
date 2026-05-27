@@ -13,7 +13,7 @@ assert(Array.isArray(builtIns), 'manifest should export an array of built-in ins
 assert(builtIns.length >= 7, 'manifest should include synth and sampled built-ins');
 
 const legacyKeys = builtIns.map((item) => item.legacyKey);
-for (const key of ['default', 'bass', 'lead', 'pad', 'pluck', 'drum', 'sampler:tonejs:piano']) {
+for (const key of ['default', 'bass', 'lead', 'pad', 'pluck', 'drum', 'sampler:tonejs:piano', 'sampler:tonejs:strings', 'sampler:tonejs:guitar-acoustic', 'sampler:tonejs:guitar-electric']) {
   assert(legacyKeys.includes(key), `manifest should include legacy key ${key}`);
 }
 
@@ -30,6 +30,9 @@ assert.doesNotThrow(() => manifest.resolveInstrument(null));
 const options = manifest.getSelectableInstrumentOptions();
 assert(options.some((option) => option.value === 'default'), 'dropdown options should keep legacy stored values');
 assert(options.some((option) => option.value === 'sampler:tonejs:piano'), 'dropdown options should include sampled piano');
+assert(options.some((option) => option.value === 'sampler:tonejs:strings'), 'dropdown options should include sampled strings');
+assert(options.some((option) => option.value === 'sampler:tonejs:guitar-acoustic'), 'dropdown options should include sampled acoustic guitar');
+assert(options.some((option) => option.value === 'sampler:tonejs:guitar-electric'), 'dropdown options should include sampled electric guitar');
 assert(!options.some((option) => option.value === 'builtin.piano'), 'v0 should not store new manifest ids in tracks');
 
 const timelineController = fs.readFileSync(path.join(root, 'static/pianoroll/timeline_controller.js'), 'utf8');
@@ -54,6 +57,9 @@ for (const key of [
   'instrument.name.pluck',
   'instrument.name.drums',
   'instrument.name.sampledPiano',
+  'instrument.name.sampledStrings',
+  'instrument.name.sampledGuitarAcoustic',
+  'instrument.name.sampledGuitarElectric',
   'instrument.category.keyboard',
   'instrument.category.bass',
   'instrument.category.synth',
