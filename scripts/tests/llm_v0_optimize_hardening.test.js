@@ -139,6 +139,49 @@ function makeClipWithNoteCount(count){
   return { project, clip };
 }
 
+function extractJsonFromFence(text){
+  const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+  return m ? JSON.parse(m[1]) : null;
+}
+
+function installPatchLlmMock(patch, opts){
+  const o = opts || {};
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+  const capture = { cfg: null, messages: null };
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async (cfg, messages) => {
+      capture.cfg = cfg;
+      capture.messages = messages;
+      return { text: rawText };
+    },
+    extractJsonObject: extractJsonFromFence,
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: o.velocityOnly === true }),
+  };
+  return capture;
+}
+
+function makeOptimizeController(projectRef){
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  return AgentController.create({
+    getProjectV2: () => projectRef.project,
+    setProjectFromV2: (p) => { projectRef.project = p; },
+    persist: () => {},
+    render: () => {},
+  });
+}
+
+function flattenNotes(clip){
+  const out = [];
+  const tracks = clip && clip.score && Array.isArray(clip.score.tracks) ? clip.score.tracks : [];
+  for (const t of tracks){
+    const notes = Array.isArray(t.notes) ? t.notes : [];
+    for (const n of notes) out.push(Object.assign({ trackId: t.id }, n));
+  }
+  return out;
+}
+
 async function testAppliedOutcome(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
@@ -401,37 +444,174 @@ async function testSecondsFieldsRejectedWithSpecificReason(){
   assert(JSON.stringify(project.clips[cid].score) === before, 'seconds patch leaves original unchanged');
 }
 
-async function testUnsupportedAddNoteRejected(){
+async function testAddNoteChordifyAppliesWithGeneratedIds(){
   loadAgentController();
-  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
   const { project: proj, clip } = makeClip();
-  let project = proj;
+  const state = { project: proj };
+  const cid = clip.id;
+  const beforeRevisionId = clip.revisionId;
+
+  const patch = {
+    version: 1,
+    clipId: cid,
+    ops: [
+      { op: 'addNote', note: { pitch: 64, velocity: 78, startBeat: 0, durationBeat: 1 } },
+      { op: 'addNote', note: { pitch: 67, velocity: 76, startBeat: 0, durationBeat: 1 } },
+    ],
+  };
+  installPatchLlmMock(patch);
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '把这里的单音转化为和弦' });
+  assert(res && res.ok === true && res.ops === 2, 'chordify addNote patch applies');
+  assertLlmOutcomeContract(res, 'applied');
+  assert(res.patchSummary.byOp && res.patchSummary.byOp.addNote === 2, 'patchSummary includes addNote count');
+  assert(res.patchSummary.hasStructuralChange === true, 'addNote is structural');
+  assert(res.llmPromptTrace && res.llmPromptTrace.finalSystemPrompt.indexOf('addNote') >= 0, 'prompt mentions addNote');
+  assert(res.llmPromptTrace.finalSystemPrompt.indexOf('Do not use addNote') < 0, 'prompt no longer forbids addNote');
+  const notes = flattenNotes(state.project.clips[cid]);
+  assert(notes.length === 3, 'two generated notes added');
+  const ids = notes.map((n) => String(n.id));
+  assert(new Set(ids).size === ids.length, 'all note ids are unique');
+  assert(ids.indexOf('n0') >= 0, 'original note remains');
+  const added = notes.filter((n) => String(n.id) !== 'n0');
+  assert(added.length === 2, 'added notes have generated ids');
+  assert(added.every((n) => n.trackId === 't0'), 'missing trackId defaults to primary clip track');
+  assert(added.some((n) => n.pitch === 64) && added.some((n) => n.pitch === 67), 'harmony pitches inserted');
+  assert(state.project.clips[cid].revisionId !== beforeRevisionId, 'addNote creates a new revision');
+
+  const rb = globalThis.H2SProject.rollbackClipRevision(state.project, cid);
+  assert(rb && rb.ok, 'rollback succeeds after addNote revision');
+  assert(flattenNotes(state.project.clips[cid]).length === 1, 'rollback removes added notes');
+}
+
+async function testAddNoteProvidedIdIsRewrittenAndMixedSetNoteApplies(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
   const cid = clip.id;
 
-  const patch = { version: 1, clipId: cid, ops: [{ op: 'addNote', trackId: 't0', note: { id: 'new1', pitch: 64, velocity: 80, startBeat: 1, durationBeat: 0.5 } }] };
-  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
-
-  globalThis.H2S_LLM_CLIENT = {
-    callChatCompletions: async () => ({ text: rawText }),
-    extractJsonObject: (text) => {
-      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
-      return m ? JSON.parse(m[1]) : null;
-    },
+  const patch = {
+    version: 1,
+    clipId: cid,
+    ops: [
+      { op: 'setNote', noteId: 'n0', velocity: 70 },
+      { op: 'addNote', trackId: 't0', note: { id: 'n0', pitch: 72, velocity: 75, startBeat: 0, durationBeat: 1 } },
+    ],
   };
-  globalThis.H2S_LLM_CONFIG = {
-    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
-  };
+  installPatchLlmMock(patch);
+  const ctrl = makeOptimizeController(state);
 
-  const ctrl = AgentController.create({
-    getProjectV2: () => project,
-    setProjectFromV2: (p) => { project = p; },
-    persist: () => {},
-    render: () => {},
-  });
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '加八度' });
+  assert(res && res.ok === true && res.ops === 2, 'mixed setNote + addNote patch applies');
+  assertLlmOutcomeContract(res, 'applied');
+  assert(res.patchSummary.byOp.setNote === 1 && res.patchSummary.byOp.addNote === 1, 'mixed op counts are preserved');
+  const notes = flattenNotes(state.project.clips[cid]);
+  const ids = notes.map((n) => String(n.id));
+  assert(notes.length === 2, 'one note added');
+  assert(new Set(ids).size === ids.length, 'model-provided colliding id is rewritten');
+  assert(ids.filter((id) => id === 'n0').length === 1, 'original note id is not duplicated');
+  const original = notes.find((n) => String(n.id) === 'n0');
+  const added = notes.find((n) => String(n.id) !== 'n0');
+  assert(original && original.velocity === 70, 'setNote still applied to original note');
+  assert(added && added.pitch === 72 && added.trackId === 't0', 'valid existing track receives addNote');
+}
 
-  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'make it better' });
-  assert(res && res.ok === false && res.reason === 'unsupported_operation', 'addNote remains disabled for llm_v0');
+async function testAddNoteInvalidTrackRejectedAndClipUnchanged(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+  const before = JSON.stringify(state.project.clips[cid].score);
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'addNote', trackId: 'missing_track', note: { pitch: 64, velocity: 80, startBeat: 0, durationBeat: 1 } }] };
+  installPatchLlmMock(patch);
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'add harmony' });
+  assert(res && res.ok === false, 'missing addNote track rejected');
   assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(String(res.detail || '').indexOf('add_track_not_found') >= 0, 'diagnostics include missing track validation reason');
+  assert(JSON.stringify(state.project.clips[cid].score) === before, 'rejected missing-track addNote leaves original unchanged');
+}
+
+async function testAddNoteSecondsFieldsRejected(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+  const before = JSON.stringify(state.project.clips[cid].score);
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'addNote', trackId: 't0', note: { pitch: 64, velocity: 80, startBeat: 0, durationBeat: 1, startSec: 0.1, durationSec: 0.5 } }] };
+  installPatchLlmMock(patch);
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '加一点和声' });
+  assert(res && res.ok === false && res.reason === 'invalid_timing', 'addNote seconds fields rejected with timing reason');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(String(res.detail || '').indexOf('seconds_field') >= 0, 'diagnostics include seconds field reason');
+  assert(JSON.stringify(state.project.clips[cid].score) === before, 'seconds addNote leaves original unchanged');
+}
+
+async function testAddNoteInvalidNumbersRejected(){
+  loadAgentController();
+  const cases = [
+    { label: 'pitch', note: { pitch: 128, velocity: 80, startBeat: 0, durationBeat: 1 }, reason: 'invalid_pitch_or_velocity', detail: 'add_pitch_oob' },
+    { label: 'velocity', note: { pitch: 64, velocity: 0, startBeat: 0, durationBeat: 1 }, reason: 'invalid_pitch_or_velocity', detail: 'add_velocity_oob' },
+    { label: 'startBeat', note: { pitch: 64, velocity: 80, startBeat: -0.25, durationBeat: 1 }, reason: 'invalid_timing', detail: 'add_startBeat_invalid' },
+    { label: 'durationBeat', note: { pitch: 64, velocity: 80, startBeat: 0, durationBeat: 0 }, reason: 'invalid_timing', detail: 'add_durationBeat_invalid' },
+  ];
+  for (const c of cases){
+    const { project: proj, clip } = makeClip();
+    const state = { project: proj };
+    const cid = clip.id;
+    const before = JSON.stringify(state.project.clips[cid].score);
+    installPatchLlmMock({ version: 1, clipId: cid, ops: [{ op: 'addNote', trackId: 't0', note: c.note }] });
+    const ctrl = makeOptimizeController(state);
+    const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'add harmony ' + c.label });
+    assert(res && res.ok === false && res.reason === c.reason, c.label + ' rejected with expected reason');
+    assertLlmOutcomeContract(res, 'rejected_validation');
+    assert(String(res.detail || '').indexOf(c.detail) >= 0, c.label + ' detail includes validation code');
+    assert(JSON.stringify(state.project.clips[cid].score) === before, c.label + ' rejection leaves original unchanged');
+  }
+}
+
+async function testAddNoteOutsideClipRejectedAndClipUnchanged(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+  const before = JSON.stringify(state.project.clips[cid].score);
+
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'addNote', trackId: 't0', note: { pitch: 64, velocity: 80, startBeat: 1.25, durationBeat: 0.5 } }] };
+  installPatchLlmMock(patch);
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '加几个经过音' });
+  assert(res && res.ok === false && res.reason === 'invalid_timing', 'outside-span addNote rejected');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(String(res.detail || '').indexOf('add_outside_clip_span') >= 0, 'outside-span detail included');
+  assert(JSON.stringify(state.project.clips[cid].score) === before, 'outside-span addNote leaves original unchanged');
+}
+
+async function testAddNoteDensityCapRejectedAndClipUnchanged(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+  const before = JSON.stringify(state.project.clips[cid].score);
+  const ops = [];
+  for (let i = 0; i < 17; i++){
+    ops.push({ op: 'addNote', trackId: 't0', note: { pitch: 60 + (i % 12), velocity: 70, startBeat: 0, durationBeat: 0.25 } });
+  }
+  installPatchLlmMock({ version: 1, clipId: cid, ops });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '让旋律更丰满' });
+  assert(res && res.ok === false, 'excessive addNote count rejected');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(String(res.detail || '').indexOf('add_count_excess') >= 0, 'density cap detail included');
+  assert(JSON.stringify(state.project.clips[cid].score) === before, 'density rejection leaves original unchanged');
 }
 
 async function testCloudSmallClipPromptStaysBounded(){
@@ -1331,7 +1511,13 @@ async function main(){
   await testCleanUnmusicalNotesCanDeleteSmallOutlierSet();
   await testTooManyDeletesRejectedAndClipUnchanged();
   await testInvalidNoteIdRejectedWithSpecificReason();
-  await testUnsupportedAddNoteRejected();
+  await testAddNoteChordifyAppliesWithGeneratedIds();
+  await testAddNoteProvidedIdIsRewrittenAndMixedSetNoteApplies();
+  await testAddNoteInvalidTrackRejectedAndClipUnchanged();
+  await testAddNoteSecondsFieldsRejected();
+  await testAddNoteInvalidNumbersRejected();
+  await testAddNoteOutsideClipRejectedAndClipUnchanged();
+  await testAddNoteDensityCapRejectedAndClipUnchanged();
   await testCloudSmallClipPromptStaysBounded();
   await testNoOpOutcome();
   await testPlainJsonObjectWithoutFenceAccepted();

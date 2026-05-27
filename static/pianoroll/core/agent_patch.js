@@ -83,6 +83,32 @@
     TINY_DUR_MIN_NOTES: 200,
   };
 
+  const FORBIDDEN_SECONDS_FIELDS = {
+    startSec: true,
+    durationSec: true,
+    endSec: true,
+    timeSec: true,
+    startSeconds: true,
+    durationSeconds: true,
+    endSeconds: true,
+    timeSeconds: true,
+    seconds: true,
+  };
+
+  const FORBIDDEN_TIMELINE_FIELDS = {
+    bpm: true,
+    tempo: true,
+    tempoBpm: true,
+    timebase: true,
+    timelineStartBeat: true,
+    timelineStartSec: true,
+    clipStartBeat: true,
+    clipStartSec: true,
+    trackName: true,
+    createTrack: true,
+    newTrack: true,
+  };
+
   function _semanticStatsFromScore(scoreBeat){
     const st = {
       noteCount: 0,
@@ -209,6 +235,59 @@
     return null;
   }
 
+  function findTrack(score, trackId){
+    const tid = String(trackId || '');
+    const tracks = (score && Array.isArray(score.tracks)) ? score.tracks : [];
+    for (let i=0; i<tracks.length; i++){
+      const t = tracks[i];
+      if (String(t && t.id || '') === tid) return t;
+    }
+    return null;
+  }
+
+  function _scoreStats(scoreBeat){
+    let noteCount = 0;
+    let spanBeat = 0;
+    const tracks = (scoreBeat && Array.isArray(scoreBeat.tracks)) ? scoreBeat.tracks : [];
+    for (const t of tracks){
+      const notes = (t && Array.isArray(t.notes)) ? t.notes : [];
+      for (const n of notes){
+        noteCount += 1;
+        const sb = Number(n && n.startBeat);
+        const db = Number(n && n.durationBeat);
+        const end = sb + db;
+        if (isFinite(end) && end > spanBeat) spanBeat = end;
+      }
+    }
+    return { noteCount, spanBeat: isFinite(spanBeat) ? spanBeat : 0 };
+  }
+
+  function _clipSpanBeat(clip, score){
+    const st = _scoreStats(score);
+    if (st.spanBeat > 0) return st.spanBeat;
+    const meta = clip && clip.meta;
+    if (meta && isFiniteNumber(meta.spanBeat) && meta.spanBeat > 0) return Number(meta.spanBeat);
+    return 0;
+  }
+
+  function _addNoteLimitForScore(score){
+    const st = _scoreStats(score);
+    if (st.noteCount <= 0) return 64;
+    return Math.max(16, Math.min(256, st.noteCount * 2));
+  }
+
+  function _validateForbiddenFields(obj, prefix, errors){
+    if (!obj || typeof obj !== 'object') return;
+    for (const k in obj){
+      if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+      if (FORBIDDEN_SECONDS_FIELDS[k]){
+        errors.push(prefix + '_seconds_field:' + k);
+      } else if (FORBIDDEN_TIMELINE_FIELDS[k]){
+        errors.push(prefix + '_timeline_field:' + k);
+      }
+    }
+  }
+
   function ensureScoreBeat(score, api){
     if (api && typeof api.ensureScoreBeatIds === 'function') return api.ensureScoreBeatIds(score);
     // minimal fallback
@@ -249,6 +328,18 @@
     return t;
   }
 
+  function makeUniqueNoteId(score, api){
+    const uid = (api && typeof api.uid === 'function') ? api.uid : (p)=> (p||'id_') + Math.random().toString(16).slice(2,10);
+    for (let i=0; i<32; i++){
+      const raw = String(uid('n_') || '');
+      const candidate = raw || ('n_' + Math.random().toString(16).slice(2,10));
+      if (!findNote(score, candidate)) return candidate;
+    }
+    let n = 1;
+    while (findNote(score, 'n_generated_' + n)) n++;
+    return 'n_generated_' + n;
+  }
+
   function validatePatch(patch, clip){
     const errors = [];
     const warnings = [];
@@ -256,32 +347,49 @@
     if (!patch || typeof patch !== 'object'){
       return { ok:false, errors:['patch_not_object'], warnings:[] };
     }
+    _validateForbiddenFields(patch, 'patch', errors);
     if (!Array.isArray(patch.ops)) errors.push('ops_not_array');
 
     const ops = Array.isArray(patch.ops) ? patch.ops : [];
     const score = clip && clip.score ? clip.score : null;
+    const addLimit = score ? _addNoteLimitForScore(score) : 64;
+    const clipSpanBeat = score ? _clipSpanBeat(clip, score) : 0;
+    let addCount = 0;
 
     // Basic per-op validation (semantic sanity is in T3-3).
     for (let i=0; i<ops.length; i++){
       const op = ops[i];
       if (!op || typeof op !== 'object'){ errors.push('op['+i+']_not_object'); continue; }
+      _validateForbiddenFields(op, 'op['+i+']', errors);
       const kind = String(op.op || '');
       if (!kind) { errors.push('op['+i+']_missing_op'); continue; }
 
       if (kind === 'addNote'){
-        if (typeof op.trackId !== 'string' || !op.trackId) errors.push('op['+i+']_add_trackId_required');
+        addCount += 1;
+        if (addCount > addLimit) errors.push('op['+i+']_add_count_excess:' + addCount + '>' + addLimit);
+        if (score){
+          const tid = (typeof op.trackId === 'string' && op.trackId) ? op.trackId : getDefaultTrackId(score);
+          if (!tid || !findTrack(score, tid)) errors.push('op['+i+']_add_track_not_found:' + String(tid || ''));
+        } else if (typeof op.trackId !== 'string' || !op.trackId) {
+          errors.push('op['+i+']_add_trackId_required');
+        }
         if (!op.note || typeof op.note !== 'object'){
           errors.push('op['+i+']_add_missing_note');
         } else {
           const n = op.note;
+          _validateForbiddenFields(n, 'op['+i+']_add_note', errors);
           const sb = Number(n.startBeat);
           const db = Number(n.durationBeat);
           const pit = Number(n.pitch);
           const vel = Number(n.velocity);
-          if (!isFiniteNumber(sb)) errors.push('op['+i+']_add_startBeat_invalid');
+          if (!isFiniteNumber(sb) || sb < 0) errors.push('op['+i+']_add_startBeat_invalid');
           if (!isFiniteNumber(db) || !(db > 0)) errors.push('op['+i+']_add_durationBeat_invalid');
           if (!isFiniteNumber(pit) || pit < 0 || pit > 127) errors.push('op['+i+']_add_pitch_oob');
           if (!isFiniteNumber(vel) || vel < 1 || vel > 127) errors.push('op['+i+']_add_velocity_oob');
+          if (clipSpanBeat > 0 && isFiniteNumber(sb) && isFiniteNumber(db) && sb >= 0 && db > 0){
+            const endBeat = sb + db;
+            if (endBeat > clipSpanBeat + 1e-6) errors.push('op['+i+']_add_outside_clip_span:' + endBeat + '>' + clipSpanBeat);
+          }
         }
       } else if (kind === 'deleteNote'){
         if (!op.noteId) errors.push('op['+i+']_delete_missing_noteId');
@@ -362,10 +470,10 @@
       if (kind === 'addNote'){
         const score = outClip.score;
         const trackId = op.trackId ? String(op.trackId) : getDefaultTrackId(score);
-        const t = ensureTrack(score, trackId, api);
-        const uid = (api && typeof api.uid === 'function') ? api.uid : (p)=> (p||'id_') + Math.random().toString(16).slice(2,10);
+        const t = findTrack(score, trackId);
+        if (!t) return { ok:false, errors:['op['+i+']_add_track_not_found:' + trackId], warnings:v.warnings };
         const nIn = op.note || {};
-        const noteId = String(nIn.id || uid('n_'));
+        const noteId = makeUniqueNoteId(score, api);
         const newNote = {
           id: noteId,
           pitch: coercePitch(nIn.pitch),

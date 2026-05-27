@@ -628,12 +628,80 @@ async function testOptimizePromptPlumbing() {
   console.log('PASS optimize prompt plumbing');
 }
 
+async function testLlmAddNotePatchSummarySmoke(){
+  ensureProjectLoaded();
+  ensureAgentPatchLoaded();
+
+  const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
+  const H2SProject = globalThis.H2SProject;
+
+  let project = {
+    version: 2,
+    timebase: 'beat',
+    bpm: 120,
+    tracks: [{ id: 'trk_0', name: 'Track 1', instrument: 'default', gainDb: 0, muted: false, trackId: 'trk_0' }],
+    clips: {},
+    clipOrder: [],
+    instances: [],
+    ui: { pxPerBeat: 120, playheadBeat: 0 },
+  };
+
+  const clip = H2SProject.createClipFromScoreBeat({
+    version: 2,
+    tracks: [{ id: 't0', notes: [{ id: 'n0', pitch: 60, velocity: 90, startBeat: 0, durationBeat: 1 }] }],
+  }, { id: 'clip_llm_addnote_summary', name: 'llm addNote summary' });
+  project.clips[clip.id] = clip;
+  project.clipOrder.push(clip.id);
+  if (H2SProject.normalizeProjectRevisionChains) H2SProject.normalizeProjectRevisionChains(project);
+
+  const cid = clip.id;
+  const patch = { version: 1, clipId: cid, ops: [{ op: 'addNote', note: { pitch: 67, velocity: 80, startBeat: 0, durationBeat: 1 } }] };
+  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+  const prevClient = globalThis.H2S_LLM_CLIENT;
+  const prevConfig = globalThis.H2S_LLM_CONFIG;
+  globalThis.H2S_LLM_CLIENT = {
+    callChatCompletions: async () => ({ text: rawText }),
+    extractJsonObject: (text) => {
+      const m = (text || '').match(/```json\s*([\s\S]*?)\s*```/);
+      return m ? JSON.parse(m[1]) : null;
+    },
+  };
+  globalThis.H2S_LLM_CONFIG = {
+    loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: false }),
+  };
+
+  try {
+    const ctrl = AgentController.create({
+      getProjectV2: () => project,
+      setProjectFromV2: (p) => { project = p; },
+      persist: () => {},
+      render: () => {},
+    });
+    const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'add harmony' });
+    assert(res && res.ok === true && res.ops === 1, 'llm addNote should apply');
+    assert(res.patchSummary && res.patchSummary.byOp && res.patchSummary.byOp.addNote === 1, 'patchSummary.byOp.addNote should be 1');
+    assert(res.patchSummary.hasStructuralChange === true, 'patchSummary should mark structural change');
+    const head = project.clips[cid];
+    assert(head.meta && head.meta.agent && head.meta.agent.patchSummary.byOp.addNote === 1, 'stored patchSummary keeps addNote count');
+    assert(head.score.tracks[0].notes.length === 2, 'addNote should insert one note');
+    const rb = H2SProject.rollbackClipRevision(project, cid);
+    assert(rb && rb.ok, 'rollback after addNote should work');
+    assert(project.clips[cid].score.tracks[0].notes.length === 1, 'rollback should remove added note');
+  } finally {
+    globalThis.H2S_LLM_CLIENT = prevClient;
+    globalThis.H2S_LLM_CONFIG = prevConfig;
+  }
+
+  console.log('PASS llm addNote patchSummary smoke');
+}
+
 (async () => {
   await testPatchSummarySmoke();
   await testPersistReloadRevchain();
   await testRollbackRevchain();
   await testOptPresetPersistReload();
   await testOptimizePromptPlumbing();
+  await testLlmAddNotePatchSummarySmoke();
 })().catch((e) => {
   console.error(e);
   process.exit(1);

@@ -431,6 +431,7 @@
   "lastOpt.detail.lblPath": "Path",
   "lastOpt.detail.lblOutcome": "Result",
   "lastOpt.detail.lblOps": "Operations",
+  "lastOpt.detail.lblOpsByType": "Operations by type",
   "lastOpt.detail.lblRevision": "Revision",
   "lastOpt.detail.lblStale": "Matches current state",
   "lastOpt.detail.valCurrent": "Yes",

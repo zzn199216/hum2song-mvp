@@ -2940,6 +2940,12 @@ async optimizeClip(clipId, optOverride){
       }
       addRow('lastOpt.detail.lblOutcome', outcomeLine);
       addRow('lastOpt.detail.lblOps', String(ops));
+      if (ps && ps.byOp && typeof ps.byOp === 'object'){
+        const opParts = Object.keys(ps.byOp).filter((k) => Number(ps.byOp[k]) > 0)
+          .sort()
+          .map((k) => k + ': ' + String(Math.floor(Number(ps.byOp[k]))));
+        if (opParts.length) addRow('lastOpt.detail.lblOpsByType', opParts.join(', '));
+      }
       const revNew = !noCh && ops > 0;
       addRow('lastOpt.detail.lblRevision', revNew ? t('lastOpt.rev.newVersion') : t('lastOpt.rev.noChange'));
     }

@@ -103,7 +103,8 @@
     let body = 'Convert this into exactly one valid Hum2Song patch JSON object in a ```json``` block. No <think>, no hidden reasoning, no prose.\n';
     body += 'Schema: ' + schema + '\n';
     if (safeMode) body += 'Only setNote velocity edits are allowed.\n';
-    if (ids) body += 'Allowed noteIds: ' + ids + '\n';
+    else body += 'Allowed ops: setNote, moveNote, deleteNote, addNote. addNote may omit trackId to use the current clip primary track and must omit note.id.\n';
+    if (ids) body += 'Allowed noteIds for setNote/moveNote/deleteNote: ' + ids + '\n';
     body += 'Previous model response:\n<<<\n' + _boundedModelResponse(previousText) + '\n>>>';
     return body;
   }
@@ -147,11 +148,10 @@
     const ops = (patchObj && Array.isArray(patchObj.ops)) ? patchObj.ops : [];
     for (let i = 0; i < ops.length; i++){
       const opType = ops[i] && ops[i].op != null ? String(ops[i].op) : '';
-      if (opType === 'addNote') return 'unsupported_operation';
-      if (opType && !/^(setNote|moveNote|deleteNote)$/.test(opType)) return 'unsupported_operation';
+      if (opType && !/^(setNote|moveNote|deleteNote|addNote)$/.test(opType)) return 'unsupported_operation';
     }
     if (arr.some(function(e){ return /note_not_found|missing_noteId|_missing_noteId/.test(e); })) return 'invalid_note_reference';
-    if (arr.some(function(e){ return /seconds_field|startBeat|durationBeat|deltaBeat|timing/i.test(e); })) return 'invalid_timing';
+    if (arr.some(function(e){ return /seconds_field|startBeat|durationBeat|deltaBeat|outside_clip_span|timing/i.test(e); })) return 'invalid_timing';
     if (arr.some(function(e){ return /pitch|velocity/i.test(e); })) return 'invalid_pitch_or_velocity';
     if (arr.some(function(e){ return /unknown_op|unsupported/i.test(e); })) return 'unsupported_operation';
     return 'validation_failed';
@@ -909,14 +909,13 @@
           'Shape dynamics musically within those safety limits; avoid tiny no-op changes when the user asks for expression. ' +
           'Use only noteIds from the prompt.';
       } else {
-        // Normal mode: reversible musical edits; addNote remains disabled until fully supported.
-        systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in a single ```json ... ``` block. No <think>, no hidden reasoning, no explanation, no prose before or after. ' +
+        // Normal mode: reversible musical edits, including bounded note creation.
+        systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in one ```json``` block; no <think>, reasoning, explanation, or prose. ' +
           'Schema: {"version":1,"clipId":"<clipId>","ops":[...]}. ' +
-          'Allowed ops: setNote(noteId plus one or more of pitch 0-127,velocity 1-127,startBeat >=0,durationBeat >0), ' +
-          'moveNote(noteId,deltaBeat), deleteNote(noteId) for a few obvious outliers. Do not use addNote. ' +
-          'Make musically meaningful, reversible edits across pitch, timing, duration, velocity, and bounded outlier deletion when useful. ' +
-          'The project keeps a revision chain and users can revert, but every patch must satisfy the schema. ' +
-          'All numbers must be finite and beats-only; never include seconds fields. Use only listed noteIds for setNote/moveNote/deleteNote.';
+          'Allowed ops: setNote(noteId plus pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0), moveNote(noteId,deltaBeat), deleteNote(noteId), addNote(optional existing trackId,note:{pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0}). ' +
+          'Use addNote for chords, harmony, passing tones, octave doubles, fuller texture, or adding notes; not ordinary cleanup. ' +
+          'addNote stays inside the current clip, may omit trackId for the primary track, must omit note.id, and must not create tracks or change timeline/timebase/tempo/project fields. ' +
+          'All numbers finite beats-only; never seconds. Use listed noteIds only for setNote/moveNote/deleteNote.';
       }
 
       // PR-8B-1: User message with structured clip hint including allowed noteIds
@@ -976,7 +975,7 @@
 
       let baseUserContent = promptBody + clipHint;
       if (!safeMode){
-        baseUserContent = 'User prompt may require pitch/timing/duration/velocity changes or deleting a few obvious outlier notes. Do not respond with velocity-only unless explicitly requested. Make musically meaningful edits and prefer expressive but bounded reversible changes over tiny no-op patches. Use setNote, moveNote, or bounded deleteNote only; do not use addNote. Keep all timing in beats, never seconds.\n\n' + baseUserContent;
+        baseUserContent = 'Make musically meaningful edits; do not respond with velocity-only unless explicitly requested. Prefer expressive but bounded reversible changes. Use addNote only for needed harmony/chords/passing tones/octaves/fullness; inside current clip only, no new tracks, no timeline/timebase changes, beats only, never seconds.\n\n' + baseUserContent;
       }
       const client = cloudClient || ROOT.H2S_LLM_CLIENT;
       if (!client || typeof client.callChatCompletions !== 'function' || typeof client.extractJsonObject !== 'function'){
@@ -1147,7 +1146,7 @@
           const unsupportedOps = [];
           for (let i = 0; i < patchObj.ops.length; i++){
             const opType = patchObj.ops[i] && patchObj.ops[i].op != null ? String(patchObj.ops[i].op) : '';
-            if (opType === 'addNote' || (opType && !/^(setNote|moveNote|deleteNote)$/.test(opType))){
+            if (opType && !/^(setNote|moveNote|deleteNote|addNote)$/.test(opType)){
               unsupportedOps.push(opType || 'unknown');
             }
           }

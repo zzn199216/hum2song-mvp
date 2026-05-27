@@ -431,6 +431,7 @@
   "lastOpt.detail.lblPath": "路径",
   "lastOpt.detail.lblOutcome": "结果",
   "lastOpt.detail.lblOps": "操作数",
+  "lastOpt.detail.lblOpsByType": "按类型统计",
   "lastOpt.detail.lblRevision": "版本",
   "lastOpt.detail.lblStale": "是否与当前状态一致",
   "lastOpt.detail.valCurrent": "是",
