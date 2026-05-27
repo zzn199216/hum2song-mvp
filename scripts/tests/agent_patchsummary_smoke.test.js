@@ -656,7 +656,7 @@ async function testLlmAddNotePatchSummarySmoke(){
 
   const cid = clip.id;
   const patch = { version: 1, clipId: cid, ops: [{ op: 'addNote', note: { pitch: 67, velocity: 80, startBeat: 0, durationBeat: 1 } }] };
-  const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
+  let rawText = '```json\n' + JSON.stringify(patch) + '\n```';
   const prevClient = globalThis.H2S_LLM_CLIENT;
   const prevConfig = globalThis.H2S_LLM_CONFIG;
   globalThis.H2S_LLM_CLIENT = {
@@ -687,6 +687,16 @@ async function testLlmAddNotePatchSummarySmoke(){
     const rb = H2SProject.rollbackClipRevision(project, cid);
     assert(rb && rb.ok, 'rollback after addNote should work');
     assert(project.clips[cid].score.tracks[0].notes.length === 1, 'rollback should remove added note');
+
+    rawText = '```json\n' + JSON.stringify({
+      version: 1,
+      clipId: cid,
+      ops: [{ note: { pitch: 64, velocity: 76, startBeat: 0, durationBeat: 1 } }],
+    }) + '\n```';
+    const resNormalized = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'turn melody into chords' });
+    assert(resNormalized && resNormalized.ok === true && resNormalized.ops === 1, 'missing-op note-like addNote should normalize and apply');
+    assert(resNormalized.patchSummary && resNormalized.patchSummary.byOp && resNormalized.patchSummary.byOp.addNote === 1, 'normalized addNote keeps patchSummary count');
+    assert(project.clips[cid].score.tracks[0].notes.length === 2, 'normalized addNote should insert one note');
   } finally {
     globalThis.H2S_LLM_CLIENT = prevClient;
     globalThis.H2S_LLM_CONFIG = prevConfig;

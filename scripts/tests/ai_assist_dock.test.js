@@ -31,6 +31,24 @@ function assert(cond, msg) {
   console.log('PASS AI plan prompt allows more musical plan');
 })();
 
+(function testOptimizeCardCopySimplifiedSource(){
+  const fs = require('fs');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../static/pianoroll/app.js'), 'utf8');
+  const start = src.indexOf('_renderAiAssistDock(){');
+  const end = src.indexOf('this._syncStudioAiDockRightPanelSafeBottom();', start);
+  assert(start >= 0 && end > start, 'render source slice available');
+  const renderSrc = src.slice(start, end);
+  assert(renderSrc.indexOf('aiAssist.cardTask') >= 0, 'Optimize card renders friendly task label');
+  assert(renderSrc.indexOf('aiAssist.cardTaskOptimizeMelody') >= 0, 'Optimize card renders user-friendly task name');
+  assert(renderSrc.indexOf('aiAssist.cardRequest') >= 0, 'Optimize card renders user request label');
+  assert(renderSrc.indexOf('aiAssist.cardStatus') >= 0, 'Optimize card renders status label');
+  assert(renderSrc.indexOf('aiAssist.statusIdle') >= 0, 'Optimize card shows idle status');
+  assert(renderSrc.indexOf('aiAssistCardPlan') < 0, 'Optimize card main body must not show verbose plan block');
+  assert(renderSrc.indexOf('plan.planLines') < 0, 'Optimize card main body must not render Goal/Strategy/Note lines');
+  assert(src.indexOf('patchSummary.detail') >= 0, 'Assistant details trace keeps validation detail');
+  console.log('PASS Optimize card copy simplified source');
+})();
+
 // Stub I18N
 const I18N = { t: (k) => { const m = { 'aiAssist.selectClipFirst': 'Select a clip first.', 'aiAssist.selectedClipStale': 'That clip is no longer in the project.', 'aiAssist.skillDisabled': 'That assistant action is unavailable.', 'aiAssist.addClipToTimelineRunning': 'Adding clip to timeline…', 'aiAssist.addClipToTimelineOk': 'Added clip to timeline.', 'aiAssist.addClipToTimelineFail': 'Could not add clip to timeline', 'aiAssist.addClipToTimelineTrackOutOfRange': 'Track {n} is out of range (1-{max}).', 'aiAssist.addClipToTimelineBeatInvalid': 'Beat value must be a non-negative number.', 'aiAssist.addTrackRunning': 'Adding track…', 'aiAssist.addTrackOk': 'Added track {n}.', 'aiAssist.addTrackFail': 'Could not add track', 'aiAssist.selectInstanceFirst': 'Select a timeline instance first.', 'aiAssist.moveInstanceStale': 'That instance is no longer in the project.', 'aiAssist.moveInstanceRunning': 'Moving instance…', 'aiAssist.moveInstanceFail': 'Could not move instance', 'aiAssist.moveInstanceOk': 'Moved {dir} by {delta} beats.', 'aiAssist.moveInstanceOkTrack': 'Moved instance to track {n}.', 'aiAssist.moveInstanceClamped': '(Start clamped to beat 0.)', 'aiAssist.removeInstanceConfirm': 'Remove ({name})?', 'aiAssist.removeInstanceCancelled': 'Remove cancelled.', 'aiAssist.removeInstanceRunning': 'Removing instance…', 'aiAssist.removeInstanceOk': 'Removed timeline instance.', 'aiAssist.removeInstanceFail': 'Could not remove instance', 'aiAssist.dirLeft': 'left', 'aiAssist.dirRight': 'right', 'aiAssist.run': 'Run', 'aiAssist.openOptimize': 'Open Optimize', 'aiAssist.undo': 'Undo', 'aiAssist.noClip': 'No clip selected', 'aiAssist.clipPrefix': 'Clip: ', 'aiAssist.trackPrefix': 'Track ', 'aiAssist.addBassRunning': 'Adding bass…', 'aiAssist.addBassOk': 'Bass accompaniment added.', 'aiAssist.addBassFail': 'Could not add bass: {detail}', 'aiAssist.addAccompanimentRunning': 'Adding accompaniment…', 'aiAssist.addAccompanimentOk': 'Accompaniment added. You can open Arrangement Details to inspect the prompt and patch.', 'aiAssist.addAccompanimentFail': 'Could not add accompaniment: {detail}', 'aiAssist.addAccompanimentCancelled': 'Add accompaniment cancelled.', 'aiAssist.addAccompanimentConfirm': 'I\'ll add an experimental accompaniment to the currently selected melody without changing the original. Continue?', 'aiAssist.addAccompanimentContinue': 'Continue', 'aiAssist.addAccompanimentCancel': 'Cancel', 'aiAssist.selectMelodyTimelineFirst': 'Select melody on timeline.', 'aiAssist.addAccompanimentNeedsNoteClip': 'This needs an editable note clip. Convert the audio to editable notes first.', 'aiAssist.intentRouterArrangementHint': 'HINT_ARR', 'aiAssist.intentRouterAccompanimentFaq': 'FAQ_ACCOMP' }; return m[k] || k; } };
 
@@ -310,7 +328,7 @@ function _enrichReasoningLogFromRun(log, patchSummary, accepted, runState, resul
     log.executedPreset = (patchSummary.executedPreset != null && String(patchSummary.executedPreset).trim()) ? String(patchSummary.executedPreset).trim() : null;
     log.executedSource = (patchSummary.executedSource != null && String(patchSummary.executedSource).trim()) ? String(patchSummary.executedSource).trim() : null;
     log.promptVersion = (patchSummary.promptMeta && patchSummary.promptMeta.promptVersion != null && String(patchSummary.promptMeta.promptVersion).trim()) ? String(patchSummary.promptMeta.promptVersion).trim() : null;
-    log.patchSummary = { ops: typeof patchSummary.ops === 'number' ? patchSummary.ops : null, status: (patchSummary.status != null && String(patchSummary.status).trim()) ? String(patchSummary.status).trim() : null, reason: (patchSummary.reason != null && String(patchSummary.reason).trim()) ? String(patchSummary.reason).trim().slice(0, 80) : null };
+    log.patchSummary = { ops: typeof patchSummary.ops === 'number' ? patchSummary.ops : null, status: (patchSummary.status != null && String(patchSummary.status).trim()) ? String(patchSummary.status).trim() : null, reason: (patchSummary.reason != null && String(patchSummary.reason).trim()) ? String(patchSummary.reason).trim().slice(0, 80) : null, detail: (patchSummary.detail != null && String(patchSummary.detail).trim()) ? String(patchSummary.detail).trim().slice(0, 240) : null };
   } else {
     log.executedPreset = null;
     log.executedSource = null;
@@ -384,6 +402,7 @@ function _compactPatchSummaryForExecutionTrace(ps) {
   if (typeof ps.ops === 'number' && isFinite(ps.ops)) out.ops = ps.ops;
   if (ps.status != null && String(ps.status).trim()) out.status = String(ps.status).trim().slice(0, 40);
   if (ps.reason != null && String(ps.reason).trim()) out.reason = String(ps.reason).trim().slice(0, 80);
+  if (ps.detail != null && String(ps.detail).trim()) out.detail = String(ps.detail).trim().slice(0, 240);
   if (ps.noChanges === true) out.noChanges = true;
   return Object.keys(out).length ? out : null;
 }
@@ -3150,6 +3169,7 @@ function buildAiAssistDebugHtmlTest(it, escapeHtml, ls) {
       if (rl.patchSummary.ops != null) set('patchSummary.ops', rl.patchSummary.ops);
       if (rl.patchSummary.status != null) set('patchSummary.status', rl.patchSummary.status);
       if (rl.patchSummary.reason != null) set('patchSummary.reason', rl.patchSummary.reason);
+      if (rl.patchSummary.detail != null) set('patchSummary.detail', rl.patchSummary.detail);
     }
   }
   if (et) {
@@ -3165,6 +3185,7 @@ function buildAiAssistDebugHtmlTest(it, escapeHtml, ls) {
       if (et.patchSummary.ops != null) set('patchSummary.ops', et.patchSummary.ops);
       if (et.patchSummary.status != null) set('patchSummary.status', et.patchSummary.status);
       if (et.patchSummary.reason != null) set('patchSummary.reason', et.patchSummary.reason);
+      if (et.patchSummary.detail != null) set('patchSummary.detail', et.patchSummary.detail);
     }
     const lds = et.llmDebugSummary;
     if (lds && typeof lds === 'object') {
@@ -3178,7 +3199,7 @@ function buildAiAssistDebugHtmlTest(it, escapeHtml, ls) {
     'templateId', 'intent', 'planSource', 'planSummary', 'requestedPresetId', 'userPrompt',
     'executionPath', 'executedPreset', 'executedSource', 'promptVersion',
     'runState', 'resultKind', 'accepted', 'rejectionReason',
-    'patchSummary.ops', 'patchSummary.status', 'patchSummary.reason',
+    'patchSummary.ops', 'patchSummary.status', 'patchSummary.reason', 'patchSummary.detail',
     'llmDebugSummary.attemptCount', 'llmDebugSummary.safeModeResolved', 'llmDebugSummary.reason', 'llmDebugSummary.errorSummary',
   ];
   const rows = [];
@@ -3262,6 +3283,25 @@ function mockLs(debugOn) {
   assert(html.indexOf('patchSummary.ops') >= 0, 'patchSummary.ops visible');
   assert(html.indexOf('llmDebugSummary.attemptCount') >= 0, 'llmDebugSummary visible');
   console.log('PASS Debug PR2 trace HTML shows safe fields when debug on');
+})();
+
+(function testDebugPR2TraceHtmlShowsPatchValidationDetail() {
+  const card = {
+    reasoningLog: { planSummary: 'P', requestedPresetId: 'llm_v0' },
+    executionTrace: {
+      executionPath: 'llm',
+      patchSummary: {
+        ops: 3,
+        status: 'failed',
+        reason: 'validation_failed',
+        detail: 'op[0]_missing_op, op[1]_missing_op, op[2]_missing_op',
+      },
+    },
+  };
+  const html = buildAiAssistDebugHtmlTest(card, escapeHtmlForDbg, mockLs(true));
+  assert(html.indexOf('patchSummary.detail') >= 0, 'patchSummary.detail visible in trace');
+  assert(html.indexOf('op[0]_missing_op') >= 0, 'validation detail visible in trace');
+  console.log('PASS Debug PR2 trace HTML shows patch validation detail');
 })();
 
 (function testDebugPR2TraceHtmlDoesNotLeakForbiddenFields() {

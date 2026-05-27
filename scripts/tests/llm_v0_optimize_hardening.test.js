@@ -468,6 +468,8 @@ async function testAddNoteChordifyAppliesWithGeneratedIds(){
   assert(res.patchSummary.byOp && res.patchSummary.byOp.addNote === 2, 'patchSummary includes addNote count');
   assert(res.patchSummary.hasStructuralChange === true, 'addNote is structural');
   assert(res.llmPromptTrace && res.llmPromptTrace.finalSystemPrompt.indexOf('addNote') >= 0, 'prompt mentions addNote');
+  assert(res.llmPromptTrace.finalSystemPrompt.indexOf('Example addNote') >= 0, 'prompt includes addNote example');
+  assert(res.llmPromptTrace.finalSystemPrompt.indexOf('"op":"addNote"') >= 0, 'prompt example shows op discriminator');
   assert(res.llmPromptTrace.finalSystemPrompt.indexOf('Do not use addNote') < 0, 'prompt no longer forbids addNote');
   const notes = flattenNotes(state.project.clips[cid]);
   assert(notes.length === 3, 'two generated notes added');
@@ -483,6 +485,91 @@ async function testAddNoteChordifyAppliesWithGeneratedIds(){
   const rb = globalThis.H2SProject.rollbackClipRevision(state.project, cid);
   assert(rb && rb.ok, 'rollback succeeds after addNote revision');
   assert(flattenNotes(state.project.clips[cid]).length === 1, 'rollback removes added notes');
+}
+
+async function testMissingOpFlatNoteLikeObjectNormalizesToAddNote(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+
+  const patch = {
+    version: 1,
+    clipId: cid,
+    ops: [
+      { pitch: 64, velocity: 78, startBeat: 0, durationBeat: 1 },
+    ],
+  };
+  installPatchLlmMock(patch);
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: '把它做成好听的和弦' });
+  assert(res && res.ok === true && res.ops === 1, 'flat missing-op note-like object normalizes to addNote');
+  assertLlmOutcomeContract(res, 'applied');
+  assert(res.patchSummary.byOp && res.patchSummary.byOp.addNote === 1, 'normalized flat object counted as addNote');
+  const notes = flattenNotes(state.project.clips[cid]);
+  assert(notes.length === 2, 'normalized flat object inserts note');
+  const added = notes.find((n) => String(n.id) !== 'n0');
+  assert(added && added.pitch === 64 && added.trackId === 't0', 'normalized flat addNote uses default track');
+}
+
+async function testMissingOpNestedNoteObjectNormalizesToAddNote(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+
+  const patch = {
+    version: 1,
+    clipId: cid,
+    ops: [
+      { note: { pitch: 67, velocity: 76, startBeat: 0, durationBeat: 1 } },
+    ],
+  };
+  installPatchLlmMock(patch);
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'add harmony' });
+  assert(res && res.ok === true && res.ops === 1, 'nested missing-op note object normalizes to addNote');
+  assertLlmOutcomeContract(res, 'applied');
+  assert(res.patchSummary.byOp && res.patchSummary.byOp.addNote === 1, 'normalized nested object counted as addNote');
+  const notes = flattenNotes(state.project.clips[cid]);
+  const added = notes.find((n) => String(n.id) !== 'n0');
+  assert(added && added.pitch === 67 && added.trackId === 't0', 'normalized nested addNote uses default track');
+}
+
+async function testMissingOpAmbiguousObjectStillFails(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+  const before = JSON.stringify(state.project.clips[cid].score);
+
+  installPatchLlmMock({ version: 1, clipId: cid, ops: [{ pitch: 64, velocity: 78 }] });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'add harmony' });
+  assert(res && res.ok === false && res.reason === 'validation_failed', 'ambiguous missing-op object remains rejected');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(String(res.detail || '').indexOf('missing_op') >= 0, 'ambiguous rejection keeps missing_op diagnostic');
+  assert(JSON.stringify(state.project.clips[cid].score) === before, 'ambiguous missing-op rejection leaves original unchanged');
+}
+
+async function testMissingOpSecondsObjectStillFails(){
+  loadAgentController();
+  const { project: proj, clip } = makeClip();
+  const state = { project: proj };
+  const cid = clip.id;
+  const before = JSON.stringify(state.project.clips[cid].score);
+
+  installPatchLlmMock({ version: 1, clipId: cid, ops: [{ pitch: 64, velocity: 78, startBeat: 0, durationBeat: 1, startSec: 0 }] });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'add harmony' });
+  assert(res && res.ok === false && res.reason === 'invalid_timing', 'missing-op object with seconds remains rejected');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(String(res.detail || '').indexOf('seconds_field') >= 0, 'seconds rejection keeps seconds diagnostic');
+  assert(JSON.stringify(state.project.clips[cid].score) === before, 'seconds missing-op rejection leaves original unchanged');
 }
 
 async function testAddNoteProvidedIdIsRewrittenAndMixedSetNoteApplies(){
@@ -1512,6 +1599,10 @@ async function main(){
   await testTooManyDeletesRejectedAndClipUnchanged();
   await testInvalidNoteIdRejectedWithSpecificReason();
   await testAddNoteChordifyAppliesWithGeneratedIds();
+  await testMissingOpFlatNoteLikeObjectNormalizesToAddNote();
+  await testMissingOpNestedNoteObjectNormalizesToAddNote();
+  await testMissingOpAmbiguousObjectStillFails();
+  await testMissingOpSecondsObjectStillFails();
   await testAddNoteProvidedIdIsRewrittenAndMixedSetNoteApplies();
   await testAddNoteInvalidTrackRejectedAndClipUnchanged();
   await testAddNoteSecondsFieldsRejected();

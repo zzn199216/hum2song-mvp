@@ -1139,7 +1139,7 @@
       log.executedPreset = (patchSummary.executedPreset != null && String(patchSummary.executedPreset).trim()) ? String(patchSummary.executedPreset).trim() : null;
       log.executedSource = (patchSummary.executedSource != null && String(patchSummary.executedSource).trim()) ? String(patchSummary.executedSource).trim() : null;
       log.promptVersion = (patchSummary.promptMeta && patchSummary.promptMeta.promptVersion != null && String(patchSummary.promptMeta.promptVersion).trim()) ? String(patchSummary.promptMeta.promptVersion).trim() : null;
-      log.patchSummary = { ops: typeof patchSummary.ops === 'number' ? patchSummary.ops : null, status: (patchSummary.status != null && String(patchSummary.status).trim()) ? String(patchSummary.status).trim() : null, reason: (patchSummary.reason != null && String(patchSummary.reason).trim()) ? String(patchSummary.reason).trim().slice(0, 80) : null };
+      log.patchSummary = { ops: typeof patchSummary.ops === 'number' ? patchSummary.ops : null, status: (patchSummary.status != null && String(patchSummary.status).trim()) ? String(patchSummary.status).trim() : null, reason: (patchSummary.reason != null && String(patchSummary.reason).trim()) ? String(patchSummary.reason).trim().slice(0, 80) : null, detail: (patchSummary.detail != null && String(patchSummary.detail).trim()) ? String(patchSummary.detail).trim().slice(0, 240) : null };
     } else {
       log.executedPreset = null;
       log.executedSource = null;
@@ -1215,6 +1215,7 @@
     if (typeof ps.ops === 'number' && isFinite(ps.ops)) out.ops = ps.ops;
     if (ps.status != null && String(ps.status).trim()) out.status = String(ps.status).trim().slice(0, 40);
     if (ps.reason != null && String(ps.reason).trim()) out.reason = String(ps.reason).trim().slice(0, 80);
+    if (ps.detail != null && String(ps.detail).trim()) out.detail = String(ps.detail).trim().slice(0, 240);
     if (ps.noChanges === true) out.noChanges = true;
     return Object.keys(out).length ? out : null;
   }
@@ -1317,6 +1318,7 @@
         if (rl.patchSummary.ops != null) set('patchSummary.ops', rl.patchSummary.ops);
         if (rl.patchSummary.status != null) set('patchSummary.status', rl.patchSummary.status);
         if (rl.patchSummary.reason != null) set('patchSummary.reason', rl.patchSummary.reason);
+        if (rl.patchSummary.detail != null) set('patchSummary.detail', rl.patchSummary.detail);
       }
     }
     if (et){
@@ -1332,6 +1334,7 @@
         if (et.patchSummary.ops != null) set('patchSummary.ops', et.patchSummary.ops);
         if (et.patchSummary.status != null) set('patchSummary.status', et.patchSummary.status);
         if (et.patchSummary.reason != null) set('patchSummary.reason', et.patchSummary.reason);
+        if (et.patchSummary.detail != null) set('patchSummary.detail', et.patchSummary.detail);
       }
       const lds = et.llmDebugSummary;
       if (lds && typeof lds === 'object'){
@@ -1345,7 +1348,7 @@
       'templateId', 'intent', 'planSource', 'planSummary', 'requestedPresetId', 'userPrompt',
       'executionPath', 'executedPreset', 'executedSource', 'promptVersion',
       'runState', 'resultKind', 'accepted', 'rejectionReason',
-      'patchSummary.ops', 'patchSummary.status', 'patchSummary.reason',
+      'patchSummary.ops', 'patchSummary.status', 'patchSummary.reason', 'patchSummary.detail',
       'llmDebugSummary.attemptCount', 'llmDebugSummary.safeModeResolved', 'llmDebugSummary.reason', 'llmDebugSummary.errorSummary',
     ];
     const rows = [];
@@ -4616,30 +4619,16 @@ ensureTrackButtons(){
             const c = p2 && p2.clips && p2.clips[it.clipId];
             const canUndo = !!(c && c.parentRevisionId != null && String(c.parentRevisionId).trim());
             const runState = it.runState || 'idle';
-            const tl = (it.templateLabel && String(it.templateLabel).trim()) ? String(it.templateLabel).trim() : null;
-            const up = (it.usedPresetId && String(it.usedPresetId).trim()) ? String(it.usedPresetId).trim() : null;
             const dataRunState = runState !== 'idle' ? (' data-run-state="' + escapeHtml(runState) + '"') : '';
             html += '<div class="aiAssistCard" data-clip-id="' + escapeHtml(String(it.clipId)) + '"' + dataRunState + '>';
-            html += '<div class="aiAssistCardPrompt">' + escapeHtml(it.promptText) + '</div>';
-            const plan = it.plan && Array.isArray(it.plan.planLines) && it.plan.planLines.length > 0 ? it.plan : null;
-            if (plan) {
-              html += '<div class="aiAssistCardPlan" data-plan-kind="' + escapeHtml(plan.planKind || 'generic') + '" style="font-size:10px; color:var(--muted); margin-bottom:6px; line-height:1.35;">';
-              if (plan.planTitle) html += '<div class="aiAssistCardPlanTitle" style="font-weight:600; margin-bottom:2px;">' + escapeHtml(plan.planTitle) + '</div>';
-              for (let i = 0; i < plan.planLines.length; i++) html += '<div class="aiAssistCardPlanLine">' + escapeHtml(plan.planLines[i]) + '</div>';
-              html += '</div>';
-            }
-            if (tl || up){
-              const metaText = (tl && up) ? (escapeHtml(tl) + ' · ' + escapeHtml(up)) : (tl ? escapeHtml(tl) : escapeHtml(up));
-              html += '<div class="aiAssistCardMeta">' + metaText + '</div>';
-            }
-            if (runState !== 'idle'){
-              let statusLine = '';
-              if (runState === 'running') statusLine = _t('aiAssist.statusRunning');
-              else if (runState === 'done') statusLine = (it.resultKind === 'no-op') ? _t('aiAssist.resultNoOp') : (it.resultKind === 'velocity-only') ? _t('aiAssist.resultVelocityOnly') : (it.resultKind === 'pitch/timing') ? _t('aiAssist.resultPitchTiming') : (it.resultKind === 'structure') ? _t('aiAssist.resultStructure') : _t('aiAssist.resultUpdated');
-              else if (runState === 'failed') statusLine = _t('aiAssist.statusFailed') + ': ' + escapeHtml((it.lastError || 'error').slice(0, 80));
-              else if (runState === 'undone') statusLine = _t('aiAssist.statusUndone');
-              html += '<div class="aiAssistCardStatus">' + statusLine + '</div>';
-            }
+            html += '<div class="aiAssistCardLine" style="font-size:11px; line-height:1.45;"><span class="aiAssistCardLabel" style="color:var(--muted);">' + escapeHtml(_t('aiAssist.cardTask')) + '</span><span> ' + escapeHtml(_t('aiAssist.cardTaskOptimizeMelody')) + '</span></div>';
+            html += '<div class="aiAssistCardLine aiAssistCardPrompt" style="font-size:11px; line-height:1.45;"><span class="aiAssistCardLabel" style="color:var(--muted);">' + escapeHtml(_t('aiAssist.cardRequest')) + '</span><span> ' + escapeHtml(it.promptText) + '</span></div>';
+            let statusLine = _t('aiAssist.statusIdle');
+            if (runState === 'running') statusLine = _t('aiAssist.statusRunning');
+            else if (runState === 'done') statusLine = (it.resultKind === 'no-op') ? _t('aiAssist.resultNoOp') : (it.resultKind === 'velocity-only') ? _t('aiAssist.resultVelocityOnly') : (it.resultKind === 'pitch/timing') ? _t('aiAssist.resultPitchTiming') : (it.resultKind === 'structure') ? _t('aiAssist.resultStructure') : _t('aiAssist.resultUpdated');
+            else if (runState === 'failed') statusLine = _t('aiAssist.statusFailed') + ': ' + (it.lastError || 'error').slice(0, 80);
+            else if (runState === 'undone') statusLine = _t('aiAssist.statusUndone');
+            html += '<div class="aiAssistCardLine aiAssistCardStatus" style="font-size:11px; line-height:1.45; margin-top:2px;"><span class="aiAssistCardLabel" style="color:var(--muted);">' + escapeHtml(_t('aiAssist.cardStatus')) + '</span><span> ' + escapeHtml(statusLine) + '</span></div>';
             const dbgHtml = _buildAiAssistDebugHtml(it, escapeHtml);
             if (dbgHtml){
               const dbgKey = String(it.clipId) + '\0' + String(it.createdAt);

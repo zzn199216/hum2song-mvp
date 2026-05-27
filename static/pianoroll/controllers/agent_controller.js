@@ -109,6 +109,130 @@
     return body;
   }
 
+  const ADD_NOTE_LIKE_FORBIDDEN_SECONDS_FIELDS = {
+    startSec: true,
+    durationSec: true,
+    endSec: true,
+    timeSec: true,
+    startSeconds: true,
+    durationSeconds: true,
+    endSeconds: true,
+    timeSeconds: true,
+    seconds: true,
+  };
+
+  const ADD_NOTE_LIKE_FORBIDDEN_TIMELINE_FIELDS = {
+    bpm: true,
+    tempo: true,
+    tempoBpm: true,
+    timebase: true,
+    timelineStartBeat: true,
+    timelineStartSec: true,
+    clipStartBeat: true,
+    clipStartSec: true,
+    trackName: true,
+    createTrack: true,
+    newTrack: true,
+  };
+
+  const ADD_NOTE_FLAT_FIELDS = {
+    pitch: true,
+    velocity: true,
+    startBeat: true,
+    durationBeat: true,
+    trackId: true,
+    id: true,
+  };
+
+  const ADD_NOTE_WRAPPER_FIELDS = {
+    note: true,
+    trackId: true,
+  };
+
+  const ADD_NOTE_NOTE_FIELDS = {
+    pitch: true,
+    velocity: true,
+    startBeat: true,
+    durationBeat: true,
+    id: true,
+  };
+
+  function _own(o, k){
+    return !!(o && Object.prototype.hasOwnProperty.call(o, k));
+  }
+
+  function _isPlainObject(o){
+    return !!(o && typeof o === 'object' && !Array.isArray(o));
+  }
+
+  function _hasForbiddenAddNoteLikeField(o){
+    if (!_isPlainObject(o)) return false;
+    for (const k in o){
+      if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+      if (ADD_NOTE_LIKE_FORBIDDEN_SECONDS_FIELDS[k] || ADD_NOTE_LIKE_FORBIDDEN_TIMELINE_FIELDS[k]) return true;
+    }
+    return false;
+  }
+
+  function _onlyKnownAddNoteLikeFields(o, allowed){
+    if (!_isPlainObject(o)) return false;
+    for (const k in o){
+      if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+      if (!allowed[k]) return false;
+    }
+    return true;
+  }
+
+  function _validAddNoteLikeNote(n, allowedFields){
+    if (!_isPlainObject(n)) return false;
+    if (_hasForbiddenAddNoteLikeField(n)) return false;
+    if (!_onlyKnownAddNoteLikeFields(n, allowedFields || ADD_NOTE_NOTE_FIELDS)) return false;
+    if (!_own(n, 'pitch') || !_own(n, 'velocity') || !_own(n, 'startBeat') || !_own(n, 'durationBeat')) return false;
+    const pitch = Number(n.pitch);
+    const velocity = Number(n.velocity);
+    const startBeat = Number(n.startBeat);
+    const durationBeat = Number(n.durationBeat);
+    if (!isFinite(pitch) || pitch < 0 || pitch > 127) return false;
+    if (!isFinite(velocity) || velocity < 1 || velocity > 127) return false;
+    if (!isFinite(startBeat) || startBeat < 0) return false;
+    if (!isFinite(durationBeat) || !(durationBeat > 0)) return false;
+    return true;
+  }
+
+  function _copyAddNoteLikeNote(n){
+    return {
+      pitch: Number(n.pitch),
+      velocity: Number(n.velocity),
+      startBeat: Number(n.startBeat),
+      durationBeat: Number(n.durationBeat),
+    };
+  }
+
+  function _normalizeMissingOpAddNoteLikeOps(patchObj){
+    if (!patchObj || typeof patchObj !== 'object' || !Array.isArray(patchObj.ops)) return { changed:false };
+    let changed = false;
+    const ops = patchObj.ops.map(function(op){
+      if (!_isPlainObject(op) || op.op != null) return op;
+      if (_hasForbiddenAddNoteLikeField(op)) return op;
+      if (_isPlainObject(op.note)){
+        if (!_onlyKnownAddNoteLikeFields(op, ADD_NOTE_WRAPPER_FIELDS)) return op;
+        if (!_validAddNoteLikeNote(op.note)) return op;
+        const out = { op:'addNote', note:_copyAddNoteLikeNote(op.note) };
+        if (typeof op.trackId === 'string' && op.trackId) out.trackId = op.trackId;
+        changed = true;
+        return out;
+      }
+      if (!_onlyKnownAddNoteLikeFields(op, ADD_NOTE_FLAT_FIELDS)) return op;
+      if (!_validAddNoteLikeNote(op, ADD_NOTE_FLAT_FIELDS)) return op;
+      const out = { op:'addNote', note:_copyAddNoteLikeNote(op) };
+      if (typeof op.trackId === 'string' && op.trackId) out.trackId = op.trackId;
+      changed = true;
+      return out;
+    });
+    if (changed) patchObj.ops = ops;
+    return { changed:changed };
+  }
+
   /** llm_v0: bounded outcome marker for patchSummary (never merged into phase1Deterministic). */
   function _llmOutcomeExtra(outcome, extra){
     const o = { outcome: String(outcome || 'unknown') };
@@ -913,8 +1037,9 @@
         systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in one ```json``` block; no <think>, reasoning, explanation, or prose. ' +
           'Schema: {"version":1,"clipId":"<clipId>","ops":[...]}. ' +
           'Allowed ops: setNote(noteId plus pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0), moveNote(noteId,deltaBeat), deleteNote(noteId), addNote(optional existing trackId,note:{pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0}). ' +
-          'Use addNote for chords, harmony, passing tones, octave doubles, fuller texture, or adding notes; not ordinary cleanup. ' +
-          'addNote stays inside the current clip, may omit trackId for the primary track, must omit note.id, and must not create tracks or change timeline/timebase/tempo/project fields. ' +
+          'Every ops item must include "op". Example addNote: {"op":"addNote","note":{"pitch":64,"startBeat":0,"durationBeat":1,"velocity":70}}. ' +
+          'Use addNote for chords/harmony/passing tones/octaves/fullness; not ordinary cleanup. ' +
+          'addNote stays inside the current clip, may omit trackId for primary track, must omit note.id, and must not create tracks or change timeline/timebase/tempo/project fields. ' +
           'All numbers finite beats-only; never seconds. Use listed noteIds only for setNote/moveNote/deleteNote.';
       }
 
@@ -975,7 +1100,7 @@
 
       let baseUserContent = promptBody + clipHint;
       if (!safeMode){
-        baseUserContent = 'Make musically meaningful edits; do not respond with velocity-only unless explicitly requested. Prefer expressive but bounded reversible changes. Use addNote only for needed harmony/chords/passing tones/octaves/fullness; inside current clip only, no new tracks, no timeline/timebase changes, beats only, never seconds.\n\n' + baseUserContent;
+        baseUserContent = 'Make musically meaningful edits; do not respond with velocity-only unless explicitly requested. Prefer expressive but bounded changes. Use addNote only for harmony/chords/passing tones/octaves/fullness; inside clip only, no new tracks/timeline/timebase, beats only, never seconds.\n\n' + baseUserContent;
       }
       const client = cloudClient || ROOT.H2S_LLM_CLIENT;
       if (!client || typeof client.callChatCompletions !== 'function' || typeof client.extractJsonObject !== 'function'){
@@ -1067,6 +1192,7 @@
           if (!Array.isArray(patchObj.ops)) patchObj.ops = [];
           if (patchObj.version == null) patchObj.version = 1;
           if (patchObj.clipId == null) patchObj.clipId = clip && clip.id;
+          if (!safeMode) _normalizeMissingOpAddNoteLikeOps(patchObj);
 
           const opsN = patchObj.ops.length;
           if (opsN === 0){
