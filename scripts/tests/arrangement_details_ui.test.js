@@ -53,8 +53,13 @@ function redactArrangementDeepLikeApp(value){
   assert(src.includes('_lastArrangementSnapshot'), 'app keeps last arrangement snapshot');
   assert(src.includes('_commitArrangementSnapshot(result, goal, clipId, instId)'), 'success/failure path commits snapshot from run result');
   assert(src.includes('promptTrace'), 'snapshot includes promptTrace');
+  assert(src.includes('rawDraft'), 'snapshot includes rawDraft');
+  assert(src.includes('draftDebug'), 'snapshot includes draftDebug');
   assert(src.includes('rawPatch'), 'snapshot includes rawPatch');
   assert(src.includes('qualityReport'), 'snapshot includes qualityReport');
+  assert(src.includes('arrange.detail.requestedRoles'), 'details render wired for requested roles');
+  assert(src.includes('arrange.detail.usedInstrument'), 'details render wired for used instrument');
+  assert(src.includes('arrange.detail.fallbackReason'), 'details render wired for fallback reason');
   assert(src.includes('arrange.detail.qualityWarnings'), 'details render wired for quality');
   assert(src.includes('_openArrangementDetails'), 'open arrangement details');
   assert(src.includes('_renderArrangementDetailsBody'), 'render arrangement details body');
@@ -115,6 +120,9 @@ function redactArrangementDeepLikeApp(value){
     'arrange.detailsShort', 'arrange.detailTitle', 'arrange.detailsCloseAria',
     'arrange.detail.empty', 'arrange.detail.outcome', 'arrange.detail.copyTrace',
     'arrange.detail.copyUser', 'arrange.detail.copyPatch', 'arrange.detail.copyOk', 'arrange.detail.copyFail',
+    'arrange.detail.requestedRoles', 'arrange.detail.requestedInstrument', 'arrange.detail.usedInstrument',
+    'arrange.detail.usedInstrumentLabel', 'arrange.detail.fallbackReason', 'arrange.detail.patternRole',
+    'arrange.detail.generatedNotes', 'arrange.detail.coverage',
     'arrange.detail.qualityWarnings', 'arrange.detail.qualityNone', 'arrange.detail.qualityWarnList',
     'arrange.quality.short_coverage', 'arrange.quality.questionable_instrument',
   ];
