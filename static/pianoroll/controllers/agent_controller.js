@@ -123,15 +123,14 @@
     return s.slice(0, LLM_V0_REPAIR_RESPONSE_MAX_CHARS) + '\n[truncated]';
   }
 
-  function _buildRepairUserContent(previousText, clipId, safeMode, noteIds){
+  function _buildRepairUserContent(previousText, clipId, safeMode){
     let schema = '{"version":1,"clipId":"' + String(clipId || '<clipId>') + '","ops":[...]}';
       if (safeMode) schema = '{"version":1,"clipId":"' + String(clipId || '<clipId>') + '","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}';
-    const ids = Array.isArray(noteIds) && noteIds.length ? noteIds.slice(0, LLM_V0_MAX_PROMPT_NOTE_ROWS).join(', ') : '';
     let body = 'Convert this into exactly one valid Hum2Song patch JSON object in a ```json``` block. No <think>, no hidden reasoning, no prose.\n';
     body += 'Schema: ' + schema + '\n';
     if (safeMode) body += 'Only setNote velocity edits are allowed.\n';
     else body += 'Allowed ops: setNote, moveNote, deleteNote, addNote. addNote may omit trackId to use the current clip primary track and must omit note.id.\n';
-    if (ids) body += 'Allowed noteIds for setNote/moveNote/deleteNote: ' + ids + '\n';
+    body += 'For addNote, do not provide noteId; the app will generate one.\n';
     body += 'Previous model response:\n<<<\n' + _boundedModelResponse(previousText) + '\n>>>';
     return body;
   }
@@ -486,6 +485,31 @@
       }
     }
     return rows;
+  }
+
+  function _resolveExistingNoteIdxReferences(patchObj, promptNoteRows){
+    const errors = [];
+    const rows = Array.isArray(promptNoteRows) ? promptNoteRows : [];
+    const ops = (patchObj && Array.isArray(patchObj.ops)) ? patchObj.ops : [];
+    for (let i = 0; i < ops.length; i++){
+      const op = ops[i];
+      if (!op || typeof op !== 'object') continue;
+      const kind = String(op.op || '');
+      if (kind !== 'setNote' && kind !== 'moveNote' && kind !== 'deleteNote') continue;
+      if (op.noteId != null && String(op.noteId).trim() !== ''){
+        if (op.idx != null) delete op.idx;
+        continue;
+      }
+      if (op.idx == null) continue;
+      const n = Number(op.idx);
+      if (!Number.isInteger(n) || n < 0 || n >= rows.length || !rows[n] || rows[n].noteId == null){
+        errors.push('op[' + i + ']_idx_invalid:' + String(op.idx));
+        continue;
+      }
+      op.noteId = String(rows[n].noteId);
+      delete op.idx;
+    }
+    return { ok: errors.length === 0, errors: errors };
   }
 
   /** PR-6a: resolve executed prompt and source for patchSummary trace. */
@@ -1019,15 +1043,11 @@
       let safeMode = (cfg && typeof cfg.velocityOnly === 'boolean') ? cfg.velocityOnly : false;
       if (optsIn._assistantFreeformTextRequest === true || intent.fixPitch || intent.tightenRhythm) safeMode = false;
 
-      // PR-8B-1 / LLM Context PR1: clip metadata, noteIds, and full per-note table (beats-only)
+      // PR-8B-1 / LLM Context PR1: clip metadata and full per-note table (beats-only)
       const score = clip && clip.score;
       const tracks = (score && Array.isArray(score.tracks)) ? score.tracks : [];
       const noteRows = collectClipNoteRowsForLlm(tracks);
       let noteCount = noteRows.length;
-      const noteIds = [];
-      for (let ni = 0; ni < noteRows.length && noteIds.length < LLM_V0_MAX_PROMPT_NOTE_ROWS; ni++){
-        noteIds.push(noteRows[ni].noteId);
-      }
       let pitchMin = null;
       let pitchMax = null;
       let maxSpanBeat = 0;
@@ -1058,19 +1078,19 @@
           'Schema: {"version":1,"clipId":"<clipId>","ops":[{"op":"setNote","noteId":"<id>","velocity":1-127}]}. ' +
           'Safe mode: only setNote velocity edits are allowed. Do not include pitch,startBeat,durationBeat,addNote,deleteNote,moveNote. ' +
           'Shape dynamics musically within those safety limits; avoid tiny no-op changes when the user asks for expression. ' +
-          'Use only noteIds from the prompt.';
+          'Use noteId values from the NOTE TABLE; idx from the NOTE TABLE may replace noteId.';
       } else {
         // Normal mode: reversible musical edits, including bounded note creation.
         systemMsg = 'You are a music patch generator. Output exactly one final JSON patch object in one ```json``` block; no <think>, reasoning, explanation, or prose. ' +
           'Schema: {"version":1,"clipId":"<clipId>","ops":[...]}. ' +
-          'Allowed ops: setNote(noteId plus pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0), moveNote(noteId,deltaBeat), deleteNote(noteId), addNote(optional existing trackId,note:{pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0}). ' +
+          'Allowed ops: setNote(noteId or idx plus pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0), moveNote(noteId or idx,deltaBeat), deleteNote(noteId or idx), addNote(optional existing trackId,note:{pitch 0-127,velocity 1-127,startBeat>=0,durationBeat>0}). ' +
           'Every ops item must include "op". Example addNote: {"op":"addNote","note":{"pitch":64,"startBeat":0,"durationBeat":1,"velocity":70}}. ' +
           'Use addNote for chords/harmony/passing tones/octaves/fullness; not ordinary cleanup. ' +
           'addNote stays inside the current clip, may omit trackId for primary track, must omit note.id, and must not create tracks or change timeline/timebase/tempo/project fields. ' +
-          'All numbers finite beats-only; never seconds. Use listed noteIds only for setNote/moveNote/deleteNote.';
+          'All numbers finite beats-only; never seconds. For setNote/moveNote/deleteNote, use noteId or idx values from the NOTE TABLE.';
       }
 
-      // PR-8B-1: User message with structured clip hint including allowed noteIds
+      // PR-8B-1: User message with structured clip hint and editable note table
       let clipHint = '\n\n---\n\nClip context (beats-only):\n';
       clipHint += '- clipId: ' + (clip && clip.id ? String(clip.id) : 'unknown') + '\n';
       clipHint += '- notes: ' + String(finalNoteCount) + '\n';
@@ -1092,22 +1112,20 @@
       if (noteRows.length === 0){
         clipHint += '(none)\n';
       } else {
-        clipHint += 'trackId,noteId,pitch,startBeat,durationBeat,velocity\n';
+        clipHint += 'idx,trackId,noteId,pitch,startBeat,durationBeat,velocity\n';
         for (let ri = 0; ri < promptNoteRows.length; ri++){
           const r = promptNoteRows[ri];
-          clipHint += r.trackId + ',' + r.noteId + ',' + String(r.pitch) + ',' + String(r.startBeat) + ',' + String(r.durationBeat) + ',' + String(r.velocity) + '\n';
+          clipHint += String(ri) + ',' + r.trackId + ',' + r.noteId + ',' + String(r.pitch) + ',' + String(r.startBeat) + ',' + String(r.durationBeat) + ',' + String(r.velocity) + '\n';
         }
       }
-      if (noteIds.length > 0){
-        clipHint += '\nAllowed noteIds (use ONLY these for setNote/moveNote/deleteNote):\n';
-        clipHint += noteIds.slice(0, LLM_V0_MAX_PROMPT_NOTE_ROWS).join(', ') + '\n';
+      if (promptNoteRows.length > 0){
+        clipHint += '\nFor setNote/moveNote/deleteNote, use noteId values from the NOTE TABLE above. You may use idx from the NOTE TABLE instead of noteId.\n';
+        clipHint += 'For addNote, do not provide noteId; the app will generate one.\n';
         if (finalNoteCount > LLM_V0_MAX_PROMPT_NOTE_ROWS){
-          clipHint += '\n(Clip has ' + String(finalNoteCount) + ' notes total; context is bounded to the listed editable notes. Do not invent ids.)\n';
-        } else {
-          clipHint += '\nIf you use setNote/moveNote/deleteNote, noteId MUST be chosen from the Allowed noteIds list above.\n';
+          clipHint += '\n(Clip has ' + String(finalNoteCount) + ' notes total; context is bounded to the listed editable notes. For existing-note ops, use only NOTE TABLE rows.)\n';
         }
       } else {
-        clipHint += '\nNo notes found in clip. Use addNote to create new notes.\n';
+        clipHint += '\nNo notes found in clip. Use addNote to create new notes. For addNote, do not provide noteId; the app will generate one.\n';
       }
       clipHint += '\nOutput only final patch JSON in a ```json ... ``` block. Do not include <think>, reasoning, or explanation.';
 
@@ -1143,9 +1161,9 @@
         let attemptSystemMsg = systemMsg;
         if (repairFromText != null){
           attemptSystemMsg = repairSystemMsg;
-          userContent = _buildRepairUserContent(repairFromText, clip && clip.id, safeMode, noteIds);
+          userContent = _buildRepairUserContent(repairFromText, clip && clip.id, safeMode);
         } else if (attemptIndex === 2 && extraFixHint){
-          const fixPrefix = 'The previous output was invalid for this reason: ' + extraFixHint + '\n\nFix the JSON patch ONLY.\nOutput EXACTLY ONE final JSON object in a single ```json``` block. No <think>, no hidden reasoning, no commentary.\nEnsure it matches the required schema and uses only Allowed noteIds.\n\n---\n\n';
+          const fixPrefix = 'The previous output was invalid for this reason: ' + extraFixHint + '\n\nFix the JSON patch ONLY.\nOutput EXACTLY ONE final JSON object in a single ```json``` block. No <think>, no hidden reasoning, no commentary.\nEnsure it matches the required schema and uses noteId or idx values from the NOTE TABLE for existing-note ops.\n\n---\n\n';
           userContent = fixPrefix + baseUserContent;
         }
         const messages = [
@@ -1227,6 +1245,26 @@
           if (!safeMode) _normalizeMissingOpAddNoteLikeOps(patchObj);
 
           const opsN = patchObj.ops.length;
+          const idxResolved = _resolveExistingNoteIdxReferences(patchObj, promptNoteRows);
+          if (!idxResolved.ok){
+            const errorCodes = idxResolved.errors.slice(0, 3).join(', ');
+            if (debugCapture) debugCapture.validateErrors = idxResolved.errors.slice(0, 10);
+            return {
+              ok: false,
+              reason: 'invalid_note_reference',
+              detail: errorCodes,
+              patchObj: patchObj,
+              opsN: opsN,
+              patchSummary: Object.assign({}, patchSummaryBase, {
+                status: 'failed',
+                reason: 'invalid_note_reference',
+                ops: opsN,
+                byOp: _opsByOp(patchObj.ops),
+                examples: [],
+                detail: errorCodes,
+              }, _computePatchTypeSummary(patchObj.ops, clip), _llmOutcomeExtra('rejected_validation', { detail: errorCodes, reasonCode: 'invalid_note_reference' })),
+            };
+          }
           if (opsN === 0){
             if (intent.reduceOutliers){
               return {

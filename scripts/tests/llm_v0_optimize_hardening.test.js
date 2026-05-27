@@ -777,9 +777,17 @@ async function testLongClip252NotesSendsAllEditableRows(){
   assert(res.llmPromptTrace && res.llmPromptTrace.requestStats.noteRowsTotal === 252, '252-note total rows tracked');
   assert(res.llmPromptTrace.requestStats.noteRowsSent === 252, '252-note clip exposes every editable note under cap');
   const userPrompt = String(capture.messages[1].content || '');
+  assert(userPrompt.indexOf('Allowed noteIds') < 0, 'prompt should not include separate Allowed noteIds block');
+  assert(userPrompt.indexOf('idx,trackId,noteId,pitch,startBeat,durationBeat,velocity') >= 0, 'NOTE TABLE keeps noteId and adds idx');
+  assert(userPrompt.indexOf('For setNote/moveNote/deleteNote, use noteId values from the NOTE TABLE above.') >= 0, 'prompt has concise noteId instruction');
+  assert(userPrompt.indexOf('For addNote, do not provide noteId; the app will generate one.') >= 0, 'prompt tells addNote to omit noteId');
   assert(userPrompt.indexOf('editable_note_00_cloud_smoke') >= 0, 'first note listed');
   assert(userPrompt.indexOf('editable_note_251_cloud_smoke') >= 0, 'last 252nd note listed');
   assert(userPrompt.indexOf('first 252 editable notes') < 0, 'under-cap clip should not claim bounded first rows');
+  const noteIds = [];
+  for (let i = 0; i < 252; i++) noteIds.push('editable_note_' + String(i).padStart(2, '0') + '_cloud_smoke');
+  const oldAllowedBlock = '\nAllowed noteIds (use ONLY these for setNote/moveNote/deleteNote):\n' + noteIds.join(', ') + '\n';
+  assert(oldAllowedBlock.length > 1000, 'old 252-note Allowed noteIds block was prompt bloat');
 }
 
 async function testLongClipAbove512ShowsHonestBoundedContext(){
@@ -797,6 +805,7 @@ async function testLongClipAbove512ShowsHonestBoundedContext(){
   const userPrompt = String(capture.messages[1].content || '');
   assert(userPrompt.indexOf('first 512 editable notes') >= 0, 'prompt declares bounded note table');
   assert(userPrompt.indexOf('Clip has 520 notes total; context is bounded to the listed editable notes') >= 0, 'prompt explains only listed notes are editable');
+  assert(userPrompt.indexOf('Allowed noteIds') < 0, 'above-cap prompt should not include separate Allowed noteIds block');
   assert(userPrompt.indexOf('editable_note_511_cloud_smoke') >= 0, 'last listed note at cap is present');
   assert(userPrompt.indexOf('editable_note_512_cloud_smoke') < 0, 'first note beyond cap is not listed');
 }
@@ -817,6 +826,77 @@ async function testOptimizePromptDoesNotForceFixedModesOrHighestValueWording(){
   assert(serialized.indexOf('velocity_shape') < 0, 'prompt should not force velocity_shape mode');
   assert(serialized.indexOf('highest-value edits') < 0, 'prompt should not use highest-value edits wording');
   assert(res.llmPromptTrace.requestStats.noteRowsSent === 4, 'small clip still sends all rows');
+}
+
+async function testExistingNoteOpsWithValidNoteIdsStillApply(){
+  loadAgentController();
+  const { project: proj, clip } = makeClipWithNoteCount(10);
+  const state = { project: proj };
+  const cid = clip.id;
+
+  const patch = {
+    version: 1,
+    clipId: cid,
+    ops: [
+      { op: 'setNote', noteId: 'editable_note_00_cloud_smoke', velocity: 70 },
+      { op: 'moveNote', noteId: 'editable_note_01_cloud_smoke', deltaBeat: 0.125 },
+      { op: 'deleteNote', noteId: 'editable_note_09_cloud_smoke' },
+    ],
+  };
+  installPatchLlmMock(patch, { velocityOnly: false });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'clean this up' });
+  assert(res && res.ok === true && res.ops === 3, 'set/move/delete with valid noteIds still apply');
+  assertLlmOutcomeContract(res, 'applied');
+  const notes = flattenNotes(state.project.clips[cid]);
+  assert(notes.length === 9, 'deleteNote removed one note');
+  const n0 = notes.find((n) => String(n.id) === 'editable_note_00_cloud_smoke');
+  const n1 = notes.find((n) => String(n.id) === 'editable_note_01_cloud_smoke');
+  assert(n0 && n0.velocity === 70, 'setNote by noteId applied');
+  assert(n1 && n1.startBeat === 0.625, 'moveNote by noteId applied');
+}
+
+async function testExistingNoteOpsCanUseIdxFromNoteTable(){
+  loadAgentController();
+  const { project: proj, clip } = makeClipWithNoteCount(4);
+  const state = { project: proj };
+  const cid = clip.id;
+
+  installPatchLlmMock({
+    version: 1,
+    clipId: cid,
+    ops: [{ op: 'setNote', idx: 2, velocity: 71 }],
+  }, { velocityOnly: false });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'soften the third note' });
+  assert(res && res.ok === true && res.ops === 1, 'idx reference resolves and applies');
+  assertLlmOutcomeContract(res, 'applied');
+  const notes = flattenNotes(state.project.clips[cid]);
+  const n2 = notes.find((n) => String(n.id) === 'editable_note_02_cloud_smoke');
+  assert(n2 && n2.velocity === 71, 'idx 2 resolved to third NOTE TABLE row noteId');
+}
+
+async function testInvalidIdxReferenceRejectedAndClipUnchanged(){
+  loadAgentController();
+  const { project: proj, clip } = makeClipWithNoteCount(4);
+  const state = { project: proj };
+  const cid = clip.id;
+  const before = JSON.stringify(state.project.clips[cid].score);
+
+  installPatchLlmMock({
+    version: 1,
+    clipId: cid,
+    ops: [{ op: 'setNote', idx: 99, velocity: 71 }],
+  }, { velocityOnly: false });
+  const ctrl = makeOptimizeController(state);
+
+  const res = await ctrl.optimizeClip(cid, { requestedPresetId: 'llm_v0', userPrompt: 'soften a note' });
+  assert(res && res.ok === false && res.reason === 'invalid_note_reference', 'invalid idx rejected as note reference');
+  assertLlmOutcomeContract(res, 'rejected_validation');
+  assert(String(res.detail || '').indexOf('idx_invalid') >= 0, 'invalid idx diagnostic retained');
+  assert(JSON.stringify(state.project.clips[cid].score) === before, 'invalid idx rejection leaves original unchanged');
 }
 
 async function testLengthFinishWithParseableJsonDiscardsPatchAndLeavesClipUnchanged(){
@@ -1115,6 +1195,7 @@ async function testFailedExtractRepairRetryUsesPreviousResponse(){
   assert(repairUser.indexOf('Convert this into exactly one valid Hum2Song patch JSON object') >= 0, 'repair instruction');
   assert(repairUser.indexOf(previousModelText) >= 0, 'previous model response included');
   assert(repairUser.indexOf('NOTE TABLE CSV') < 0, 'repair retry should not resend full note table');
+  assert(repairUser.indexOf('Allowed noteIds') < 0, 'repair retry should not include verbose Allowed noteIds list');
   assert(repairUser.length < 1400, 'repair retry stays bounded');
   assert(res.llmDebug.invalidJsonDiagnostics.retryAttempted === true, 'diagnostic retryAttempted');
 }
@@ -1715,6 +1796,9 @@ async function main(){
   await testLongClip252NotesSendsAllEditableRows();
   await testLongClipAbove512ShowsHonestBoundedContext();
   await testOptimizePromptDoesNotForceFixedModesOrHighestValueWording();
+  await testExistingNoteOpsWithValidNoteIdsStillApply();
+  await testExistingNoteOpsCanUseIdxFromNoteTable();
+  await testInvalidIdxReferenceRejectedAndClipUnchanged();
   await testNoOpOutcome();
   await testPlainJsonObjectWithoutFenceAccepted();
   await testFailedExtract();
