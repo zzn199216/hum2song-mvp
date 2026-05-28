@@ -122,7 +122,7 @@ def create_app() -> FastAPI:
         allow_origin_regex = r"http://(?:localhost|127\.0\.0\.1)(?::\d+)?"
         allow_credentials = True
     else:
-        allow_origins = _parse_origins(getattr(s, "cors_allow_origins", None))
+        allow_origins = getattr(s, "cors_allow_origin_list", _parse_origins(getattr(s, "cors_allow_origins", None)))
         allow_origin_regex = None
         # If you don't specify explicit origins, we DISABLE credentials (safe fallback)
         allow_credentials = bool(allow_origins)

@@ -5,18 +5,38 @@
 (function () {
   'use strict';
 
-  var ALLOWED_CLOUD_ORIGINS = new Set([
-    'https://hum2song.cn',
+  var LOCAL_CLOUD_PARENT_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'http://localhost:3010',
     'http://127.0.0.1:3010',
     'http://localhost:3012',
     'http://127.0.0.1:3012',
-  ]);
+  ];
+  var PRODUCTION_CLOUD_PARENT_ORIGIN = 'https://hum2song.cn';
+
+  function isProductionStudioHost() {
+    return window.location && window.location.hostname === 'studio.hum2song.cn';
+  }
+
+  function parseCloudParentOrigins(value) {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== 'string') return [];
+    return value.split(',');
+  }
+
+  function configuredCloudOrigins() {
+    var origins = LOCAL_CLOUD_PARENT_ORIGINS.slice();
+    parseCloudParentOrigins(window.H2S_CLOUD_PARENT_ORIGINS).forEach(function (origin) {
+      var trimmed = typeof origin === 'string' ? origin.trim() : '';
+      if (trimmed) origins.push(trimmed);
+    });
+    if (isProductionStudioHost()) origins.push(PRODUCTION_CLOUD_PARENT_ORIGIN);
+    return new Set(origins);
+  }
 
   function allowedOrigin(origin) {
-    return typeof origin === 'string' && ALLOWED_CLOUD_ORIGINS.has(origin);
+    return typeof origin === 'string' && configuredCloudOrigins().has(origin);
   }
 
   function getApp() {
@@ -39,8 +59,7 @@
       if (params.get('cloudMode') === '1') return true;
       if (window.parent && window.parent !== window) {
         var ref = document.referrer || '';
-        if (/https:\/\/hum2song\.cn\//i.test(ref)) return true;
-        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(ref)) return true;
+        if (ref && allowedOrigin(new URL(ref).origin)) return true;
       }
     } catch (_err) {}
     return false;

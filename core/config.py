@@ -40,10 +40,19 @@ class Settings(BaseSettings):
     app_env: str = Field(default="development", validation_alias="APP_ENV")
     host: str = Field(default="0.0.0.0", validation_alias="HOST")
     port: int = Field(default=8000, validation_alias="PORT")
+    cors_allow_origins: str = Field(default="", validation_alias="CORS_ALLOW_ORIGINS")
+    cloud_parent_origins: str = Field(
+        default=(
+            "http://localhost:3000,http://127.0.0.1:3000,"
+            "http://localhost:3010,http://127.0.0.1:3010,"
+            "http://localhost:3012,http://127.0.0.1:3012"
+        ),
+        validation_alias="H2S_CLOUD_PARENT_ORIGINS",
+    )
 
     # ---- Paths ----
-    upload_dir: Path = Field(default=Path("uploads"), validation_alias="UPLOAD_DIR")
-    output_dir: Path = Field(default=Path("outputs"), validation_alias="OUTPUT_DIR")
+    upload_dir: Path = Field(default=Path(".data/uploads"), validation_alias="UPLOAD_DIR")
+    output_dir: Path = Field(default=Path(".data/outputs"), validation_alias="OUTPUT_DIR")
 
     # SoundFont path (support alias SF2_PATH)
     sound_font_path: Path = Field(
@@ -140,6 +149,18 @@ class Settings(BaseSettings):
         if p.is_absolute():
             return p
         return (BASE_DIR / p).resolve()
+
+    @staticmethod
+    def _parse_csv(value: str) -> list[str]:
+        return [part.strip() for part in (value or "").split(",") if part.strip()]
+
+    @property
+    def cors_allow_origin_list(self) -> list[str]:
+        return self._parse_csv(self.cors_allow_origins)
+
+    @property
+    def cloud_parent_origin_list(self) -> list[str]:
+        return self._parse_csv(self.cloud_parent_origins)
 
     @property
     def assets_dir(self) -> Path:

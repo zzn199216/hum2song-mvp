@@ -1794,6 +1794,32 @@
   </style>
   <script>
   (function () {
+    function localCloudParentOrigins() {
+      return [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:3010',
+        'http://127.0.0.1:3010',
+        'http://localhost:3012',
+        'http://127.0.0.1:3012'
+      ];
+    }
+    function parseCloudParentOrigins(value) {
+      if (Array.isArray(value)) return value;
+      if (typeof value !== 'string') return [];
+      return value.split(',');
+    }
+    function allowedCloudParentOrigin(origin) {
+      var origins = localCloudParentOrigins();
+      parseCloudParentOrigins(window.H2S_CLOUD_PARENT_ORIGINS).forEach(function (item) {
+        var trimmed = typeof item === 'string' ? item.trim() : '';
+        if (trimmed) origins.push(trimmed);
+      });
+      if (window.location && window.location.hostname === 'studio.hum2song.cn') {
+        origins.push('https://hum2song.cn');
+      }
+      return origins.indexOf(origin) >= 0;
+    }
     try {
       if (window.H2S_CLOUD_MODE === true) return;
       var params = new URLSearchParams(window.location.search || '');
@@ -1803,8 +1829,7 @@
       }
       if (window.parent && window.parent !== window) {
         var ref = document.referrer || '';
-        if (/https:\/\/hum2song\.cn\//i.test(ref)) window.H2S_CLOUD_MODE = true;
-        else if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(ref)) window.H2S_CLOUD_MODE = true;
+        if (ref && allowedCloudParentOrigin(new URL(ref).origin)) window.H2S_CLOUD_MODE = true;
       }
     } catch (_err) {}
   })();

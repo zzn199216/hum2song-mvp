@@ -30,7 +30,7 @@ You still need: **Python 3.11+**, a **SoundFont** at **`assets/piano.sf2`** ([`a
 
 Work from the **repository root**.
 
-**1. You need:** Python **3.11+**, **FFmpeg** and **FluidSynth** on your `PATH`, and **`assets/piano.sf2`**. Optional: copy [`.env.example`](.env.example) to `.env`. Missing pieces → [manual install](docs/BEGINNER_FIRST_RUN_CHECKLIST.md#manual-install-soundfont-fluidsynth-ffmpeg).
+**1. You need:** Python **3.11+**, **FFmpeg** and **FluidSynth** on your `PATH`, and **`assets/piano.sf2`**. Optional: copy [`.env.example`](.env.example) to `.env`. Local defaults keep uploads/outputs under `.data/` and allow only localhost Cloud parents unless configured. Missing pieces → [manual install](docs/BEGINNER_FIRST_RUN_CHECKLIST.md#manual-install-soundfont-fluidsynth-ffmpeg).
 
 **2. Install**
 

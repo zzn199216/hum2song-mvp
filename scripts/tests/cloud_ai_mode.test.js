@@ -22,6 +22,10 @@ assert(indexHtml.includes('id="editorLlmModel"'), 'standalone model field must r
 assert(indexHtml.includes('id="editorLlmAuthToken"'), 'standalone token field must remain in the DOM');
 
 assert(bridge.includes("params.get('cloudMode') === '1'"), 'Cloud mode should require explicit cloudMode query flag');
+assert(bridge.includes('H2S_CLOUD_PARENT_ORIGINS'), 'Cloud parent origins should be configurable for future staging');
+assert(bridge.includes("window.location.hostname === 'studio.hum2song.cn'"), 'Production Cloud parent should only be enabled on production Studio host');
+assert(indexHtml.includes('H2S_CLOUD_PARENT_ORIGINS'), 'Early cloud mode detection should use configured parent origins');
+assert(indexHtml.includes("window.location.hostname === 'studio.hum2song.cn'"), 'Inline production parent detection should be production-host gated');
 assert(bridge.includes('H2S_CLOUD_AI_STATUS_REQUEST'), 'Studio should request Cloud AI status from parent');
 assert(bridge.includes('H2S_CLOUD_AI_STATUS_RESPONSE'), 'Studio should handle Cloud AI status response');
 assert(bridge.includes('H2S_CLOUD_LLM_CLIENT'), 'Cloud mode should expose a server-side LLM bridge adapter');

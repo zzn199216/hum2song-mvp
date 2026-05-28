@@ -1,4 +1,5 @@
 import os
+import re
 import pytest
 from core.config import Settings, BASE_DIR
 
@@ -49,3 +50,34 @@ def test_path_normalization():
     s = Settings(UPLOAD_DIR="my_uploads", _env_file=None)
     assert s.upload_dir.is_absolute()
     assert s.upload_dir == (BASE_DIR / "my_uploads").resolve()
+
+def test_local_runtime_dirs_default_to_repo_data(clean_env):
+    s = Settings(_env_file=None)
+    assert s.upload_dir == (BASE_DIR / ".data" / "uploads").resolve()
+    assert s.output_dir == (BASE_DIR / ".data" / "outputs").resolve()
+
+def test_cors_allow_origins_are_explicit_config(clean_env):
+    os.environ["APP_ENV"] = "production"
+    os.environ["CORS_ALLOW_ORIGINS"] = "https://cloud.example, https://staging.example"
+    s = Settings(_env_file=None)
+    assert s.cors_allow_origin_list == ["https://cloud.example", "https://staging.example"]
+
+def test_cloud_parent_origins_default_to_local_only(clean_env):
+    s = Settings(_env_file=None)
+    assert "http://localhost:3000" in s.cloud_parent_origin_list
+    assert "http://127.0.0.1:3010" in s.cloud_parent_origin_list
+    assert "https://hum2song.cn" not in s.cloud_parent_origin_list
+
+def test_cloud_parent_origins_can_be_configured_for_future_envs(clean_env):
+    os.environ["H2S_CLOUD_PARENT_ORIGINS"] = "https://staging.example, http://localhost:3010"
+    s = Settings(_env_file=None)
+    assert s.cloud_parent_origin_list == ["https://staging.example", "http://localhost:3010"]
+
+def test_env_example_has_local_defaults_and_no_secret_values():
+    src = (BASE_DIR / ".env.example").read_text(encoding="utf-8")
+    assert "APP_ENV=local" in src
+    assert "HOST=127.0.0.1" in src
+    assert "UPLOAD_DIR=.data/uploads" in src
+    assert "OUTPUT_DIR=.data/outputs" in src
+    assert "H2S_CLOUD_PARENT_ORIGINS=http://localhost:3000" in src
+    assert not re.search(r"(api[_-]?key|token|cookie|secret|pass)\s*=\s*[^\s#]+", src, re.I)
