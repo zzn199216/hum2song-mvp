@@ -4401,7 +4401,11 @@ ensureTrackButtons(){
         const clipId = t && t.getAttribute && t.getAttribute('data-clip-id');
         if (!clipId) return;
         if (act === 'aiRun') this._aiAssistRun(clipId, t);
-        else if (act === 'aiOpenOptimize') this.runCommand('open_inspector_optimize');
+        else if (act === 'aiOpenOptimize') {
+          ev.preventDefault();
+          if (t.disabled || t.getAttribute('aria-disabled') === 'true') return;
+          if (typeof this._openLastOptimizeDetails === 'function') this._openLastOptimizeDetails();
+        }
         else if (act === 'aiUndo') this._aiAssistUndo(clipId);
         else if (act === 'aiDebugToggle'){
           ev.preventDefault();
@@ -4714,8 +4718,10 @@ ensureTrackButtons(){
               html += '</div>';
             }
             html += '<div class="aiAssistCardBtns">';
+            const canOpenOptimizeDetails = runState === 'done' || runState === 'failed';
+            const optimizeDetailsDisabledAttr = canOpenOptimizeDetails ? '' : ' disabled aria-disabled="true"';
             html += '<button type="button" class="btn primary mini" data-act="aiRun" data-clip-id="' + escapeHtml(String(it.clipId)) + '" data-prompt="' + escapeHtml(it.promptText) + '">' + escapeHtml(_t('aiAssist.run')) + '</button>';
-            html += '<button type="button" class="btn mini" data-act="aiOpenOptimize" data-clip-id="' + escapeHtml(String(it.clipId)) + '">' + escapeHtml(_t('aiAssist.openOptimize')) + '</button>';
+            html += '<button type="button" class="btn mini" data-act="aiOpenOptimize" data-clip-id="' + escapeHtml(String(it.clipId)) + '"' + optimizeDetailsDisabledAttr + '>' + escapeHtml(_t('aiAssist.openOptimize')) + '</button>';
             if (canUndo) html += '<button type="button" class="btn mini" data-act="aiUndo" data-clip-id="' + escapeHtml(String(it.clipId)) + '">' + escapeHtml(_t('aiAssist.undo')) + '</button>';
             html += '</div></div>';
           }

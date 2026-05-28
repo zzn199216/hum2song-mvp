@@ -49,6 +49,44 @@ function assert(cond, msg) {
   console.log('PASS Optimize card copy simplified source');
 })();
 
+(function testOptimizeCardViewDetailsOpensLatestOptimizeDetailsSource(){
+  const fs = require('fs');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../static/pianoroll/app.js'), 'utf8');
+  const initStart = src.indexOf('_initAiAssistDock(){');
+  const initEnd = src.indexOf('const handle = document.getElementById', initStart);
+  assert(initStart >= 0 && initEnd > initStart, 'AI assist init source slice available');
+  const initSrc = src.slice(initStart, initEnd);
+  const actAt = initSrc.indexOf("act === 'aiOpenOptimize'");
+  const nextActAt = initSrc.indexOf("else if (act === 'aiUndo'", actAt);
+  assert(actAt >= 0 && nextActAt > actAt, 'aiOpenOptimize click branch exists');
+  const branchSrc = initSrc.slice(actAt, nextActAt);
+  assert(branchSrc.indexOf('_openLastOptimizeDetails') >= 0, 'View details opens latest Optimize details panel');
+  assert(branchSrc.indexOf("runCommand('open_inspector_optimize'") < 0, 'View details must not route to inspector accordion');
+  assert(branchSrc.indexOf('preventDefault') >= 0, 'View details click prevents default button behavior');
+
+  const renderStart = src.indexOf('_renderAiAssistDock(){');
+  const renderEnd = src.indexOf('this._syncStudioAiDockRightPanelSafeBottom();', renderStart);
+  assert(renderStart >= 0 && renderEnd > renderStart, 'AI assist render source slice available');
+  const renderSrc = src.slice(renderStart, renderEnd);
+  assert(renderSrc.indexOf('canOpenOptimizeDetails') >= 0, 'render computes details availability');
+  assert(renderSrc.indexOf("runState === 'done'") >= 0 && renderSrc.indexOf("runState === 'failed'") >= 0, 'success and failed cards enable details');
+  assert(renderSrc.indexOf('aria-disabled') >= 0 && renderSrc.indexOf('disabled') >= 0, 'pending/running cards disable details');
+  console.log('PASS Optimize card View details opens latest Optimize details source');
+})();
+
+(function testOptimizeDetailsPanelKeepsDiagnosticsSource(){
+  const fs = require('fs');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../static/pianoroll/app.js'), 'utf8');
+  assert(src.indexOf("addRow('lastOpt.detail.lblOps'") >= 0, 'Optimize details include op count');
+  assert(src.indexOf("addRow('lastOpt.detail.lblOpsByType'") >= 0, 'Optimize details include op counts by type');
+  assert(src.indexOf('addPromptTraceSection') >= 0, 'Optimize details include prompt trace section');
+  assert(src.indexOf("addRow('lastOpt.detail.lblOutputBudget'") >= 0, 'Optimize details include token budget');
+  assert(src.indexOf("addRow('lastOpt.detail.lblProviderModel'") >= 0, 'Optimize details include provider/model diagnostics');
+  assert(src.indexOf('_redactLastOptimizePromptTrace') >= 0, 'Optimize prompt trace is redacted before display');
+  assert(src.indexOf("s.indexOf('token')") >= 0 && src.indexOf("s.indexOf('api_key')") >= 0, 'Optimize details redaction covers token/api keys');
+  console.log('PASS Optimize details panel diagnostics source');
+})();
+
 // Stub I18N
 const I18N = { t: (k) => { const m = { 'aiAssist.selectClipFirst': 'Select a clip first.', 'aiAssist.selectedClipStale': 'That clip is no longer in the project.', 'aiAssist.skillDisabled': 'That assistant action is unavailable.', 'aiAssist.addClipToTimelineRunning': 'Adding clip to timeline…', 'aiAssist.addClipToTimelineOk': 'Added clip to timeline.', 'aiAssist.addClipToTimelineFail': 'Could not add clip to timeline', 'aiAssist.addClipToTimelineTrackOutOfRange': 'Track {n} is out of range (1-{max}).', 'aiAssist.addClipToTimelineBeatInvalid': 'Beat value must be a non-negative number.', 'aiAssist.addTrackRunning': 'Adding track…', 'aiAssist.addTrackOk': 'Added track {n}.', 'aiAssist.addTrackFail': 'Could not add track', 'aiAssist.selectInstanceFirst': 'Select a timeline instance first.', 'aiAssist.moveInstanceStale': 'That instance is no longer in the project.', 'aiAssist.moveInstanceRunning': 'Moving instance…', 'aiAssist.moveInstanceFail': 'Could not move instance', 'aiAssist.moveInstanceOk': 'Moved {dir} by {delta} beats.', 'aiAssist.moveInstanceOkTrack': 'Moved instance to track {n}.', 'aiAssist.moveInstanceClamped': '(Start clamped to beat 0.)', 'aiAssist.removeInstanceConfirm': 'Remove ({name})?', 'aiAssist.removeInstanceCancelled': 'Remove cancelled.', 'aiAssist.removeInstanceRunning': 'Removing instance…', 'aiAssist.removeInstanceOk': 'Removed timeline instance.', 'aiAssist.removeInstanceFail': 'Could not remove instance', 'aiAssist.dirLeft': 'left', 'aiAssist.dirRight': 'right', 'aiAssist.run': 'Run', 'aiAssist.openOptimize': 'Open Optimize', 'aiAssist.undo': 'Undo', 'aiAssist.noClip': 'No clip selected', 'aiAssist.clipPrefix': 'Clip: ', 'aiAssist.trackPrefix': 'Track ', 'aiAssist.addBassRunning': 'Adding bass…', 'aiAssist.addBassOk': 'Bass accompaniment added.', 'aiAssist.addBassFail': 'Could not add bass: {detail}', 'aiAssist.addAccompanimentRunning': 'Adding accompaniment…', 'aiAssist.addAccompanimentOk': 'Accompaniment added. You can open Arrangement Details to inspect the prompt and patch.', 'aiAssist.addAccompanimentFail': 'Could not add accompaniment: {detail}', 'aiAssist.addAccompanimentCancelled': 'Add accompaniment cancelled.', 'aiAssist.addAccompanimentConfirm': 'I\'ll add an experimental accompaniment to the currently selected melody without changing the original. Continue?', 'aiAssist.addAccompanimentContinue': 'Continue', 'aiAssist.addAccompanimentCancel': 'Cancel', 'aiAssist.selectMelodyTimelineFirst': 'Select melody on timeline.', 'aiAssist.addAccompanimentNeedsNoteClip': 'This needs an editable note clip. Convert the audio to editable notes first.', 'aiAssist.intentRouterArrangementHint': 'HINT_ARR', 'aiAssist.intentRouterAccompanimentFaq': 'FAQ_ACCOMP' }; return m[k] || k; } };
 
