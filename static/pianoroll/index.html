@@ -82,6 +82,22 @@
         display:none;
       }
     }
+    .studioMobileWarning{
+      display:none;
+      margin:0;
+      padding:8px 12px;
+      border-bottom:1px solid rgba(251,191,36,.22);
+      background:rgba(251,191,36,.10);
+      color:#fde68a;
+      font-size:12px;
+      line-height:1.45;
+      overflow-wrap:anywhere;
+    }
+    @media (max-width: 640px){
+      .studioMobileWarning{
+        display:block;
+      }
+    }
     .brand{
       display:flex; align-items:center; gap:10px; font-weight:700;
       letter-spacing:.2px;
@@ -1116,6 +1132,10 @@
     <div id="studioImportStatus" class="smallmuted" style="min-width:120px;"></div>
     <button id="btnCancelImport" class="btn ghost" style="display:none;" data-i18n="common.cancel">Cancel</button>
     <div class="smallmuted" data-i18n="top.localClipsHint">Local clips + timeline. Double-click a clip to edit.</div>
+  </div>
+
+  <div id="studioMobileWarning" class="studioMobileWarning" role="note" data-i18n="studio.mobileWarning">
+    Studio works best on desktop or tablet. On narrow phone screens, some timeline and editing controls may be difficult to use.
   </div>
 
   <div id="studioBackendReadiness" class="studioBackendReadiness hidden" role="status" aria-live="polite">

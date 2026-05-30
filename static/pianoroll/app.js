@@ -4317,6 +4317,9 @@ removeActiveTrack(){
   const idx = Math.max(0, Math.min(p2.tracks.length - 1, Number(this.state.activeTrackIndex||0)));
   const tid = p2.tracks[idx] && p2.tracks[idx].id;
   if (!tid){ console.error('[App] removeActiveTrack: active track id missing'); return; }
+  const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+  const trackName = (p2.tracks[idx] && p2.tracks[idx].name) ? String(p2.tracks[idx].name) : ('Track ' + (idx + 1));
+  if (!confirm(_t('confirm.removeTrack').replace(/\{name\}/g, trackName))) return;
 
   // Remove instances on that track (v2 instances is an array)
   if (Array.isArray(p2.instances)){
@@ -5878,9 +5881,15 @@ renderTimeline(){
       this.render();
     },
 
-    deleteInstance(instId){
+    deleteInstance(instId, opts){
       const idx = this.project.instances.findIndex(x => x.id === instId);
       if (idx < 0) return;
+      const inst = this.project.instances[idx];
+      const clip = inst && inst.clipId ? this.project.clips.find(c => c && c.id === inst.clipId) : null;
+      const label = (clip && clip.name) ? String(clip.name) : String(instId || '');
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      const skipConfirm = opts && opts.skipConfirm === true;
+      if (!skipConfirm && !confirm(_t('confirm.deleteInstance').replace(/\{name\}/g, label))) return;
       this.project.instances.splice(idx, 1);
       if (this.state.selectedInstanceId === instId) this.state.selectedInstanceId = null;
       persist();
@@ -5892,9 +5901,10 @@ renderTimeline(){
       if (!clip) return;
 
       const instCount = (this.project.instances || []).filter(x => x.clipId === clipId).length;
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
       const msg = instCount > 0
-        ? `Remove clip "${clip.name}" and ${instCount} instance(s) from timeline?`
-        : `Remove clip "${clip.name}"?`;
+        ? _t('confirm.deleteClipWithInstances').replace(/\{name\}/g, clip.name).replace(/\{count\}/g, String(instCount))
+        : _t('confirm.deleteClipOnly').replace(/\{name\}/g, clip.name);
 
       if (!confirm(msg)) return;
 
@@ -7650,7 +7660,8 @@ renderTimeline(){
 
     clearProject(opts){
       const skipConfirm = opts && opts.skipConfirm;
-      if (!skipConfirm && !confirm('Clear local project (clips + timeline)?')) return;
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      if (!skipConfirm && !confirm(_t('confirm.clearLocalProject'))) return;
       this.project = H2SProject.defaultProject();
       persist();
       this.render();
@@ -7665,6 +7676,8 @@ renderTimeline(){
       opts = opts || {};
       const f = await this.pickFile('.json');
       if (!f) return false;
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      if (!confirm(_t('confirm.importLocalProject'))) return false;
       const txt = await f.text();
       try{
         const obj = JSON.parse(txt);
@@ -7691,6 +7704,8 @@ renderTimeline(){
         console.error('[App] createNewLocalProject: H2SProject missing');
         return;
       }
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      if (!confirm(_t('confirm.newLocalProject'))) return;
       const p2 = P.defaultProjectV2();
       this._createLocalProjectEntryAndSwitch(p2, {});
       this.state.selectedClipId = null;
@@ -7739,9 +7754,10 @@ renderTimeline(){
         this.closeProjectHome();
         return;
       }
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      if (!confirm(_t('confirm.switchLocalProject'))) return;
       const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(_projectDataKey(projectId)) : null;
       if (!raw){
-        const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
         alert(_t('projectHome.missingBlob'));
         return;
       }

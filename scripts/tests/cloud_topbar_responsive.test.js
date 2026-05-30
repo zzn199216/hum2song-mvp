@@ -21,5 +21,11 @@ assert(/\.topbar\s+\.row\s*\{[\s\S]*?min-width:\s*0/.test(index), 'topbar transp
 assert(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.topbar/.test(index), 'topbar should have narrow-width responsive handling');
 assert(!/\.topbar[\s\S]{0,220}position:\s*fixed/.test(index), 'topbar should not be fixed over transport controls');
 assert(!/\.topbar[\s\S]{0,220}z-index/.test(index), 'topbar should not create a z-index overlay over record/play buttons');
+assert(index.indexOf('id="studioMobileWarning"') !== -1, 'index.html should include a non-blocking mobile Studio warning');
+assert(index.indexOf('data-i18n="studio.mobileWarning"') !== -1, 'mobile warning should use i18n copy');
+assert(/\.studioMobileWarning\s*\{[\s\S]*?display:\s*none/.test(index), 'mobile warning should be hidden on wide screens');
+assert(/@media\s*\(max-width:\s*640px\)[\s\S]*?\.studioMobileWarning\s*\{[\s\S]*?display:\s*block/.test(index), 'mobile warning should show on narrow screens');
+assert(/\.studioMobileWarning\s*\{[\s\S]*?overflow-wrap:\s*anywhere/.test(index), 'mobile warning copy should wrap without horizontal overflow');
+assert(!/\.studioMobileWarning\s*\{[\s\S]*?width:\s*100vw/.test(index), 'mobile warning should not use 100vw');
 
 console.log('cloud_topbar_responsive.test.js ok');

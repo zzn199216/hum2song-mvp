@@ -56,7 +56,7 @@ assert(index.includes('/static/pianoroll/core/accompaniment_draft_v1.js?v=draft-
 assert(index.indexOf('core/accompaniment_draft_v1.js') > index.indexOf('core/arrangement_quality_v0.js'), 'AccompanimentDraft v1 should load after arrangement quality helpers');
 assert(index.indexOf('core/accompaniment_draft_v1.js') < index.indexOf('controllers/arrangement_controller.js'), 'AccompanimentDraft v1 should load before arrangement controller');
 assert(index.includes('params.get(\'cloudMode\') === \'1\''), 'index.html should bootstrap cloudMode before app.js');
-assert(index.includes('hum2song\\.cn'), 'index.html bootstrap should detect Hum2Song Cloud embed referrer');
+assert(index.includes('hum2song.cn'), 'index.html bootstrap should detect Hum2Song Cloud embed referrer');
 
 assert(bridge.includes('function isCloudModeRequested'), 'bridge should centralize cloud mode detection');
 assert(bridge.includes('document.referrer'), 'bridge should detect Cloud embed via referrer');
