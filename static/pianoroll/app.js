@@ -31,6 +31,7 @@
   const LS_KEY_AI_DRAWER_OPEN = 'hum2song_studio_ai_drawer_open'; // PR-UX4c: persist AI Settings drawer open/closed
   const LS_KEY_AI_ASSIST_OPEN = 'hum2song_studio_ai_assist_open'; // PR-UX7a: persist AI Assistant dock open/closed
   const LS_KEY_SKIP_PROJECT_HOME_AUTO = 'hum2song_studio_skip_project_home_auto'; // Project Home MVP: skip auto-open on load after first Continue
+  const LS_KEY_CLOUD_HOST_SESSION = 'hum2song_studio_cloud_host_session_key';
   /** Dev-only: set localStorage to '1' to run transcription scores through heuristic pitch-bucket multi-track split before clip creation. */
   const LS_KEY_DEV_TRANSCRIPTION_PITCH_SPLIT = 'hum2song_studio_dev_transcription_pitch_split';
   /** Dev-only: set localStorage to '1' to segment each exploded track (after trim) into shorter clips by gap + max duration. */
@@ -1734,6 +1735,63 @@ function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
     return LS_KEY_PROJECT_DATA_PREFIX + String(id);
   }
 
+  function _cloudModeRequestedForStorageReset(){
+    try{
+      if (typeof window !== 'undefined' && window.H2S_CLOUD_MODE === true) return true;
+      const params = new URLSearchParams((typeof window !== 'undefined' && window.location) ? (window.location.search || '') : '');
+      return params.get('cloudMode') === '1';
+    }catch(e){ return false; }
+  }
+
+  function _cloudHostSessionKeyFromLocation(){
+    if (!_cloudModeRequestedForStorageReset()) return '';
+    try{
+      const params = new URLSearchParams((typeof window !== 'undefined' && window.location) ? (window.location.search || '') : '');
+      const raw = String(params.get('hostSession') || '').trim();
+      return raw ? raw.slice(0, 160) : '';
+    }catch(e){ return ''; }
+  }
+
+  function _clearStoredProjectDocumentsForCloudHostReset(){
+    try{
+      if (typeof localStorage === 'undefined') return;
+      const remove = [
+        LS_KEY_V1,
+        LS_KEY_LEGACY_V2,
+        LS_KEY_CURRENT_PROJECT_ID,
+        LS_KEY_PROJECTS_INDEX,
+        LS_KEY_OPT_OPTIONS,
+      ];
+      for (const k of remove){
+        try{ localStorage.removeItem(k); }catch(e){}
+      }
+      const doomed = [];
+      for (let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if (k && String(k).indexOf(LS_KEY_PROJECT_DATA_PREFIX) === 0) doomed.push(k);
+      }
+      for (const k of doomed){
+        try{ localStorage.removeItem(k); }catch(e){}
+      }
+    }catch(e){
+      console.warn('[app] cloud host reset storage cleanup failed', e);
+    }
+  }
+
+  function _resetProjectStorageIfCloudHostSessionChanged(){
+    try{
+      if (typeof localStorage === 'undefined') return;
+      const next = _cloudHostSessionKeyFromLocation();
+      if (!next) return;
+      const prev = localStorage.getItem(LS_KEY_CLOUD_HOST_SESSION);
+      if (prev === next) return;
+      _clearStoredProjectDocumentsForCloudHostReset();
+      localStorage.setItem(LS_KEY_CLOUD_HOST_SESSION, next);
+    }catch(e){
+      console.warn('[app] cloud host session reset failed', e);
+    }
+  }
+
   /** One-time: legacy flat hum2song_studio_project_v2 -> current id + index + per-project blob. */
   function _migrateLegacyV2IfNeeded(){
     try{
@@ -1987,6 +2045,7 @@ try{
 
   function restore(){
     if (typeof localStorage === 'undefined') return null;
+    _resetProjectStorageIfCloudHostSessionChanged();
     _migrateLegacyV2IfNeeded();
     _repairLocalProjectIndex();
 
@@ -2225,6 +2284,28 @@ setProjectFromV2(projectV2){
   _touchCurrentProjectIndexFromDoc(projectV2);
   this.project = _projectV2ToV1View(projectV2);
   this.render();
+  return {ok:true};
+},
+resetForCloudHostSessionChange(hostSessionKey){
+  const nextKey = String(hostSessionKey || _cloudHostSessionKeyFromLocation() || 'host-reset').trim().slice(0, 160);
+  _clearStoredProjectDocumentsForCloudHostReset();
+  try{
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY_CLOUD_HOST_SESSION, nextKey || 'host-reset');
+  }catch(e){}
+  this._projectV2 = null;
+  this._lastOptimizeOptions = null;
+  this._lastOptimizeSnapshot = null;
+  this._lastArrangementSnapshot = null;
+  this._optPresetByClipId = {};
+  this._optOptionsByClipId = {};
+  if (this.state){
+    this.state.selectedClipId = null;
+    this.state.selectedInstanceId = null;
+    this.state.modal = Object.assign({}, this.state.modal || {}, { show: false, dirty: false, clipId: null });
+  }
+  this.project = H2SProject.defaultProject();
+  this.render();
+  log('Cloud host reset Studio state.');
   return {ok:true};
 },
 getSelectedClipId(){

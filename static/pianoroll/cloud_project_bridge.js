@@ -115,6 +115,19 @@
 
   var _cloudAiStatusRequested = false;
 
+  function clearCloudRuntimeState() {
+    _cloudAiStatusRequested = false;
+    window.H2S_CLOUD_AI_STATUS = null;
+    window.H2S_CLOUD_AI_STATUS_REQUEST_ID = '';
+    window.H2S_CLOUD_AI_CHAT_RESULT = null;
+    window.H2S_CLOUD_AI_CHAT_REQUEST_ID = '';
+    window.H2S_CLOUD_MATERIALS_LIST_RESULT = null;
+    window.H2S_CLOUD_MATERIALS_LIST_REQUEST_ID = '';
+    window.H2S_CLOUD_MATERIAL_CONTENT_RESULT = null;
+    window.H2S_CLOUD_MATERIAL_CONTENT_REQUEST_ID = '';
+    renderCloudAiStatus();
+  }
+
   function requestCloudAiStatus() {
     if (!window.H2S_CLOUD_MODE || !window.parent || window.parent === window) return;
     if (_cloudAiStatusRequested && window.H2S_CLOUD_AI_STATUS && !window.H2S_CLOUD_AI_STATUS.loading) return;
@@ -403,6 +416,22 @@
           ok: true,
         });
         return;
+
+      case 'H2S_HOST_RESET_STUDIO_STATE': {
+        if (data.version !== 1) return;
+        clearCloudRuntimeState();
+        var resetApp = getApp();
+        var hostSessionKey = typeof data.hostSessionKey === 'string' ? data.hostSessionKey : '';
+        if (resetApp && typeof resetApp.resetForCloudHostSessionChange === 'function') {
+          resetApp.resetForCloudHostSessionChange(hostSessionKey);
+        }
+        postBack(event.origin, {
+          type: 'H2S_HOST_RESET_STUDIO_STATE_RESULT',
+          requestId: data.requestId,
+          ok: true,
+        });
+        return;
+      }
 
       case 'H2S_CLOUD_AI_STATUS_RESPONSE': {
         if (!window.H2S_CLOUD_AI_STATUS_REQUEST_ID || data.requestId !== window.H2S_CLOUD_AI_STATUS_REQUEST_ID) return;
