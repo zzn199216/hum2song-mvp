@@ -214,6 +214,100 @@
     let _audioRevokeList = [];
     const synthByTrackId = new Map();
     const lastInstrumentKeyByTid = new Map();
+    const liveMutedByTrackId = new Map();
+    const runtimeNodesByTrackId = new Map();
+
+    function _trackKey(trackId){
+      const s = String(trackId || '').trim();
+      return s || null;
+    }
+
+    function _readTrackRuntimeMeta(trackId){
+      const tid = _trackKey(trackId);
+      const out = {
+        muted: tid ? !!liveMutedByTrackId.get(tid) : false,
+        gainDb: 0,
+      };
+      let foundMuted = false;
+      try{
+        const p2 = (typeof getProjectV2 === 'function' && getProjectV2()) ? getProjectV2()
+          : ((typeof getProjectDoc === 'function' && getProjectDoc()) ? getProjectDoc() : null);
+        const tracks = (p2 && Array.isArray(p2.tracks)) ? p2.tracks : [];
+        for (const t of tracks){
+          if (!t) continue;
+          const id = _trackKey(t.trackId || t.id);
+          if (!id || id !== tid) continue;
+          if (typeof t.muted === 'boolean'){
+            out.muted = !!t.muted;
+            foundMuted = true;
+          }
+          if (Number.isFinite(Number(t.gainDb))) out.gainDb = Number(t.gainDb);
+          break;
+        }
+      }catch(e){}
+      if (tid && !foundMuted && liveMutedByTrackId.has(tid)) out.muted = !!liveMutedByTrackId.get(tid);
+      return out;
+    }
+
+    function _applyNodeRuntimeState(trackId, node){
+      if (!node) return;
+      const meta = _readTrackRuntimeMeta(trackId);
+      try{
+        if ('mute' in node) node.mute = !!meta.muted;
+      }catch(e){}
+      try{
+        if (node.volume && Number.isFinite(meta.gainDb)){
+          node.volume.value = meta.muted ? -96 : meta.gainDb;
+        }
+      }catch(e){}
+    }
+
+    function _rememberRuntimeNode(trackId, node){
+      const tid = _trackKey(trackId);
+      if (!tid || !node) return;
+      let set = runtimeNodesByTrackId.get(tid);
+      if (!set){
+        set = new Set();
+        runtimeNodesByTrackId.set(tid, set);
+      }
+      set.add(node);
+      _applyNodeRuntimeState(tid, node);
+    }
+
+    function _applyTrackRuntimeState(trackId){
+      const tid = _trackKey(trackId);
+      if (!tid) return;
+      const set = runtimeNodesByTrackId.get(tid);
+      if (!set) return;
+      for (const node of Array.from(set)){
+        _applyNodeRuntimeState(tid, node);
+      }
+    }
+
+    function _isTrackMutedNow(trackId){
+      return !!_readTrackRuntimeMeta(trackId).muted;
+    }
+
+    function setTrackMuted(trackId, muted){
+      const tid = _trackKey(trackId);
+      if (!tid) return false;
+      liveMutedByTrackId.set(tid, !!muted);
+      _applyTrackRuntimeState(tid);
+      return true;
+    }
+
+    function refreshTrackRuntimeState(projectV2){
+      try{
+        const p2 = projectV2 || ((typeof getProjectV2 === 'function' && getProjectV2()) ? getProjectV2() : null);
+        for (const t of ((p2 && Array.isArray(p2.tracks)) ? p2.tracks : [])){
+          if (!t) continue;
+          const tid = _trackKey(t.trackId || t.id);
+          if (!tid) continue;
+          if (typeof t.muted === 'boolean') liveMutedByTrackId.set(tid, !!t.muted);
+          _applyTrackRuntimeState(tid);
+        }
+      }catch(e){}
+    }
 
 
     async function ensureTone(){
@@ -231,6 +325,7 @@ function _disposeTrackSynths(){
   _trackSynths = [];
   synthByTrackId.clear();
   lastInstrumentKeyByTid.clear();
+  runtimeNodesByTrackId.clear();
   for (const rev of _audioRevokeList){
     try{ rev(); }catch(e){}
   }
@@ -483,6 +578,8 @@ if (projectV2 && G.H2SProject && typeof G.H2SProject.flatten === 'function'){
     }
   }catch(e){}
 
+  refreshTrackRuntimeState(p2);
+
   const getSynth = async (trackId, instrumentKey) => {
     const meta = metaByTrackId.get(trackId) || { muted: false, gainDb: 0 };
     if (meta.muted) return null;
@@ -501,6 +598,7 @@ if (projectV2 && G.H2SProject && typeof G.H2SProject.flatten === 'function'){
     if (!s) return null;
     const dest = (s.toDestination && s.toDestination.call) ? s.toDestination() : s;
     try{ if (dest && dest.volume && Number.isFinite(meta.gainDb)) dest.volume.value = meta.gainDb; }catch(e){};
+    _rememberRuntimeNode(trackId, dest);
     _trackSynths.push(dest);
     synthByTrackId.set(trackId, dest);
     lastInstrumentKeyByTid.set(trackId, key);
@@ -540,6 +638,8 @@ vel = clamp(vel, 0.01, 1);
       if (t + dur > maxT) maxT = t + dur;
       G.Tone.Transport.schedule((time) => {
         try{
+          if (_isTrackMutedNow(tid)) return;
+          _applyTrackRuntimeState(tid);
           var pitch = n.pitch;
           var isSampler = (s.constructor && s.constructor.name && s.constructor.name.indexOf('Sampler') >= 0) || (G.Tone.Sampler && s instanceof G.Tone.Sampler);
           var trigArg = isSampler ? G.Tone.Frequency(pitch, 'midi').toNote() : G.Tone.Frequency(pitch, 'midi');
@@ -594,15 +694,18 @@ vel = clamp(vel, 0.01, 1);
       const dest = (player.toDestination && player.toDestination.call) ? player.toDestination() : player;
       if (dest && dest.volume && Number.isFinite(item.gainDb)) dest.volume.value = item.gainDb;
     }catch(e){}
+    _rememberRuntimeNode(item.trackId, player);
     _trackSynths.push(player);
     if (item.t + item.dur > maxT) maxT = item.t + item.dur;
-    (function(pl, dur, t){
+    (function(pl, dur, t, trackId){
       G.Tone.Transport.schedule(function(time){
         try{
+          if (_isTrackMutedNow(trackId)) return;
+          _applyTrackRuntimeState(trackId);
           if (pl && typeof pl.start === 'function') pl.start(time, 0, dur);
         }catch(e){}
       }, t);
-    })(player, item.dur, item.t);
+    })(player, item.dur, item.t, item.trackId);
   }
 } else {
   // Legacy fallback: v1 seconds-only schedule, single synth.
@@ -777,6 +880,8 @@ vel = clamp(vel, 0.01, 1);
       playProject,
       stop,
       playClip,
+      setTrackMuted,
+      refreshTrackRuntimeState,
       flattenProjectToEvents,
     };
   }

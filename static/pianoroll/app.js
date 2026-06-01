@@ -2364,6 +2364,11 @@ setTrackMuted(trackId, muted){
   if (!t.trackId && t.id === trackId) t.trackId = trackId;
   t.muted = Boolean(muted);
   this.setProjectFromV2(p2);
+  try{
+    if (this.audioCtrl && typeof this.audioCtrl.setTrackMuted === 'function'){
+      this.audioCtrl.setTrackMuted(trackId, t.muted);
+    }
+  }catch(e){}
 },
 
 
