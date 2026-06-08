@@ -2128,6 +2128,7 @@ try{
     _lastArrangementDetailsOnKey: null,
     _lastHummingScoreDoc: null,
     _hummingMusicGenerating: false,
+    _hummingMusicImportedJobIds: null,
     _optPresetByClipId: {},      // PR-3: per-clip last selected preset for dropdown persistence
     _optOptionsByClipId: {},     // PR-5c: per-clip full options so getOptimizeOptions(clipId) returns correct preset
     _pendingClipFromProject: null, // full project doc v2 while "Import clip from project JSON" chooser is open
@@ -6173,8 +6174,8 @@ renderTimeline(){
     /**
      * Shared path for native audio clips: decode duration, IndexedDB store, create clip + instance, persist.
      * @param {File|Blob} file
-     * @param {{ baseName?: string, statusDoneKey?: string }} opts - baseName overrides stem from file.name; optional i18n key for final status (default io.importAudioStoredLocal)
-     * @returns {Promise<{ ok: boolean, reason?: string, clipId?: string }>}
+     * @param {{ baseName?: string, statusDoneKey?: string, trackId?: string, trackIndex?: number, startBeat?: number }} opts - baseName overrides stem from file.name; optional i18n key for final status (default io.importAudioStoredLocal)
+     * @returns {Promise<{ ok: boolean, reason?: string, clipId?: string, instanceId?: string, trackId?: string, startBeat?: number }>}
      */
     async _commitNativeAudioFile(file, opts){
       opts = opts || {};
@@ -6237,10 +6238,17 @@ renderTimeline(){
       if (!Array.isArray(p2.clipOrder)) p2.clipOrder = [];
       p2.clipOrder.unshift(clip.id);
       if (typeof P.repairClipOrderV2 === 'function') P.repairClipOrderV2(p2);
-      const ti = Number.isFinite(this.state.activeTrackIndex) ? Math.max(0, Math.floor(this.state.activeTrackIndex)) : 0;
-      const tr = (p2.tracks && p2.tracks.length) ? p2.tracks[Math.min(ti, p2.tracks.length - 1)] : null;
-      const trackId = (tr && (tr.trackId || tr.id)) ? String(tr.trackId || tr.id) : (P.SCHEMA_V2 && P.SCHEMA_V2.DEFAULT_TRACK_ID) ? P.SCHEMA_V2.DEFAULT_TRACK_ID : 'trk_0';
-      const startBeat = (p2.ui && typeof p2.ui.playheadBeat === 'number' && isFinite(p2.ui.playheadBeat)) ? Math.max(0, p2.ui.playheadBeat) : 0;
+      const requestedTrackId = (typeof opts.trackId === 'string' && opts.trackId.trim()) ? opts.trackId.trim() : '';
+      const ti = Number.isFinite(opts.trackIndex)
+        ? Math.max(0, Math.floor(opts.trackIndex))
+        : (Number.isFinite(this.state.activeTrackIndex) ? Math.max(0, Math.floor(this.state.activeTrackIndex)) : 0);
+      const tr = requestedTrackId
+        ? ((p2.tracks || []).find(function(t){ return t && String(t.trackId || t.id) === requestedTrackId; }) || null)
+        : ((p2.tracks && p2.tracks.length) ? p2.tracks[Math.min(ti, p2.tracks.length - 1)] : null);
+      const trackId = requestedTrackId || ((tr && (tr.trackId || tr.id)) ? String(tr.trackId || tr.id) : (P.SCHEMA_V2 && P.SCHEMA_V2.DEFAULT_TRACK_ID) ? P.SCHEMA_V2.DEFAULT_TRACK_ID : 'trk_0');
+      const startBeat = Number.isFinite(opts.startBeat)
+        ? Math.max(0, Number(opts.startBeat))
+        : ((p2.ui && typeof p2.ui.playheadBeat === 'number' && isFinite(p2.ui.playheadBeat)) ? Math.max(0, p2.ui.playheadBeat) : 0);
       const inst = P.createInstanceV2(clip.id, startBeat, trackId);
       if (!Array.isArray(p2.instances)) p2.instances = [];
       p2.instances.push(inst);
@@ -6251,7 +6259,7 @@ renderTimeline(){
       const doneKey = (typeof opts.statusDoneKey === 'string' && opts.statusDoneKey.trim()) ? opts.statusDoneKey.trim() : 'io.importAudioStoredLocal';
       this.setImportStatus(_t(doneKey), false);
       log('Committed native audio clip: ' + clip.id);
-      return { ok: true, clipId: clip.id };
+      return { ok: true, clipId: clip.id, instanceId: inst.id, trackId: trackId, startBeat: startBeat };
     },
 
     async importAudioFileAsNativeClip(){
@@ -6315,26 +6323,50 @@ renderTimeline(){
       if (opts.scoreDoc && typeof opts.scoreDoc === 'object'){
         return { clipId: opts.clipId ? String(opts.clipId) : '', scoreDoc: opts.scoreDoc, source: opts.source || 'explicit' };
       }
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      function findSourceInstance(project, id){
+        if (!project || !Array.isArray(project.instances) || !id) return null;
+        return project.instances.find(function(inst){ return inst && String(inst.clipId) === String(id); }) || null;
+      }
       if (this.editorRt && this.editorRt.state && this.editorRt.state.modal
         && this.editorRt.state.modal.show && this.editorRt.state.modal.clipId
         && this.editorRt.state.modal.draftScore && typeof this.editorRt.state.modal.draftScore === 'object'){
         const editorClipId = String(this.editorRt.state.modal.clipId);
         if (!this._clipIsAudioForEditor(editorClipId)){
-          return { clipId: editorClipId, scoreDoc: this.editorRt.state.modal.draftScore, source: 'editor' };
+          const editorInst = findSourceInstance(p2, editorClipId);
+          return {
+            clipId: editorClipId,
+            scoreDoc: this.editorRt.state.modal.draftScore,
+            source: 'editor',
+            sourceInstanceId: editorInst && editorInst.id ? String(editorInst.id) : '',
+            sourceTrackId: editorInst && editorInst.trackId ? String(editorInst.trackId) : '',
+            sourceStartBeat: editorInst && Number.isFinite(editorInst.startBeat) ? Number(editorInst.startBeat) : undefined,
+          };
         }
       }
-      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
       let clipId = this.state && this.state.selectedClipId ? String(this.state.selectedClipId) : '';
+      let selectedInst = null;
       if (!clipId && this.state && this.state.selectedInstanceId && p2 && Array.isArray(p2.instances)){
         const inst = p2.instances.find(function(x){ return x && String(x.id) === String(this.state.selectedInstanceId); }, this);
-        if (inst && inst.clipId) clipId = String(inst.clipId);
+        if (inst && inst.clipId) {
+          selectedInst = inst;
+          clipId = String(inst.clipId);
+        }
       }
+      if (!selectedInst && clipId) selectedInst = findSourceInstance(p2, clipId);
       if (clipId && p2 && p2.clips && p2.clips[clipId]){
         const c2 = p2.clips[clipId];
         const P = (typeof window !== 'undefined') ? window.H2SProject : null;
         const isAudio = !!(c2 && P && typeof P.clipKind === 'function' && P.clipKind(c2) === 'audio');
-        if (!isAudio && c2 && c2.score && typeof c2.score === 'object') return { clipId: clipId, scoreDoc: c2.score, source: 'selected' };
-        if (!isAudio && c2 && c2.scoreDoc && typeof c2.scoreDoc === 'object') return { clipId: clipId, scoreDoc: c2.scoreDoc, source: 'selected' };
+        const base = {
+          clipId: clipId,
+          source: 'selected',
+          sourceInstanceId: selectedInst && selectedInst.id ? String(selectedInst.id) : '',
+          sourceTrackId: selectedInst && selectedInst.trackId ? String(selectedInst.trackId) : '',
+          sourceStartBeat: selectedInst && Number.isFinite(selectedInst.startBeat) ? Number(selectedInst.startBeat) : undefined,
+        };
+        if (!isAudio && c2 && c2.score && typeof c2.score === 'object') return Object.assign({}, base, { scoreDoc: c2.score });
+        if (!isAudio && c2 && c2.scoreDoc && typeof c2.scoreDoc === 'object') return Object.assign({}, base, { scoreDoc: c2.scoreDoc });
       }
       if (clipId && this.project && Array.isArray(this.project.clips)){
         const c1 = this.project.clips.find(function(c){ return c && String(c.id) === clipId; });
@@ -6379,7 +6411,126 @@ renderTimeline(){
       });
     },
 
-    async _pollHummingMusicJob(jobId){
+    _waitForCloudMaterialContent(assetId, title, timeoutMs){
+      if (typeof window === 'undefined' || typeof window.H2S_REQUEST_CLOUD_MATERIAL_CONTENT !== 'function') {
+        return Promise.reject(new Error('cloud_material_content_bridge_unavailable'));
+      }
+      const id = typeof assetId === 'string' ? assetId.trim() : '';
+      if (!id) return Promise.reject(new Error('cloud_material_missing'));
+      return new Promise(function(resolve, reject){
+        let done = false;
+        let timer = null;
+        function cleanup(){
+          if (timer) clearTimeout(timer);
+          window.removeEventListener('h2s-cloud-material-content', onContent);
+        }
+        function finish(fn, value){
+          if (done) return;
+          done = true;
+          cleanup();
+          fn(value);
+        }
+        function onContent(ev){
+          const detail = ev && ev.detail ? ev.detail : null;
+          if (!detail || detail.id !== id) return;
+          finish(resolve, detail);
+        }
+        timer = setTimeout(function(){ finish(reject, new Error('cloud_material_content_timeout')); }, timeoutMs || 45000);
+        window.addEventListener('h2s-cloud-material-content', onContent);
+        const requested = window.H2S_REQUEST_CLOUD_MATERIAL_CONTENT(id, title || id);
+        if (requested === false) finish(reject, new Error('cloud_material_content_bridge_unavailable'));
+      });
+    },
+
+    _resolveHummingMusicInsertPlacement(source){
+      const P = (typeof window !== 'undefined' && window.H2SProject) ? window.H2SProject : null;
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      if (!p2 || !P) return {};
+      if (!Array.isArray(p2.tracks)) p2.tracks = [];
+      if (!p2.tracks.length){
+        p2.tracks.push({ id: (P.SCHEMA_V2 && P.SCHEMA_V2.DEFAULT_TRACK_ID) || 'trk_0', name: 'Track 1', instrument: 'default', gainDb: 0, muted: false });
+      }
+      let sourceTrackId = source && source.sourceTrackId ? String(source.sourceTrackId) : '';
+      if (!sourceTrackId && source && source.clipId && Array.isArray(p2.instances)){
+        const inst = p2.instances.find(function(x){ return x && String(x.clipId) === String(source.clipId); });
+        if (inst && inst.trackId) sourceTrackId = String(inst.trackId);
+      }
+      const foundIndex = sourceTrackId ? p2.tracks.findIndex(function(t){ return t && String(t.trackId || t.id) === sourceTrackId; }) : -1;
+      const fallbackIndex = Number.isFinite(this.state.activeTrackIndex) ? Math.max(0, Math.floor(this.state.activeTrackIndex)) : 0;
+      const sourceTrackIndex = foundIndex >= 0 ? foundIndex : Math.min(fallbackIndex, Math.max(0, p2.tracks.length - 1));
+      const insertIndex = Math.min(p2.tracks.length, sourceTrackIndex + 1);
+      const trackId = (P && typeof P.uid === 'function') ? P.uid('trk_') : ('trk_' + Math.random().toString(16).slice(2, 10));
+      p2.tracks.splice(insertIndex, 0, {
+        id: trackId,
+        name: 'Generated full music',
+        instrument: 'audio',
+        gainDb: 0,
+        muted: false,
+      });
+      this.state.activeTrackIndex = insertIndex;
+      this.state.activeTrackId = trackId;
+      const startBeat = source && Number.isFinite(source.sourceStartBeat)
+        ? Math.max(0, Number(source.sourceStartBeat))
+        : ((p2.ui && Number.isFinite(p2.ui.playheadBeat)) ? Math.max(0, Number(p2.ui.playheadBeat)) : 0);
+      return { trackId: trackId, trackIndex: insertIndex, startBeat: startBeat, createdTrackId: trackId };
+    },
+
+    async _autoImportCompletedHummingMusicJob(job, source){
+      const statusKey = 'humming_music_auto_import_failed';
+      if (!job || String(job.status || '').toLowerCase() !== 'completed') return { ok: false, reason: 'not_completed' };
+      const jobId = String(job.jobId || job.id || '').trim();
+      if (!jobId) return { ok: false, reason: 'job_missing' };
+      if (!this._hummingMusicImportedJobIds || typeof this._hummingMusicImportedJobIds.has !== 'function') this._hummingMusicImportedJobIds = new Set();
+      if (this._hummingMusicImportedJobIds.has(jobId)) return { ok: true, skipped: true };
+      this._hummingMusicImportedJobIds.add(jobId);
+      const ids = Array.isArray(job.resultAssetIds) ? job.resultAssetIds : [];
+      const assetId = String(job.savedAssetId || ids[0] || '').trim();
+      if (!assetId){
+        this._setHummingMusicStatus('完整音乐已保存到云端素材，可从云端素材导入。');
+        return { ok: false, reason: statusKey };
+      }
+      let placement = null;
+      try{
+        const title = String(job.resultTitle || 'Generated full music');
+        const detail = await this._waitForCloudMaterialContent(assetId, title, 45000);
+        if (!detail || detail.ok !== true || !(detail.audioBuffer instanceof ArrayBuffer)){
+          throw new Error('cloud_material_content_failed');
+        }
+        const mime = detail.mimeType || 'audio/mpeg';
+        const blob = new Blob([detail.audioBuffer], { type: mime });
+        const ext = mime.indexOf('wav') >= 0 ? '.wav' : mime.indexOf('ogg') >= 0 ? '.ogg' : (mime.indexOf('mpeg') >= 0 || mime.indexOf('mp3') >= 0 ? '.mp3' : '.audio');
+        const file = new File([blob], (detail.title || title || 'generated-full-music') + ext, { type: mime });
+        placement = this._resolveHummingMusicInsertPlacement(source);
+        const res = await this._commitNativeAudioFile(file, {
+          baseName: detail.title || title || 'Generated full music',
+          statusDoneKey: 'hummingMusic.autoImportDone',
+          trackId: placement.trackId,
+          trackIndex: placement.trackIndex,
+          startBeat: placement.startBeat,
+        });
+        if (!res || res.ok !== true) throw new Error((res && res.reason) || 'audio_insert_failed');
+        this._setHummingMusicStatus('完整音乐已生成，并已添加到当前工程。原 MIDI/clip 仍可继续编辑。');
+        return { ok: true, assetId: assetId, clipId: res.clipId, instanceId: res.instanceId, trackId: res.trackId };
+      }catch(e){
+        console.warn('[humming_music] auto import failed', e);
+        if (placement && placement.createdTrackId){
+          try{
+            const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+            if (p2 && Array.isArray(p2.tracks)){
+              p2.tracks = p2.tracks.filter(function(t){ return t && String(t.trackId || t.id) !== String(placement.createdTrackId); });
+            }
+            if (this.state && this.state.activeTrackId === placement.createdTrackId) {
+              this.state.activeTrackId = '';
+              this.state.activeTrackIndex = 0;
+            }
+          }catch(_rollbackError){}
+        }
+        this._setHummingMusicStatus('完整音乐已保存到云端素材，可从云端素材导入。');
+        return { ok: false, reason: statusKey };
+      }
+    },
+
+    async _pollHummingMusicJob(jobId, source){
       const start = Date.now();
       while (Date.now() - start < 180000){
         const detail = await this._postHummingMusicBridgeRequest('H2S_CLOUD_HUMMING_MUSIC_JOB_STATUS', { jobId: jobId }, 'h2s-cloud-humming-music-job-status', 30000);
@@ -6388,7 +6539,9 @@ renderTimeline(){
         if (status === 'completed'){
           this._setHummingMusicStatus('完整音乐已生成并保存为 Cloud Materials 音频素材。原 MIDI/clip 仍可编辑。');
           if (typeof window.H2S_REQUEST_CLOUD_MATERIALS_LIST === 'function') window.H2S_REQUEST_CLOUD_MATERIALS_LIST();
-          return { ok: true, job: job };
+          const imported = await this._autoImportCompletedHummingMusicJob(job, source);
+          if (typeof window.H2S_REQUEST_CLOUD_MATERIALS_LIST === 'function') window.H2S_REQUEST_CLOUD_MATERIALS_LIST();
+          return { ok: true, job: job, imported: imported && imported.ok === true, importResult: imported };
         }
         if (status === 'failed' || status === 'timed_out'){
           return { ok: false, reason: status || 'failed' };
@@ -6421,7 +6574,7 @@ renderTimeline(){
         const job = created && created.job ? created.job : {};
         const jobId = job.jobId || job.id;
         if (!jobId) throw new Error('job_missing');
-        const final = await this._pollHummingMusicJob(String(jobId));
+        const final = await this._pollHummingMusicJob(String(jobId), source);
         if (final && final.ok) return final;
         if (!final || !final.ok) this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
         return final || { ok: false, reason: 'failed' };
