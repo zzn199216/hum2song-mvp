@@ -53,6 +53,17 @@ assert(studioSrc.includes('完整音乐是生成音频素材') || studioSrc.incl
 assert(appSrc.includes('请选择一个可编辑旋律片段。') || appSrc.includes('请先选择一个可编辑旋律片段。') || appSrc.includes('璇峰厛閫夋嫨涓€涓彲缂栬緫鏃嬪緥鐗囨'), 'no-source state should ask the user to select an editable clip');
 assert(appSrc.includes('_assistantIsHummingFullMusicIntent'), 'assistant should recognize full-music-from-current-clip requests');
 assert(appSrc.includes('_assistantDispatchHummingMusicFlow'), 'assistant should route full-music requests through the same Studio bridge flow');
+assert(appSrc.includes('_recordHummingMusicPromptTraceDetails'), 'full-music generation should record a last-optimize details prompt trace');
+assert(appSrc.includes('_updateHummingMusicPromptTraceStatus'), 'full-music generation should update prompt trace status as the job changes');
+assert(appSrc.includes('humming_full_music'), 'prompt trace should identify the operation as humming_full_music');
+assert(appSrc.includes('生成完整音乐'), 'prompt trace details should expose the operation type in user-facing text');
+assert(appSrc.includes('sourceClipName'), 'prompt trace should include source clip name');
+assert(appSrc.includes('notesCount'), 'prompt trace should include source notes count');
+assert(appSrc.includes('sourceDurationSec'), 'prompt trace should include source duration when available');
+assert(appSrc.includes('melodyPrompt'), 'prompt trace should include the melodyPrompt returned by Cloud');
+assert(appSrc.includes('derivedPrompt'), 'prompt trace should include the final derived prompt when available');
+assert(appSrc.includes('humming_music_auto_insert_failed'), 'details should record auto-insert fallback when generated music is only saved to Cloud Materials');
+assert(appSrc.includes('_redactLastOptimizePromptTrace'), 'full-music prompt trace should reuse last-optimize redaction');
 
 const createMessageIndex = appSrc.indexOf('H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE');
 const createMessageSlice = appSrc.slice(Math.max(0, createMessageIndex - 1200), createMessageIndex + 2400);

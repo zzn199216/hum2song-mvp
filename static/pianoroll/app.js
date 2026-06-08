@@ -2661,6 +2661,7 @@ async optimizeClip(clipId, optOverride){
       'rhythm_tighten_loosen': 'lastOpt.path.rhythm',
       'pseudo': 'lastOpt.path.pseudo',
       'preset': 'lastOpt.path.preset',
+      'humming_full_music': '生成完整音乐',
     };
     if (keyBy[p]) return t(keyBy[p]);
     return t('lastOpt.path.other').replace('{id}', p ? p.slice(0, 28) : '?');
@@ -2747,6 +2748,12 @@ async optimizeClip(clipId, optOverride){
     const pathRaw = (res.executionPath != null && String(res.executionPath).trim() !== '') ? String(res.executionPath).trim()
       : (ps && ps.executionPath) ? String(ps.executionPath) : '';
     const pathLabel = this._lastOptPathLabel(pathRaw || 'unknown', t);
+    if (String(pathRaw || '') === 'humming_full_music'){
+      const hm = res.hummingFullMusic && typeof res.hummingFullMusic === 'object' ? res.hummingFullMusic : {};
+      const st = hm.status ? String(hm.status) : (res.ok ? 'succeeded' : 'failed');
+      const suffix = res.ok ? st : (hm.failureReason || res.reason || st);
+      return '生成完整音乐 · ' + String(suffix).slice(0, 80);
+    }
 
     if (!res.ok) {
       const detail = this._lastOptFailureDetail(res, t);
@@ -2909,6 +2916,12 @@ async optimizeClip(clipId, optOverride){
     };
     const walk = function(v){
       if (Array.isArray(v)) return v.map(walk);
+      if (typeof v === 'string') {
+        return v
+          .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer ' + REDACT)
+          .replace(/(token|access_token|session|cookie|signature|api_key)=([^&\s]+)/gi, '$1=' + REDACT)
+          .replace(/https?:\/\/[^\s"'<>]+/gi, '[REDACTED_URL]');
+      }
       if (!v || typeof v !== 'object') return v;
       const out = {};
       for (const k in v){
@@ -2960,6 +2973,20 @@ async optimizeClip(clipId, optOverride){
       const val = document.createElement('span');
       val.className = 'val';
       val.textContent = valueStr;
+      row.appendChild(lbl);
+      row.appendChild(val);
+      body.appendChild(row);
+    };
+    const addLiteralRow = (label, valueStr) => {
+      if (valueStr === undefined || valueStr === null || String(valueStr).trim() === '') return;
+      const row = document.createElement('div');
+      row.className = 'lastOptDetailRow';
+      const lbl = document.createElement('span');
+      lbl.className = 'lbl';
+      lbl.textContent = String(label);
+      const val = document.createElement('span');
+      val.className = 'val';
+      val.textContent = String(valueStr);
       row.appendChild(lbl);
       row.appendChild(val);
       body.appendChild(row);
@@ -3110,6 +3137,22 @@ async optimizeClip(clipId, optOverride){
       : (ps && ps.executionPath) ? String(ps.executionPath) : '';
     const pathStr = String(pathRaw || '');
     addRow('lastOpt.detail.lblPath', this._lastOptPathLabel(pathRaw || 'unknown', t));
+    const hummingDetails = pathStr === 'humming_full_music' && res.hummingFullMusic && typeof res.hummingFullMusic === 'object'
+      ? res.hummingFullMusic : null;
+    if (hummingDetails){
+      addLiteralRow('操作类型', hummingDetails.operation || '生成完整音乐');
+      addLiteralRow('sourceClipId', hummingDetails.sourceClipId);
+      addLiteralRow('sourceClipName', hummingDetails.sourceClipName);
+      addLiteralRow('notes count', hummingDetails.notesCount);
+      addLiteralRow('duration', hummingDetails.sourceDurationSec != null ? (String(hummingDetails.sourceDurationSec) + 's') : '');
+      addLiteralRow('styleHint', hummingDetails.styleHint);
+      addLiteralRow('jobId', hummingDetails.jobId);
+      addLiteralRow('createdAt', hummingDetails.createdAt);
+      addLiteralRow('status', hummingDetails.status);
+      addLiteralRow('failure reason', hummingDetails.failureReason);
+      addLiteralRow('Cloud Materials', hummingDetails.savedToCloudMaterials === true ? 'saved' : '');
+      addLiteralRow('Studio timeline', hummingDetails.insertedIntoTimeline === true ? 'inserted' : (hummingDetails.autoInsertStatus || ''));
+    }
     if (!res.ok){
       addRow('lastOpt.detail.lblOutcome', this._lastOptFailureDetail(res, t));
     } else {
@@ -3188,6 +3231,9 @@ async optimizeClip(clipId, optOverride){
           partialJsonDiscarded: previewSrc.partialJsonDiscarded === true,
         });
       }
+      addPromptTraceSection(s.promptTrace || null);
+    }
+    if (pathStr !== 'llm' && s.promptTrace){
       addPromptTraceSection(s.promptTrace || null);
     }
   },
@@ -6475,6 +6521,126 @@ renderTimeline(){
       return { trackId: trackId, trackIndex: insertIndex, startBeat: startBeat, createdTrackId: trackId };
     },
 
+    _hummingMusicScoreStats(scoreDoc){
+      const stats = { notesCount: 0, sourceDurationSec: undefined };
+      const tracks = scoreDoc && Array.isArray(scoreDoc.tracks) ? scoreDoc.tracks : [];
+      let maxEnd = 0;
+      let sequential = 0;
+      let hasTiming = false;
+      tracks.forEach(function(track){
+        const notes = track && Array.isArray(track.notes) ? track.notes : [];
+        notes.forEach(function(note){
+          if (!note || typeof note !== 'object') return;
+          stats.notesCount += 1;
+          const start = Number(note.start != null ? note.start : (note.startSec != null ? note.startSec : note.time));
+          const duration = Number(note.duration != null ? note.duration : (note.durationSec != null ? note.durationSec : note.duration_s));
+          if (Number.isFinite(start) && Number.isFinite(duration) && duration > 0){
+            maxEnd = Math.max(maxEnd, Math.max(0, start) + duration);
+            hasTiming = true;
+          } else if (Number.isFinite(duration) && duration > 0){
+            sequential += duration;
+            hasTiming = true;
+          }
+        });
+      });
+      const rawDuration = maxEnd > 0 ? maxEnd : sequential;
+      if (hasTiming && rawDuration > 0) stats.sourceDurationSec = Math.round(rawDuration * 100) / 100;
+      return stats;
+    },
+
+    _hummingMusicSourceClipName(source){
+      const clipId = source && source.clipId ? String(source.clipId) : '';
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      const clip = clipId && p2 && p2.clips && p2.clips[clipId] ? p2.clips[clipId] : null;
+      const raw = clip && (clip.name || clip.title || (clip.meta && (clip.meta.name || clip.meta.title)));
+      return raw != null && String(raw).trim() ? String(raw).trim().slice(0, 120) : '';
+    },
+
+    _buildHummingMusicLastOptimizeResult(trace){
+      const safe = trace && typeof trace === 'object' ? trace : {};
+      const status = safe.status ? String(safe.status) : 'creating';
+      const promptText = String(safe.derivedPrompt || safe.melodyPrompt || '');
+      const detailLines = [
+        'Operation: 生成完整音乐',
+        safe.sourceClipId ? ('sourceClipId: ' + safe.sourceClipId) : '',
+        safe.sourceClipName ? ('sourceClipName: ' + safe.sourceClipName) : '',
+        safe.notesCount != null ? ('notesCount: ' + String(safe.notesCount)) : '',
+        safe.sourceDurationSec != null ? ('sourceDurationSec: ' + String(safe.sourceDurationSec)) : '',
+        safe.styleHint ? ('styleHint: ' + safe.styleHint) : '',
+        safe.jobId ? ('jobId: ' + safe.jobId) : '',
+        'status: ' + status,
+        safe.failureReason ? ('failureReason: ' + safe.failureReason) : '',
+      ].filter(Boolean).join('\n');
+      return {
+        ok: status !== 'failed',
+        executionPath: 'humming_full_music',
+        ops: 0,
+        detail: safe.failureReason || status,
+        reason: status === 'failed' ? (safe.failureReason || 'humming_music_failed') : undefined,
+        hummingFullMusic: safe,
+        llmPromptTrace: {
+          finalSystemPrompt: 'Generate full music from the current editable MIDI/Clip while preserving its melody.',
+          finalUserPrompt: promptText,
+          blocks: {
+            resolvedTemplateId: 'humming_full_music',
+            promptVersion: 'humming-full-music-trace-v1',
+            planBlock: '生成完整音乐',
+            directivesBlock: detailLines,
+            userBody: promptText,
+          },
+        },
+      };
+    },
+
+    _recordHummingMusicPromptTraceDetails(source, created, styleHint){
+      const job = created && created.job && typeof created.job === 'object' ? created.job : {};
+      const promptTrace = job.promptTrace && typeof job.promptTrace === 'object' ? job.promptTrace : {};
+      const stats = this._hummingMusicScoreStats(source && source.scoreDoc);
+      const trace = {
+        operation: '生成完整音乐',
+        operationId: 'humming_full_music',
+        sourceClipId: source && source.clipId ? String(source.clipId) : '',
+        sourceClipName: this._hummingMusicSourceClipName(source),
+        notesCount: promptTrace.notesCount != null ? promptTrace.notesCount : stats.notesCount,
+        sourceDurationSec: promptTrace.sourceDurationSec != null ? promptTrace.sourceDurationSec : stats.sourceDurationSec,
+        styleHint: promptTrace.styleHint != null ? String(promptTrace.styleHint) : String(styleHint || ''),
+        melodyPrompt: promptTrace.melodyPrompt != null ? String(promptTrace.melodyPrompt) : '',
+        derivedPrompt: promptTrace.derivedPrompt != null ? String(promptTrace.derivedPrompt) : '',
+        jobId: job.jobId || job.id ? String(job.jobId || job.id) : '',
+        createdAt: promptTrace.createdAt || job.createdAt ? String(promptTrace.createdAt || job.createdAt) : (new Date()).toISOString(),
+        status: job.status ? String(job.status) : 'creating',
+      };
+      const res = this._buildHummingMusicLastOptimizeResult(trace);
+      const p2 = this.getProjectV2 && this.getProjectV2();
+      const clip = trace.sourceClipId && p2 && p2.clips && p2.clips[trace.sourceClipId] ? p2.clips[trace.sourceClipId] : null;
+      let docKeyAtRun = null;
+      try { docKeyAtRun = _getActiveProjectDocStorageKey(); } catch (e) { docKeyAtRun = null; }
+      this._lastOptimizeSnapshot = {
+        res: res,
+        clipId: trace.sourceClipId || null,
+        revisionIdAtRun: (clip && clip.revisionId != null) ? String(clip.revisionId) : '',
+        docKeyAtRun,
+        promptTrace: this._sanitizeLastOptimizePromptTrace(res.llmPromptTrace),
+      };
+      this._applyLastOptimizeSummaryI18n();
+      this._renderLastOptimizeDetailsBodyIfOpen();
+      return trace;
+    },
+
+    _updateHummingMusicPromptTraceStatus(patch){
+      const snap = this._lastOptimizeSnapshot;
+      const current = snap && snap.res && snap.res.hummingFullMusic && typeof snap.res.hummingFullMusic === 'object'
+        ? snap.res.hummingFullMusic : null;
+      if (!current) return null;
+      const next = Object.assign({}, current, patch || {});
+      const res = this._buildHummingMusicLastOptimizeResult(next);
+      snap.res = res;
+      snap.promptTrace = this._sanitizeLastOptimizePromptTrace(res.llmPromptTrace);
+      this._applyLastOptimizeSummaryI18n();
+      this._renderLastOptimizeDetailsBodyIfOpen();
+      return next;
+    },
+
     async _autoImportCompletedHummingMusicJob(job, source){
       const statusKey = 'humming_music_auto_import_failed';
       if (!job || String(job.status || '').toLowerCase() !== 'completed') return { ok: false, reason: 'not_completed' };
@@ -6540,15 +6706,25 @@ renderTimeline(){
           this._setHummingMusicStatus('完整音乐已生成并保存为 Cloud Materials 音频素材。原 MIDI/clip 仍可编辑。');
           if (typeof window.H2S_REQUEST_CLOUD_MATERIALS_LIST === 'function') window.H2S_REQUEST_CLOUD_MATERIALS_LIST();
           const imported = await this._autoImportCompletedHummingMusicJob(job, source);
+          this._updateHummingMusicPromptTraceStatus({
+            status: 'succeeded',
+            savedToCloudMaterials: true,
+            insertedIntoTimeline: imported && imported.ok === true,
+            autoInsertStatus: imported && imported.ok === true ? 'inserted' : 'humming_music_auto_insert_failed',
+            failureReason: imported && imported.ok === true ? '' : 'humming_music_auto_insert_failed',
+          });
           if (typeof window.H2S_REQUEST_CLOUD_MATERIALS_LIST === 'function') window.H2S_REQUEST_CLOUD_MATERIALS_LIST();
           return { ok: true, job: job, imported: imported && imported.ok === true, importResult: imported };
         }
         if (status === 'failed' || status === 'timed_out'){
+          this._updateHummingMusicPromptTraceStatus({ status: 'failed', failureReason: status || 'failed' });
           return { ok: false, reason: status || 'failed' };
         }
         this._setHummingMusicStatus('完整音乐生成中...');
+        this._updateHummingMusicPromptTraceStatus({ status: status || 'running' });
         await sleep(2500);
       }
+      this._updateHummingMusicPromptTraceStatus({ status: 'failed', failureReason: 'timeout' });
       return { ok: false, reason: 'timeout' };
     },
 
@@ -6566,20 +6742,24 @@ renderTimeline(){
       if (btn) btn.disabled = true;
       try{
         this._setHummingMusicStatus('正在创建完整音乐生成任务...');
+        const styleHint = this._composeHummingMusicStyleHint();
         const created = await this._postHummingMusicBridgeRequest('H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE', {
           scoreDoc: scoreDoc,
-          styleHint: this._composeHummingMusicStyleHint(),
+          styleHint: styleHint,
           durationSec: 30,
         }, 'h2s-cloud-humming-music-job-create', 30000);
         const job = created && created.job ? created.job : {};
         const jobId = job.jobId || job.id;
         if (!jobId) throw new Error('job_missing');
+        this._recordHummingMusicPromptTraceDetails(source, created, styleHint);
         const final = await this._pollHummingMusicJob(String(jobId), source);
         if (final && final.ok) return final;
+        this._updateHummingMusicPromptTraceStatus({ status: 'failed', failureReason: final && final.reason ? String(final.reason) : 'failed' });
         if (!final || !final.ok) this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
         return final || { ok: false, reason: 'failed' };
       }catch(e){
         const msg = e && e.message ? String(e.message) : 'humming_music_failed';
+        this._updateHummingMusicPromptTraceStatus({ status: 'failed', failureReason: msg });
         if (/auth_required/.test(msg)) this._setHummingMusicStatus('请先在 Cloud 登录后再生成完整音乐。');
         else if (/quota|access_denied/.test(msg)) this._setHummingMusicStatus('当前额度或权限不足，无法创建完整音乐生成任务。');
         else if (/cloud_bridge_unavailable/.test(msg)) this._setHummingMusicStatus('请从 Hum2Song Cloud 打开 Studio 后再生成完整音乐。');
