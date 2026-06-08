@@ -1233,6 +1233,37 @@
             <input type="checkbox" id="chkAutoOpenAfterImport" checked />
             <span data-i18n="cliplib.autoOpenAfterImport">Auto-open editor after import</span>
           </label>
+          <div id="h2sHummingMusicPanel" style="margin-top:10px; padding:8px; border:1px solid rgba(148,163,184,.22); border-radius:8px; background:rgba(15,23,42,.32);">
+            <div class="row" style="justify-content:space-between; align-items:center; gap:8px;">
+              <strong style="font-size:12px;">生成完整音乐</strong>
+              <button type="button" id="btnHummingGenerateMusic" class="btn primary mini">生成完整音乐</button>
+            </div>
+            <p class="smallmuted" style="font-size:11px; margin:6px 0;">完整音乐是生成音频素材；原 MIDI/clip 仍可继续编辑。</p>
+            <div class="col" style="gap:6px;">
+              <div class="row" data-h2s-hum-group="instruments" style="gap:4px; flex-wrap:wrap;">
+                <button type="button" class="btn mini" data-h2s-hum-chip="piano">Piano</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="guitar">Guitar</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="synth">Synth</button>
+              </div>
+              <div class="row" data-h2s-hum-group="style" style="gap:4px; flex-wrap:wrap;">
+                <button type="button" class="btn mini" data-h2s-hum-chip="pop">Pop</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="lo-fi">Lo-fi</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="city pop">City pop</button>
+              </div>
+              <div class="row" data-h2s-hum-group="mood" style="gap:4px; flex-wrap:wrap;">
+                <button type="button" class="btn mini" data-h2s-hum-chip="warm">Warm</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="bright">Bright</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="dreamy">Dreamy</button>
+              </div>
+              <div class="row" data-h2s-hum-group="arrangement" style="gap:4px; flex-wrap:wrap;">
+                <button type="button" class="btn mini" data-h2s-hum-chip="full band">Full band</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="acoustic">Acoustic</button>
+                <button type="button" class="btn mini" data-h2s-hum-chip="cinematic">Cinematic</button>
+              </div>
+              <input id="h2sHummingCustomKeywords" type="text" placeholder="Custom keywords" style="width:100%; font-size:12px;" />
+              <div id="h2sHummingMusicStatus" class="smallmuted" style="font-size:11px;"></div>
+            </div>
+          </div>
           <div class="hr"></div>
           <div id="cloudMaterialsSection" style="display:none;">
             <button type="button" id="btnCloudMaterials" class="btn mini" data-i18n="cloudMaterials.open">Cloud Materials</button>

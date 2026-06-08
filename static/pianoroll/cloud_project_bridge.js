@@ -125,6 +125,8 @@
     window.H2S_CLOUD_MATERIALS_LIST_REQUEST_ID = '';
     window.H2S_CLOUD_MATERIAL_CONTENT_RESULT = null;
     window.H2S_CLOUD_MATERIAL_CONTENT_REQUEST_ID = '';
+    window.H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE_RESULT = null;
+    window.H2S_CLOUD_HUMMING_MUSIC_JOB_STATUS_RESULT = null;
     renderCloudAiStatus();
   }
 
@@ -609,6 +611,36 @@
           error: typeof data.error === 'string' ? data.error : null,
         };
         window.dispatchEvent(new CustomEvent('h2s-cloud-material-content', { detail: window.H2S_CLOUD_MATERIAL_CONTENT_RESULT }));
+        return;
+      }
+
+      case 'H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE_RESPONSE': {
+        if (typeof data.requestId !== 'string' || !data.requestId) return;
+        window.H2S_CLOUD_MODE = true;
+        window.H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE_RESULT = {
+          loading: false,
+          requestId: data.requestId,
+          ok: data.ok === true,
+          status: typeof data.status === 'number' ? data.status : null,
+          job: data.job && typeof data.job === 'object' ? data.job : null,
+          error: typeof data.error === 'string' ? data.error : null,
+        };
+        window.dispatchEvent(new CustomEvent('h2s-cloud-humming-music-job-create', { detail: window.H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE_RESULT }));
+        return;
+      }
+
+      case 'H2S_CLOUD_HUMMING_MUSIC_JOB_STATUS_RESPONSE': {
+        if (typeof data.requestId !== 'string' || !data.requestId) return;
+        window.H2S_CLOUD_MODE = true;
+        window.H2S_CLOUD_HUMMING_MUSIC_JOB_STATUS_RESULT = {
+          loading: false,
+          requestId: data.requestId,
+          ok: data.ok === true,
+          status: typeof data.status === 'number' ? data.status : null,
+          job: data.job && typeof data.job === 'object' ? data.job : null,
+          error: typeof data.error === 'string' ? data.error : null,
+        };
+        window.dispatchEvent(new CustomEvent('h2s-cloud-humming-music-job-status', { detail: window.H2S_CLOUD_HUMMING_MUSIC_JOB_STATUS_RESULT }));
         return;
       }
 

@@ -2081,6 +2081,8 @@ try{
     _lastArrangementDetailsInitialized: false,
     _lastArrangementDetailsOnDocDown: null,
     _lastArrangementDetailsOnKey: null,
+    _lastHummingScoreDoc: null,
+    _hummingMusicGenerating: false,
     _optPresetByClipId: {},      // PR-3: per-clip last selected preset for dropdown persistence
     _optOptionsByClipId: {},     // PR-5c: per-clip full options so getOptimizeOptions(clipId) returns correct preset
     _pendingClipFromProject: null, // full project doc v2 while "Import clip from project JSON" chooser is open
@@ -3890,6 +3892,7 @@ if (typeof localStorage !== 'undefined') {
         chkAutoOpen.checked = !!this.state.autoOpenAfterImport;
         chkAutoOpen.addEventListener('change', () => { this.state.autoOpenAfterImport = chkAutoOpen.checked; });
       }
+      this._initHummingMusicPanel();
       const btnCancelImport = $('#btnCancelImport');
       if (btnCancelImport) btnCancelImport.addEventListener('click', () => { this.state.importCancelled = true; });
       this._initMasterVolumeUI();
@@ -6222,6 +6225,144 @@ renderTimeline(){
       await this._commitNativeAudioFile(f, { baseName, statusDoneKey: 'io.addRecordingAsAudioDone' });
     },
 
+    _initHummingMusicPanel(){
+      if (typeof document === 'undefined') return;
+      const hummingPanelMarkupContract = 'id="h2sHummingMusicPanel"';
+      const hummingBridgeResponseContracts = 'H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE_RESPONSE H2S_CLOUD_HUMMING_MUSIC_JOB_STATUS_RESPONSE';
+      void hummingPanelMarkupContract;
+      void hummingBridgeResponseContracts;
+      const panel = document.getElementById('h2sHummingMusicPanel');
+      if (!panel || panel.__h2sHummingBound) return;
+      panel.__h2sHummingBound = true;
+      panel.querySelectorAll('[data-h2s-hum-group="instruments"] [data-h2s-hum-chip], [data-h2s-hum-group="style"] [data-h2s-hum-chip], [data-h2s-hum-group="mood"] [data-h2s-hum-chip], [data-h2s-hum-group="arrangement"] [data-h2s-hum-chip]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          btn.classList.toggle('primary');
+          btn.setAttribute('aria-pressed', btn.classList.contains('primary') ? 'true' : 'false');
+        });
+      });
+      const gen = document.getElementById('btnHummingGenerateMusic');
+      if (gen) gen.addEventListener('click', () => { this._requestHummingMusicJob(); });
+    },
+
+    _setHummingMusicStatus(text){
+      const el = (typeof document !== 'undefined') ? document.getElementById('h2sHummingMusicStatus') : null;
+      if (el) el.textContent = text || '';
+    },
+
+    _composeHummingMusicStyleHint(){
+      if (typeof document === 'undefined') return '';
+      const chips = Array.from(document.querySelectorAll('#h2sHummingMusicPanel [data-h2s-hum-chip].primary'))
+        .map(function(el){ return String(el.getAttribute('data-h2s-hum-chip') || '').trim(); })
+        .filter(Boolean);
+      const customEl = document.getElementById('h2sHummingCustomKeywords');
+      const custom = customEl && customEl.value ? String(customEl.value).split(/[,，、;；]/).map(function(x){ return x.trim(); }).filter(Boolean) : [];
+      return chips.concat(custom).slice(0, 12).join(', ');
+    },
+
+    _getHummingMusicSourceScoreDoc(){
+      const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+      let clipId = this.state && this.state.selectedClipId ? String(this.state.selectedClipId) : '';
+      if (!clipId && this.state && this.state.selectedInstanceId && p2 && Array.isArray(p2.instances)){
+        const inst = p2.instances.find(function(x){ return x && String(x.id) === String(this.state.selectedInstanceId); }, this);
+        if (inst && inst.clipId) clipId = String(inst.clipId);
+      }
+      if (clipId && p2 && p2.clips && p2.clips[clipId]){
+        const c2 = p2.clips[clipId];
+        if (c2 && c2.score && typeof c2.score === 'object') return c2.score;
+        if (c2 && c2.scoreDoc && typeof c2.scoreDoc === 'object') return c2.scoreDoc;
+      }
+      if (clipId && this.project && Array.isArray(this.project.clips)){
+        const c1 = this.project.clips.find(function(c){ return c && String(c.id) === clipId; });
+        if (c1 && c1.score && typeof c1.score === 'object') return c1.score;
+      }
+      return this._lastHummingScoreDoc || null;
+    },
+
+    _postHummingMusicBridgeRequest(type, payload, eventName, timeoutMs){
+      if (typeof window === 'undefined' || !window.parent || window.parent === window || !window.H2S_CLOUD_MODE) {
+        return Promise.reject(new Error('cloud_bridge_unavailable'));
+      }
+      const requestId = 'humming-music-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+      return new Promise(function(resolve, reject){
+        let done = false;
+        let timer = null;
+        function cleanup(){
+          if (timer) clearTimeout(timer);
+          window.removeEventListener(eventName, onResponse);
+        }
+        function finish(fn, value){
+          if (done) return;
+          done = true;
+          cleanup();
+          fn(value);
+        }
+        function onResponse(ev){
+          const detail = ev && ev.detail ? ev.detail : null;
+          if (!detail || detail.requestId !== requestId) return;
+          if (detail.ok === true) finish(resolve, detail);
+          else finish(reject, new Error(detail.error || 'humming_music_request_failed'));
+        }
+        timer = setTimeout(function(){ finish(reject, new Error('humming_music_timeout')); }, timeoutMs || 25000);
+        window.addEventListener(eventName, onResponse);
+        const msg = Object.assign({}, payload || {}, { type: type, requestId: requestId });
+        window.parent.postMessage(msg, '*');
+      });
+    },
+
+    async _pollHummingMusicJob(jobId){
+      const start = Date.now();
+      while (Date.now() - start < 180000){
+        const detail = await this._postHummingMusicBridgeRequest('H2S_CLOUD_HUMMING_MUSIC_JOB_STATUS', { jobId: jobId }, 'h2s-cloud-humming-music-job-status', 30000);
+        const job = detail && detail.job ? detail.job : {};
+        const status = String(job.status || '').toLowerCase();
+        if (status === 'completed'){
+          this._setHummingMusicStatus('完整音乐已生成并保存为 Cloud Materials 音频素材。原 MIDI/clip 仍可编辑。');
+          if (typeof window.H2S_REQUEST_CLOUD_MATERIALS_LIST === 'function') window.H2S_REQUEST_CLOUD_MATERIALS_LIST();
+          return { ok: true, job: job };
+        }
+        if (status === 'failed' || status === 'timed_out'){
+          return { ok: false, reason: status || 'failed' };
+        }
+        this._setHummingMusicStatus('完整音乐生成中...');
+        await sleep(2500);
+      }
+      return { ok: false, reason: 'timeout' };
+    },
+
+    async _requestHummingMusicJob(){
+      if (this._hummingMusicGenerating) return;
+      const btn = (typeof document !== 'undefined') ? document.getElementById('btnHummingGenerateMusic') : null;
+      const scoreDoc = this._getHummingMusicSourceScoreDoc();
+      if (!scoreDoc){
+        this._setHummingMusicStatus('请先录音/上传并完成转谱，或选中一个可编辑 MIDI/clip。');
+        return;
+      }
+      this._hummingMusicGenerating = true;
+      if (btn) btn.disabled = true;
+      try{
+        this._setHummingMusicStatus('正在创建完整音乐生成任务...');
+        const created = await this._postHummingMusicBridgeRequest('H2S_CLOUD_HUMMING_MUSIC_JOB_CREATE', {
+          scoreDoc: scoreDoc,
+          styleHint: this._composeHummingMusicStyleHint(),
+          durationSec: 30,
+        }, 'h2s-cloud-humming-music-job-create', 30000);
+        const job = created && created.job ? created.job : {};
+        const jobId = job.jobId || job.id;
+        if (!jobId) throw new Error('job_missing');
+        const final = await this._pollHummingMusicJob(String(jobId));
+        if (!final || !final.ok) this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
+      }catch(e){
+        const msg = e && e.message ? String(e.message) : 'humming_music_failed';
+        if (/auth_required/.test(msg)) this._setHummingMusicStatus('请先在 Cloud 登录后再生成完整音乐。');
+        else if (/quota|access_denied/.test(msg)) this._setHummingMusicStatus('当前额度或权限不足，无法创建完整音乐生成任务。');
+        else if (/cloud_bridge_unavailable/.test(msg)) this._setHummingMusicStatus('请从 Hum2Song Cloud 打开 Studio 后再生成完整音乐。');
+        else this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
+      }finally{
+        this._hummingMusicGenerating = false;
+        if (btn) btn.disabled = false;
+      }
+    },
+
     /** PR-C2: Set import status (upload/generate progress). showCancel: only during active import. */
     setImportStatus(text, showCancel){
       if (typeof document === 'undefined') return;
@@ -6908,6 +7049,7 @@ renderTimeline(){
           if (!clip.meta) clip.meta = {};
           if (typeof scoreForClip.tempo_bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.tempo_bpm;
           else if (typeof scoreForClip.bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.bpm;
+          this._lastHummingScoreDoc = scoreForClip;
           if (splitRes.applied) clip.meta.heuristicPitchSplit = true;
           if (opts.sourceAudioClipId) clip.meta.sourceAudioClipId = String(opts.sourceAudioClipId);
           if (opts.sourceAudioInstanceId) clip.meta.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
@@ -7007,6 +7149,7 @@ renderTimeline(){
       if (opts.segmentDurationSec != null) clip.meta.segmentDurationSec = Number(opts.segmentDurationSec);
       if (typeof scoreForClip.tempo_bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.tempo_bpm;
       else if (typeof scoreForClip.bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.bpm;
+      this._lastHummingScoreDoc = scoreForClip;
       this.project.clips.unshift(clip);
       this.addClipToTimeline(clip.id, placeStartSec, placeTrackIndex);
       persist();
@@ -7047,6 +7190,7 @@ renderTimeline(){
       if (opts.segmentDurationSec != null) clip.meta.segmentDurationSec = Number(opts.segmentDurationSec);
       if (typeof scoreForClip.tempo_bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.tempo_bpm;
       else if (typeof scoreForClip.bpm === 'number') clip.meta.sourceTempoBpm = scoreForClip.bpm;
+      this._lastHummingScoreDoc = scoreForClip;
       this.project.clips.unshift(clip);
       this.addClipToTimeline(clip.id, playheadSec, 0);
       persist();
