@@ -405,6 +405,51 @@
       || _assistantHeuristicLikelyArrangementAction(text);
   }
 
+  function _assistantIsHummingFullMusicIntent(text){
+    if (!text || typeof text !== 'string') return false;
+    const s = String(text).trim();
+    if (!s) return false;
+    const low = s.toLowerCase();
+    const asksFullMusic = /完整音乐|完整歌曲|完整编曲|生成成歌|做成歌|full\s+(?:music|song)|complete\s+(?:music|song)|generate\s+(?:a\s+)?full/.test(s)
+      || /生成.{0,8}(?:音乐|歌曲|编曲|成歌)/.test(s)
+      || /(?:音乐|歌曲|编曲).{0,8}生成/.test(s);
+    const pointsAtClip = /当前|这个|这段|片段|旋律|midi|clip/.test(s) || /\b(current|this|selected)\b.*\b(clip|midi|melody|phrase)\b/.test(low);
+    return asksFullMusic && pointsAtClip;
+  }
+
+  function _assistantDispatchHummingMusicFlow(self, fullUserText, _t){
+    void fullUserText;
+    const noClipText = '请选择一个可编辑旋律片段。';
+    self._aiAssistItems = self._aiAssistItems || [];
+    const source = (self && typeof self._resolveHummingMusicSourceClip === 'function') ? self._resolveHummingMusicSourceClip() : null;
+    if (!source || !source.scoreDoc){
+      self._aiAssistItems.push({ type: 'sys', text: noClipText });
+      self.render();
+      return true;
+    }
+    const pending = { type: 'sys', text: '正在用当前片段创建完整音乐生成任务...' };
+    self._aiAssistItems.push(pending);
+    self.render();
+    Promise.resolve(self._requestHummingMusicJob({
+      clipId: source.clipId,
+      scoreDoc: source.scoreDoc,
+      source: 'assistant',
+    })).then(function(result){
+      if (result && result.ok){
+        pending.text = '已发送完整音乐生成任务。完整音乐会保存为 Cloud Materials 音频素材；原 MIDI/clip 仍可继续编辑。';
+      } else if (result && result.reason === 'no_clip'){
+        pending.text = noClipText;
+      } else {
+        pending.text = '完整音乐生成任务创建失败，请稍后重试。';
+      }
+      self.render();
+    }).catch(function(){
+      pending.text = '完整音乐生成任务创建失败，请稍后重试。';
+      self.render();
+    });
+    return true;
+  }
+
   /**
    * Add accompaniment path (confirmation + addAccompanimentFromSelected only). Does not touch Optimize / PLAN.
    * @returns {boolean} true (message flow always consumes Send)
@@ -4558,6 +4603,10 @@ ensureTrackButtons(){
       if (!text) return;
       inp.value = '';
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
+      if (_assistantIsHummingFullMusicIntent(text)){
+        _assistantDispatchHummingMusicFlow(this, text, _t);
+        return;
+      }
       if (_assistantIsDeterministicArrangementIntent(text)){
         _assistantDispatchAddAccompanimentFlow(this, text, _t);
         return;
@@ -6240,12 +6289,13 @@ renderTimeline(){
           btn.setAttribute('aria-pressed', btn.classList.contains('primary') ? 'true' : 'false');
         });
       });
-      const gen = document.getElementById('btnHummingGenerateMusic');
+      const gen = document.getElementById('btnHummingGenerateMusicFromClip') || document.getElementById('btnHummingGenerateMusic');
       if (gen) gen.addEventListener('click', () => { this._requestHummingMusicJob(); });
     },
 
     _setHummingMusicStatus(text){
-      const el = (typeof document !== 'undefined') ? document.getElementById('h2sHummingMusicStatus') : null;
+      const panel = (typeof document !== 'undefined') ? document.getElementById('h2sHummingMusicPanel') : null;
+      const el = panel ? panel.querySelector('#h2sHummingMusicStatus') : null;
       if (el) el.textContent = text || '';
     },
 
@@ -6254,12 +6304,25 @@ renderTimeline(){
       const chips = Array.from(document.querySelectorAll('#h2sHummingMusicPanel [data-h2s-hum-chip].primary'))
         .map(function(el){ return String(el.getAttribute('data-h2s-hum-chip') || '').trim(); })
         .filter(Boolean);
-      const customEl = document.getElementById('h2sHummingCustomKeywords');
+      const panel = document.getElementById('h2sHummingMusicPanel');
+      const customEl = panel ? panel.querySelector('#h2sHummingCustomKeywords') : null;
       const custom = customEl && customEl.value ? String(customEl.value).split(/[,，、;；]/).map(function(x){ return x.trim(); }).filter(Boolean) : [];
       return chips.concat(custom).slice(0, 12).join(', ');
     },
 
-    _getHummingMusicSourceScoreDoc(){
+    _resolveHummingMusicSourceClip(opts){
+      opts = opts || {};
+      if (opts.scoreDoc && typeof opts.scoreDoc === 'object'){
+        return { clipId: opts.clipId ? String(opts.clipId) : '', scoreDoc: opts.scoreDoc, source: opts.source || 'explicit' };
+      }
+      if (this.editorRt && this.editorRt.state && this.editorRt.state.modal
+        && this.editorRt.state.modal.show && this.editorRt.state.modal.clipId
+        && this.editorRt.state.modal.draftScore && typeof this.editorRt.state.modal.draftScore === 'object'){
+        const editorClipId = String(this.editorRt.state.modal.clipId);
+        if (!this._clipIsAudioForEditor(editorClipId)){
+          return { clipId: editorClipId, scoreDoc: this.editorRt.state.modal.draftScore, source: 'editor' };
+        }
+      }
       const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
       let clipId = this.state && this.state.selectedClipId ? String(this.state.selectedClipId) : '';
       if (!clipId && this.state && this.state.selectedInstanceId && p2 && Array.isArray(p2.instances)){
@@ -6268,14 +6331,21 @@ renderTimeline(){
       }
       if (clipId && p2 && p2.clips && p2.clips[clipId]){
         const c2 = p2.clips[clipId];
-        if (c2 && c2.score && typeof c2.score === 'object') return c2.score;
-        if (c2 && c2.scoreDoc && typeof c2.scoreDoc === 'object') return c2.scoreDoc;
+        const P = (typeof window !== 'undefined') ? window.H2SProject : null;
+        const isAudio = !!(c2 && P && typeof P.clipKind === 'function' && P.clipKind(c2) === 'audio');
+        if (!isAudio && c2 && c2.score && typeof c2.score === 'object') return { clipId: clipId, scoreDoc: c2.score, source: 'selected' };
+        if (!isAudio && c2 && c2.scoreDoc && typeof c2.scoreDoc === 'object') return { clipId: clipId, scoreDoc: c2.scoreDoc, source: 'selected' };
       }
       if (clipId && this.project && Array.isArray(this.project.clips)){
         const c1 = this.project.clips.find(function(c){ return c && String(c.id) === clipId; });
-        if (c1 && c1.score && typeof c1.score === 'object') return c1.score;
+        if (c1 && c1.kind !== 'audio' && c1.score && typeof c1.score === 'object') return { clipId: clipId, scoreDoc: c1.score, source: 'selected' };
       }
-      return this._lastHummingScoreDoc || null;
+      return null;
+    },
+
+    _getHummingMusicSourceScoreDoc(opts){
+      const source = this._resolveHummingMusicSourceClip(opts);
+      return source && source.scoreDoc ? source.scoreDoc : null;
     },
 
     _postHummingMusicBridgeRequest(type, payload, eventName, timeoutMs){
@@ -6329,13 +6399,15 @@ renderTimeline(){
       return { ok: false, reason: 'timeout' };
     },
 
-    async _requestHummingMusicJob(){
-      if (this._hummingMusicGenerating) return;
-      const btn = (typeof document !== 'undefined') ? document.getElementById('btnHummingGenerateMusic') : null;
-      const scoreDoc = this._getHummingMusicSourceScoreDoc();
+    async _requestHummingMusicJob(opts){
+      opts = opts || {};
+      if (this._hummingMusicGenerating) return { ok: false, reason: 'busy' };
+      const btn = (typeof document !== 'undefined') ? (document.getElementById('btnHummingGenerateMusicFromClip') || document.getElementById('btnHummingGenerateMusic')) : null;
+      const source = this._resolveHummingMusicSourceClip(opts);
+      const scoreDoc = source && source.scoreDoc ? source.scoreDoc : null;
       if (!scoreDoc){
-        this._setHummingMusicStatus('请先录音/上传并完成转谱，或选中一个可编辑 MIDI/clip。');
-        return;
+        this._setHummingMusicStatus('请选择一个可编辑旋律片段。');
+        return { ok: false, reason: 'no_clip' };
       }
       this._hummingMusicGenerating = true;
       if (btn) btn.disabled = true;
@@ -6350,13 +6422,16 @@ renderTimeline(){
         const jobId = job.jobId || job.id;
         if (!jobId) throw new Error('job_missing');
         const final = await this._pollHummingMusicJob(String(jobId));
+        if (final && final.ok) return final;
         if (!final || !final.ok) this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
+        return final || { ok: false, reason: 'failed' };
       }catch(e){
         const msg = e && e.message ? String(e.message) : 'humming_music_failed';
         if (/auth_required/.test(msg)) this._setHummingMusicStatus('请先在 Cloud 登录后再生成完整音乐。');
         else if (/quota|access_denied/.test(msg)) this._setHummingMusicStatus('当前额度或权限不足，无法创建完整音乐生成任务。');
         else if (/cloud_bridge_unavailable/.test(msg)) this._setHummingMusicStatus('请从 Hum2Song Cloud 打开 Studio 后再生成完整音乐。');
         else this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
+        return { ok: false, reason: msg };
       }finally{
         this._hummingMusicGenerating = false;
         if (btn) btn.disabled = false;

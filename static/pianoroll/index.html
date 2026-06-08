@@ -1233,7 +1233,7 @@
             <input type="checkbox" id="chkAutoOpenAfterImport" checked />
             <span data-i18n="cliplib.autoOpenAfterImport">Auto-open editor after import</span>
           </label>
-          <div id="h2sHummingMusicPanel" style="margin-top:10px; padding:8px; border:1px solid rgba(148,163,184,.22); border-radius:8px; background:rgba(15,23,42,.32);">
+          <div id="h2sLegacyHummingMusicPanel" hidden aria-hidden="true" style="display:none;">
             <div class="row" style="justify-content:space-between; align-items:center; gap:8px;">
               <strong style="font-size:12px;">生成完整音乐</strong>
               <button type="button" id="btnHummingGenerateMusic" class="btn primary mini">生成完整音乐</button>
@@ -1575,6 +1575,42 @@
                 <div id="editorQuickOptimizeSummary" class="muted" style="font-size:11px; flex:1; min-width:0;">(no result yet)</div>
                 <button id="btnEditorOptimizeDetailsDebug" type="button" class="btn mini ghost" data-i18n="editor.optimizeDetails" title="Optimize Details">Optimize Details</button>
               </div>
+            </div>
+            <div id="h2sHummingMusicPanel" style="margin-bottom:10px; padding:8px; border:1px solid var(--border); border-radius:8px; background:rgba(0,0,0,.15);">
+              <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div>
+                  <strong style="font-size:12px;">生成完整音乐</strong>
+                  <div class="smallmuted" style="font-size:11px; margin-top:2px;">基于当前 Clip 生成音频素材；原 MIDI/clip 仍可继续编辑。</div>
+                </div>
+                <button type="button" id="btnHummingGenerateMusicFromClip" class="btn primary mini">用这个片段生成完整音乐</button>
+              </div>
+              <details class="help" style="margin-top:8px;">
+                <summary style="cursor:pointer; font-size:12px;">风格关键词</summary>
+                <div class="col" style="gap:6px; margin-top:8px;">
+                  <div class="row" data-h2s-hum-group="instruments" style="gap:4px; flex-wrap:wrap;">
+                    <button type="button" class="btn mini" data-h2s-hum-chip="piano">Piano</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="guitar">Guitar</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="synth">Synth</button>
+                  </div>
+                  <div class="row" data-h2s-hum-group="style" style="gap:4px; flex-wrap:wrap;">
+                    <button type="button" class="btn mini" data-h2s-hum-chip="pop">Pop</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="lo-fi">Lo-fi</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="city pop">City pop</button>
+                  </div>
+                  <div class="row" data-h2s-hum-group="mood" style="gap:4px; flex-wrap:wrap;">
+                    <button type="button" class="btn mini" data-h2s-hum-chip="warm">Warm</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="bright">Bright</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="dreamy">Dreamy</button>
+                  </div>
+                  <div class="row" data-h2s-hum-group="arrangement" style="gap:4px; flex-wrap:wrap;">
+                    <button type="button" class="btn mini" data-h2s-hum-chip="full band">Full band</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="acoustic">Acoustic</button>
+                    <button type="button" class="btn mini" data-h2s-hum-chip="cinematic">Cinematic</button>
+                  </div>
+                  <input id="h2sHummingCustomKeywords" type="text" placeholder="Custom keywords" style="width:100%; font-size:12px;" />
+                </div>
+              </details>
+              <div id="h2sHummingMusicStatus" class="smallmuted" style="font-size:11px; margin-top:6px;"></div>
             </div>
             <details class="help" style="margin-top:8px;">
               <summary style="cursor:pointer; font-weight:700;" data-i18n="opt.advanced">Advanced</summary>
