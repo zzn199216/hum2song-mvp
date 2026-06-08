@@ -2121,6 +2121,7 @@ try{
     _projectV2: null,
     _lastOptimizeOptions: null,  // PR-3: app-level state for optimize options
     _lastOptimizeSnapshot: null, // Studio “last optimize” summary (user-facing; refreshed on lang change)
+    _lastOptimizePromptTraceOpenKeys: null,
     _lastArrangementSnapshot: null, // Last LLM Arrangement v0 run (in-memory only; not persisted)
     _lastArrangementDetailsOpen: false,
     _lastArrangementDetailsInitialized: false,
@@ -2879,6 +2880,18 @@ async optimizeClip(clipId, optOverride){
     if (raw.attemptIndex != null && Number.isFinite(Number(raw.attemptIndex))) out.attemptIndex = Number(raw.attemptIndex);
     if (typeof raw.finalSystemPrompt === 'string') out.finalSystemPrompt = trim(raw.finalSystemPrompt);
     if (typeof raw.finalUserPrompt === 'string') out.finalUserPrompt = trim(raw.finalUserPrompt);
+    if (typeof raw.compactNotesText === 'string') out.compactNotesText = trim(raw.compactNotesText);
+    if (Array.isArray(raw.compactNotes)) out.compactNotes = raw.compactNotes.slice(0, 64).map(function(n){
+      if (!n || typeof n !== 'object') return null;
+      const o = {};
+      if (n.t != null && Number.isFinite(Number(n.t))) o.t = Number(n.t);
+      if (n.d != null && Number.isFinite(Number(n.d))) o.d = Number(n.d);
+      if (n.p != null && Number.isFinite(Number(n.p))) o.p = Number(n.p);
+      if (typeof n.name === 'string') o.name = n.name.slice(0, 12);
+      if (n.v != null && Number.isFinite(Number(n.v))) o.v = Number(n.v);
+      return o;
+    }).filter(Boolean);
+    if (raw.compactNotesTruncated === true) out.compactNotesTruncated = true;
     if (b){
       const bo = {};
       const templateId = maybeStr(b.resolvedTemplateId, 120);
@@ -2896,6 +2909,8 @@ async optimizeClip(clipId, optOverride){
       if (typeof b.planBlock === 'string') bo.planBlock = trim(b.planBlock);
       if (typeof b.directivesBlock === 'string') bo.directivesBlock = trim(b.directivesBlock);
       if (typeof b.userBody === 'string') bo.userBody = trim(b.userBody);
+      if (typeof b.sourceNotes === 'string') bo.sourceNotes = trim(b.sourceNotes);
+      if (typeof b.compactNotesText === 'string') bo.compactNotesText = trim(b.compactNotesText);
       out.blocks = bo;
     }
     return this._redactLastOptimizePromptTrace(out);
@@ -2962,6 +2977,9 @@ async optimizeClip(clipId, optOverride){
   _renderLastOptimizeDetailsBody(){
     const body = (typeof document !== 'undefined') ? document.getElementById('studioLastOptimizeDetailsBody') : null;
     if (!body) return;
+    if (this._lastOptimizeDetailsOpen && typeof this._captureLastOptimizePromptTraceOpenKeys === 'function') {
+      this._captureLastOptimizePromptTraceOpenKeys();
+    }
     const t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : function(k){ return k; };
     while (body.firstChild) body.removeChild(body.firstChild);
     const addRow = (labelKey, valueStr) => {
@@ -3065,8 +3083,14 @@ async optimizeClip(clipId, optOverride){
       btnCopyUser.type = 'button';
       btnCopyUser.className = 'btn mini ghost';
       btnCopyUser.textContent = t('lastOpt.detail.copyFinalUser');
+      const btnCopySourceNotes = document.createElement('button');
+      btnCopySourceNotes.type = 'button';
+      btnCopySourceNotes.className = 'btn mini ghost';
+      const copySourceNotesLabel = t('lastOpt.detail.copySourceNotes');
+      btnCopySourceNotes.textContent = copySourceNotesLabel === 'lastOpt.detail.copySourceNotes' ? 'Copy source notes' : copySourceNotesLabel;
       copyWrap.appendChild(btnCopyJson);
       copyWrap.appendChild(btnCopyUser);
+      copyWrap.appendChild(btnCopySourceNotes);
       val.appendChild(copyWrap);
       const status = document.createElement('div');
       status.className = 'lastOptPromptTraceStatus';
@@ -3091,11 +3115,20 @@ async optimizeClip(clipId, optOverride){
       }
       meta.textContent = metaParts.length ? metaParts.join(' | ') : t('lastOpt.detail.promptMetaNone');
       val.appendChild(meta);
-      const makePromptBlock = (title, textValue) => {
+      const makePromptBlock = (key, title, textValue) => {
         const wrap = document.createElement('details');
         wrap.className = 'lastOptPromptTraceBlock';
+        wrap.setAttribute('data-prompt-trace-key', key);
+        if (this._lastOptimizePromptTraceOpenKeys && this._lastOptimizePromptTraceOpenKeys[key]) wrap.open = true;
         const summary = document.createElement('summary');
         summary.textContent = title;
+        summary.addEventListener('click', (ev) => {
+          try { ev.stopPropagation(); } catch (_e) {}
+        });
+        wrap.addEventListener('toggle', () => {
+          if (!this._lastOptimizePromptTraceOpenKeys) this._lastOptimizePromptTraceOpenKeys = {};
+          this._lastOptimizePromptTraceOpenKeys[key] = !!wrap.open;
+        });
         const ta = document.createElement('textarea');
         ta.className = 'lastOptPromptTraceText';
         ta.readOnly = true;
@@ -3104,18 +3137,36 @@ async optimizeClip(clipId, optOverride){
         wrap.appendChild(ta);
         return wrap;
       };
-      val.appendChild(makePromptBlock(t('lastOpt.detail.lblFinalSystemPrompt'), promptTrace.finalSystemPrompt));
-      val.appendChild(makePromptBlock(t('lastOpt.detail.lblFinalUserPrompt'), promptTrace.finalUserPrompt));
-      btnCopyJson.addEventListener('click', () => {
+      const sourceNotesPayload = (blocks && typeof blocks.sourceNotes === 'string' && blocks.sourceNotes)
+        ? blocks.sourceNotes
+        : (typeof promptTrace.compactNotesText === 'string' && promptTrace.compactNotesText)
+          ? promptTrace.compactNotesText
+          : Array.isArray(promptTrace.compactNotes)
+            ? JSON.stringify(promptTrace.compactNotes, null, 2)
+            : '';
+      val.appendChild(makePromptBlock('finalSystemPrompt', t('lastOpt.detail.lblFinalSystemPrompt'), promptTrace.finalSystemPrompt));
+      val.appendChild(makePromptBlock('finalUserPrompt', t('lastOpt.detail.lblFinalUserPrompt'), promptTrace.finalUserPrompt));
+      if (sourceNotesPayload) {
+        val.appendChild(makePromptBlock('sourceNotes', 'source notes / compact notes', sourceNotesPayload));
+      }
+      btnCopyJson.addEventListener('click', (ev) => {
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (_e) {}
         let payload = '{}';
         try { payload = JSON.stringify(promptTrace, null, 2); } catch (_e) {}
         this._copyTextToClipboardWithFallback(payload).then((ok) => {
           status.textContent = ok ? t('lastOpt.detail.copyOk') : t('lastOpt.detail.copyFail');
         });
       });
-      btnCopyUser.addEventListener('click', () => {
+      btnCopyUser.addEventListener('click', (ev) => {
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (_e) {}
         const payload = (typeof promptTrace.finalUserPrompt === 'string') ? promptTrace.finalUserPrompt : '';
         this._copyTextToClipboardWithFallback(payload).then((ok) => {
+          status.textContent = ok ? t('lastOpt.detail.copyOk') : t('lastOpt.detail.copyFail');
+        });
+      });
+      btnCopySourceNotes.addEventListener('click', (ev) => {
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (_e) {}
+        this._copyTextToClipboardWithFallback(sourceNotesPayload || '').then((ok) => {
           status.textContent = ok ? t('lastOpt.detail.copyOk') : t('lastOpt.detail.copyFail');
         });
       });
@@ -3145,6 +3196,8 @@ async optimizeClip(clipId, optOverride){
       addLiteralRow('sourceClipName', hummingDetails.sourceClipName);
       addLiteralRow('notes count', hummingDetails.notesCount);
       addLiteralRow('duration', hummingDetails.sourceDurationSec != null ? (String(hummingDetails.sourceDurationSec) + 's') : '');
+      addLiteralRow('source notes', hummingDetails.compactNotesText);
+      addLiteralRow('source notes truncated', hummingDetails.compactNotesTruncated === true ? 'true' : '');
       addLiteralRow('styleHint', hummingDetails.styleHint);
       addLiteralRow('jobId', hummingDetails.jobId);
       addLiteralRow('createdAt', hummingDetails.createdAt);
@@ -3236,11 +3289,41 @@ async optimizeClip(clipId, optOverride){
     if (pathStr !== 'llm' && s.promptTrace){
       addPromptTraceSection(s.promptTrace || null);
     }
+    if (this._lastOptimizeDetailsOpen && typeof this._restoreLastOptimizePromptTraceOpenKeys === 'function') {
+      this._restoreLastOptimizePromptTraceOpenKeys();
+    }
+  },
+
+  _captureLastOptimizePromptTraceOpenKeys(){
+    if (typeof document === 'undefined') return {};
+    const body = document.getElementById('studioLastOptimizeDetailsBody');
+    const next = {};
+    if (body && typeof body.querySelectorAll === 'function'){
+      Array.prototype.slice.call(body.querySelectorAll('details[data-prompt-trace-key]')).forEach(function(el){
+        const key = el.getAttribute('data-prompt-trace-key');
+        if (key) next[key] = !!el.open;
+      });
+    }
+    this._lastOptimizePromptTraceOpenKeys = next;
+    return next;
+  },
+
+  _restoreLastOptimizePromptTraceOpenKeys(){
+    if (typeof document === 'undefined') return;
+    const body = document.getElementById('studioLastOptimizeDetailsBody');
+    const keys = this._lastOptimizePromptTraceOpenKeys || {};
+    if (!body || typeof body.querySelectorAll !== 'function') return;
+    Array.prototype.slice.call(body.querySelectorAll('details[data-prompt-trace-key]')).forEach(function(el){
+      const key = el.getAttribute('data-prompt-trace-key');
+      if (key && keys[key]) el.open = true;
+    });
   },
 
   _renderLastOptimizeDetailsBodyIfOpen(){
     if (!this._lastOptimizeDetailsOpen) return;
+    if (typeof this._captureLastOptimizePromptTraceOpenKeys === 'function') this._captureLastOptimizePromptTraceOpenKeys();
     this._renderLastOptimizeDetailsBody();
+    if (typeof this._restoreLastOptimizePromptTraceOpenKeys === 'function') this._restoreLastOptimizePromptTraceOpenKeys();
   },
 
   _closeLastOptimizeDetails(){
@@ -6560,12 +6643,15 @@ renderTimeline(){
       const safe = trace && typeof trace === 'object' ? trace : {};
       const status = safe.status ? String(safe.status) : 'creating';
       const promptText = String(safe.derivedPrompt || safe.melodyPrompt || '');
+      const sourceNotesText = safe.compactNotesText ? String(safe.compactNotesText) : (Array.isArray(safe.compactNotes) ? JSON.stringify(safe.compactNotes, null, 2) : '');
       const detailLines = [
         'Operation: 生成完整音乐',
         safe.sourceClipId ? ('sourceClipId: ' + safe.sourceClipId) : '',
         safe.sourceClipName ? ('sourceClipName: ' + safe.sourceClipName) : '',
         safe.notesCount != null ? ('notesCount: ' + String(safe.notesCount)) : '',
         safe.sourceDurationSec != null ? ('sourceDurationSec: ' + String(safe.sourceDurationSec)) : '',
+        sourceNotesText ? ('sourceNotes: ' + sourceNotesText) : '',
+        safe.compactNotesTruncated === true ? 'sourceNotesTruncated: true' : '',
         safe.styleHint ? ('styleHint: ' + safe.styleHint) : '',
         safe.jobId ? ('jobId: ' + safe.jobId) : '',
         'status: ' + status,
@@ -6581,11 +6667,16 @@ renderTimeline(){
         llmPromptTrace: {
           finalSystemPrompt: 'Generate full music from the current editable MIDI/Clip while preserving its melody.',
           finalUserPrompt: promptText,
+          compactNotesText: sourceNotesText,
+          compactNotes: Array.isArray(safe.compactNotes) ? safe.compactNotes.slice(0, 64) : undefined,
+          compactNotesTruncated: safe.compactNotesTruncated === true,
           blocks: {
             resolvedTemplateId: 'humming_full_music',
             promptVersion: 'humming-full-music-trace-v1',
             planBlock: '生成完整音乐',
             directivesBlock: detailLines,
+            sourceNotes: sourceNotesText,
+            compactNotesText: sourceNotesText,
             userBody: promptText,
           },
         },
@@ -6606,6 +6697,9 @@ renderTimeline(){
         styleHint: promptTrace.styleHint != null ? String(promptTrace.styleHint) : String(styleHint || ''),
         melodyPrompt: promptTrace.melodyPrompt != null ? String(promptTrace.melodyPrompt) : '',
         derivedPrompt: promptTrace.derivedPrompt != null ? String(promptTrace.derivedPrompt) : '',
+        compactNotesText: promptTrace.compactNotesText != null ? String(promptTrace.compactNotesText) : '',
+        compactNotes: Array.isArray(promptTrace.compactNotes) ? promptTrace.compactNotes.slice(0, 64) : [],
+        compactNotesTruncated: promptTrace.compactNotesTruncated === true,
         jobId: job.jobId || job.id ? String(job.jobId || job.id) : '',
         createdAt: promptTrace.createdAt || job.createdAt ? String(promptTrace.createdAt || job.createdAt) : (new Date()).toISOString(),
         status: job.status ? String(job.status) : 'creating',

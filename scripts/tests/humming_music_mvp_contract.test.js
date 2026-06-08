@@ -62,6 +62,14 @@ assert(appSrc.includes('notesCount'), 'prompt trace should include source notes 
 assert(appSrc.includes('sourceDurationSec'), 'prompt trace should include source duration when available');
 assert(appSrc.includes('melodyPrompt'), 'prompt trace should include the melodyPrompt returned by Cloud');
 assert(appSrc.includes('derivedPrompt'), 'prompt trace should include the final derived prompt when available');
+assert(appSrc.includes('compactNotesText'), 'prompt trace should include compact source notes text returned by Cloud');
+assert(appSrc.includes('compactNotes'), 'prompt trace should include compact source notes returned by Cloud');
+assert(appSrc.includes('copySourceNotes'), 'prompt trace should expose a copy action for source notes');
+assert(appSrc.includes('_lastOptimizePromptTraceOpenKeys'), 'prompt trace details should preserve expanded subsections across re-render');
+assert(appSrc.includes('_captureLastOptimizePromptTraceOpenKeys'), 'prompt trace details should capture expanded subsection state before re-render');
+assert(appSrc.includes('_restoreLastOptimizePromptTraceOpenKeys'), 'prompt trace details should restore expanded subsection state after re-render');
+assert(appSrc.includes('data-prompt-trace-key'), 'prompt trace subsections should have stable keys for expansion state');
+assert(appSrc.includes('ev.stopPropagation();'), 'prompt trace expand/copy controls should stop outer close/toggle propagation');
 assert(appSrc.includes('humming_music_auto_insert_failed'), 'details should record auto-insert fallback when generated music is only saved to Cloud Materials');
 assert(appSrc.includes('_redactLastOptimizePromptTrace'), 'full-music prompt trace should reuse last-optimize redaction');
 
