@@ -834,6 +834,14 @@
     return { hasPitchChange, hasTimingChange, hasStructuralChange, isVelocityOnly };
   }
 
+  function _qualityRequiresPitchOrTiming(intent, template){
+    const tIntent = template && template.intent && typeof template.intent === 'object' ? template.intent : null;
+    return !!(
+      (intent && (intent.fixPitch || intent.tightenRhythm)) ||
+      (tIntent && (tIntent.fixPitch || tIntent.tightenRhythm))
+    );
+  }
+
   /**
    * Fix Pitch quality scope guard: reject broad pitch edits.
    * Ratio = unique notes with actual pitch changes / total notes in clip.
@@ -1204,7 +1212,8 @@
       }
       clipHint += '- bpm: ' + String(bpm) + '\n';
       const promptNoteRows = noteRows.slice(0, LLM_V0_MAX_PROMPT_NOTE_ROWS);
-      clipHint += '\nNOTE TABLE CSV (beats-only';
+      if (!ROOT.H2S_CLOUD_MODE) clipHint += '\nNOTE TABLE (beats-only, all editable notes):\n';
+      clipHint += 'NOTE TABLE CSV (beats-only';
       if (noteRows.length > promptNoteRows.length) clipHint += ', first ' + String(promptNoteRows.length) + ' editable notes';
       clipHint += '):\n';
       if (noteRows.length === 0){
@@ -1214,6 +1223,14 @@
         for (let ri = 0; ri < promptNoteRows.length; ri++){
           const r = promptNoteRows[ri];
           clipHint += String(ri) + ',' + r.trackId + ',' + r.noteId + ',' + String(r.pitch) + ',' + String(r.startBeat) + ',' + String(r.durationBeat) + ',' + String(r.velocity) + '\n';
+        }
+        if (!ROOT.H2S_CLOUD_MODE){
+          const previewRows = promptNoteRows.slice(0, 32);
+          clipHint += '\nNOTE TABLE key-value preview (first ' + String(previewRows.length) + ' rows):\n';
+          for (let ri = 0; ri < previewRows.length; ri++){
+            const r = previewRows[ri];
+            clipHint += 'idx=' + String(ri) + ' trackId=' + r.trackId + ' noteId=' + r.noteId + ' pitch=' + String(r.pitch) + ' startBeat=' + String(r.startBeat) + ' durationBeat=' + String(r.durationBeat) + ' velocity=' + String(r.velocity) + '\n';
+          }
         }
       }
       if (promptNoteRows.length > 0){
@@ -1502,6 +1519,25 @@
           }
           if (debugCapture) debugCapture.validateErrors = [];
           const patchTypeSummaryBeforeApply = _computePatchTypeSummary(patchObj.ops, clip);
+          if (patchTypeSummaryBeforeApply.isVelocityOnly && _qualityRequiresPitchOrTiming(intent, template)){
+            const detail = 'quality_velocity_only';
+            if (debugCapture) debugCapture.validateErrors = [detail];
+            return {
+              ok: false,
+              reason: 'patch_rejected',
+              detail: detail,
+              patchObj: patchObj,
+              opsN: opsN,
+              patchSummary: Object.assign({}, patchSummaryBase, {
+                status: 'failed',
+                reason: detail,
+                ops: opsN,
+                byOp: _opsByOp(patchObj.ops),
+                examples: [],
+                detail: detail,
+              }, patchTypeSummaryBeforeApply, _llmOutcomeExtra('rejected_quality', { detail: detail, reasonCode: detail })),
+            };
+          }
 
           const destructive = _boundedDeleteCheck(patchObj.ops, clip);
           if (!destructive.ok){

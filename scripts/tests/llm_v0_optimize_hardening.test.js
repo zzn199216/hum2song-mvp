@@ -1397,12 +1397,13 @@ async function testRejectedValidation(){
   assertLlmOutcomeContract(res, 'rejected_validation');
 }
 
-async function testTemplateVelocityOnlyPatchAppliesAsMusicalEdit(){
+async function testTemplateVelocityOnlyPatchRejectedByQualityGate(){
   loadAgentController();
   const AgentController = require(path.resolve(__dirname, '../../static/pianoroll/controllers/agent_controller.js'));
   const { project: proj, clip } = makeClip();
   let project = proj;
   const cid = clip.id;
+  const rev0 = String(project.clips[cid].revisionId || '');
 
   const patch = { version: 1, clipId: cid, ops: [{ op: 'setNote', noteId: 'n0', velocity: 80 }] };
   const rawText = '```json\n' + JSON.stringify(patch) + '\n```';
@@ -1421,24 +1422,38 @@ async function testTemplateVelocityOnlyPatchAppliesAsMusicalEdit(){
   globalThis.H2S_LLM_CONFIG = {
     loadLlmConfig: () => ({ baseUrl: 'https://test', model: 'm', velocityOnly: true }),
   };
+  let beginCalls = 0;
+  const origBegin = globalThis.H2SProject.beginNewClipRevision;
+  globalThis.H2SProject.beginNewClipRevision = function (...args) {
+    beginCalls++;
+    return origBegin.apply(this, args);
+  };
 
-  const ctrl = AgentController.create({
-    getProjectV2: () => project,
-    setProjectFromV2: (p) => { project = p; },
-    persist: () => {},
-    render: () => {},
-  });
+  try {
+    const ctrl = AgentController.create({
+      getProjectV2: () => project,
+      setProjectFromV2: (p) => { project = p; },
+      persist: () => {},
+      render: () => {},
+    });
 
-  const res = await ctrl.optimizeClip(cid, {
-    requestedPresetId: 'llm_v0',
-    userPrompt: 'x',
-    templateId: 'fix_pitch_v1',
-    intent: { fixPitch: true, tightenRhythm: false, reduceOutliers: false },
-  });
-  assert(res && res.ok === true, 'velocity-only patch is no longer rejected by template quality gate');
-  assertLlmOutcomeContract(res, 'applied');
-  assertLlmRetryMeta(res, { totalAttempts: 1, finalAttemptIndex: 1 });
-  assert(callN === 1, 'applied patch should not retry');
+    const res = await ctrl.optimizeClip(cid, {
+      requestedPresetId: 'llm_v0',
+      userPrompt: 'x',
+      templateId: 'fix_pitch_v1',
+      intent: { fixPitch: true, tightenRhythm: false, reduceOutliers: false },
+    });
+    assert(res && res.ok === false, 'velocity-only patch must be rejected by template quality gate');
+    assert(res.reason === 'patch_rejected', 'velocity-only quality rejection reason');
+    assert(res.detail === 'quality_velocity_only', 'velocity-only quality rejection detail');
+    assertLlmOutcomeContract(res, 'rejected_quality');
+    assertLlmRetryMeta(res, { totalAttempts: 1, finalAttemptIndex: 1 });
+    assert(callN === 1, 'quality rejection should not retry');
+    assert(String(project.clips[cid].revisionId || '') === rev0, 'quality rejection must not create a revision');
+    assert(beginCalls === 0, 'quality rejection must not call beginNewClipRevision');
+  } finally {
+    globalThis.H2SProject.beginNewClipRevision = origBegin;
+  }
 }
 
 async function testTemplateFixPitchCanApplyTimingOnlyPatch(){
@@ -1863,7 +1878,7 @@ async function main(){
   await testFailedClientNotLoaded();
   await testRejectedSafeMode();
   await testRejectedValidation();
-  await testTemplateVelocityOnlyPatchAppliesAsMusicalEdit();
+  await testTemplateVelocityOnlyPatchRejectedByQualityGate();
   await testTemplateFixPitchCanApplyTimingOnlyPatch();
   await testTemplateFixPitchCanApplyBroadPitchPatch();
   await testTemplateTightenRhythmCanApplyPitchPatch();
