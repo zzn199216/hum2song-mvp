@@ -16,6 +16,19 @@ NEW_RELEASE=/root/hum2song-studio-releases/<commit-short>
 bash scripts/validate_studio_release.sh "${NEW_RELEASE}"
 ```
 
+## Cloud Web origins
+
+Production Studio CORS and iframe parent trust must use exact origins. Do not use `*` or wildcard subdomains.
+
+For China + global Cloud Web, set:
+
+```bash
+CORS_ALLOW_ORIGINS=https://hum2song.cn,https://www.hum2song.cn,https://hum2song.com,https://www.hum2song.com,https://studio.hum2song.com
+H2S_CLOUD_PARENT_ORIGINS=https://hum2song.cn,https://www.hum2song.cn,https://hum2song.com,https://www.hum2song.com
+```
+
+`CORS_ALLOW_ORIGINS` may include Studio's own origin for browser/static requests. `H2S_CLOUD_PARENT_ORIGINS` should list the Cloud Web parent page origins that embed the Studio iframe, for example `https://hum2song.com`; it should not list only the iframe URL itself.
+
 If `assets/piano.sf2` is missing but the system SoundFont exists:
 
 ```bash
