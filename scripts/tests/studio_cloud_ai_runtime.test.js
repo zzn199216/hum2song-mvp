@@ -43,12 +43,12 @@ for (const src of requiredVersionedScripts) {
 assert(ver === 'worker-default-v1', 'studio_asset_version.js should preserve current production marker');
 assert(scriptVersion('studio_asset_version.js') === 'ai-optimize-musical-v1', 'index.html should preserve production studio_asset_version.js cache marker');
 assert(scriptVersion('h2s_startup_perf.js') === ver, 'index.html should load startup perf with the studio asset version marker');
-assert(scriptVersion('app.js') === 'typed-ai-optfail-detail-20260526-0355', 'index.html should preserve production app.js cache marker');
+assert(scriptVersion('app.js') === ver, 'index.html should load app.js with the studio asset version marker');
 assert(scriptVersion('cloud_project_bridge.js') === 'typed-ai-optfail-detail-20260526-0355', 'index.html should preserve production cloud_project_bridge.js cache marker');
 assert(scriptVersion('cloud_materials_panel.js') === ver, 'index.html should load cloud materials panel with the studio asset version marker');
-assert(scriptVersion('ui/library_view.js') === 'ai-optimize-musical-v1', 'index.html should preserve production library view cache marker');
-assert(scriptVersion('ui/selection_view.js') === 'ai-optimize-musical-v1', 'index.html should preserve production selection view cache marker');
-assert(scriptVersion('controllers/selection_controller.js') === 'ai-optimize-musical-v1', 'index.html should preserve production selection controller cache marker');
+assert(scriptVersion('ui/library_view.js') === ver, 'index.html should load library view with the studio asset version marker');
+assert(scriptVersion('ui/selection_view.js') === ver, 'index.html should load selection view with the studio asset version marker');
+assert(scriptVersion('controllers/selection_controller.js') === ver, 'index.html should load selection controller with the studio asset version marker');
 
 assert(index.indexOf('studio_asset_version.js') < index.indexOf('i18n.js'), 'asset version should load before i18n.js');
 assert(index.indexOf('studio_asset_version.js') < index.indexOf('app.js?v=' + scriptVersion('app.js')), 'asset version should load before app.js');
