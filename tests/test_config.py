@@ -101,6 +101,20 @@ def test_cloud_parent_origins_can_include_cn_and_global_cloud_web_parents(clean_
         "https://www.hum2song.com",
     ]
 
+def test_cloud_parent_origins_ignore_wildcards_and_paths(clean_env):
+    os.environ["H2S_CLOUD_PARENT_ORIGINS"] = (
+        "https://hum2song.cn,"
+        "https://*.hum2song.com,"
+        "https://hum2song.com/path,"
+        "https://www.hum2song.com?debug=1,"
+        "https://www.hum2song.com"
+    )
+    s = Settings(_env_file=None)
+    assert s.cloud_parent_origin_list == [
+        "https://hum2song.cn",
+        "https://www.hum2song.com",
+    ]
+
 def test_env_example_has_local_defaults_and_no_secret_values():
     src = (BASE_DIR / ".env.example").read_text(encoding="utf-8")
     assert "APP_ENV=local" in src

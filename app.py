@@ -10,6 +10,7 @@ Hum2Song MVP main entry (FastAPI)
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -18,10 +19,10 @@ from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from core.config import get_settings
+from core.config import Settings, get_settings
 from core.utils import TaskManager, cleanup_old_files, ensure_dir
 from routers.generation import router as generation_router
 from routers.health import router as health_router
@@ -50,6 +51,30 @@ def _parse_origins(raw: Optional[str]) -> list[str]:
         return []
     parts = [p.strip() for p in raw.split(",")]
     return [p for p in parts if p]
+
+
+def _studio_public_config_script(settings: Settings) -> str:
+    origins_json = json.dumps(
+        settings.cloud_parent_origin_list,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return (
+        "<script>\n"
+        f"window.H2S_CLOUD_PARENT_ORIGINS = {origins_json};\n"
+        "</script>"
+    )
+
+
+def _render_studio_index(index_path: Path, settings: Settings) -> HTMLResponse:
+    html = index_path.read_text(encoding="utf-8")
+    script = _studio_public_config_script(settings)
+    marker = "  <script>\n  (function () {\n    function localCloudParentOrigins() {"
+    if marker in html:
+        html = html.replace(marker, script + "\n" + marker, 1)
+    else:
+        html = html.replace("</body>", script + "\n</body>", 1)
+    return HTMLResponse(html)
 
 
 @asynccontextmanager
@@ -170,7 +195,7 @@ def create_app() -> FastAPI:
     def ui():
         ui_path = STATIC_DIR / "pianoroll" / "index.html"
         if ui_path.exists():
-            return FileResponse(str(ui_path))
+            return _render_studio_index(ui_path, s)
         return JSONResponse(
             {"detail": "UI not found. Create static/pianoroll/index.html first."},
             status_code=404,

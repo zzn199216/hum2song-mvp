@@ -4,6 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -154,13 +155,46 @@ class Settings(BaseSettings):
     def _parse_csv(value: str) -> list[str]:
         return [part.strip() for part in (value or "").split(",") if part.strip()]
 
+    @staticmethod
+    def _normalize_public_origin(value: str) -> Optional[str]:
+        origin = (value or "").strip()
+        if not origin or "*" in origin:
+            return None
+        try:
+            parsed = urlparse(origin)
+            if parsed.scheme not in ("http", "https"):
+                return None
+            if not parsed.hostname or parsed.username or parsed.password:
+                return None
+            if parsed.path or parsed.params or parsed.query or parsed.fragment:
+                return None
+            normalized = f"{parsed.scheme}://{parsed.hostname}"
+            if parsed.port is not None:
+                normalized += f":{parsed.port}"
+            if origin != normalized:
+                return None
+            return normalized
+        except ValueError:
+            return None
+
+    @classmethod
+    def _parse_public_origin_csv(cls, value: str) -> list[str]:
+        origins: list[str] = []
+        seen: set[str] = set()
+        for part in cls._parse_csv(value):
+            origin = cls._normalize_public_origin(part)
+            if origin and origin not in seen:
+                origins.append(origin)
+                seen.add(origin)
+        return origins
+
     @property
     def cors_allow_origin_list(self) -> list[str]:
         return self._parse_csv(self.cors_allow_origins)
 
     @property
     def cloud_parent_origin_list(self) -> list[str]:
-        return self._parse_csv(self.cloud_parent_origins)
+        return self._parse_public_origin_csv(self.cloud_parent_origins)
 
     @property
     def assets_dir(self) -> Path:

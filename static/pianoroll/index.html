@@ -1896,14 +1896,26 @@
       if (typeof value !== 'string') return [];
       return value.split(',');
     }
+    function isExactHttpOrigin(origin) {
+      var trimmed = typeof origin === 'string' ? origin.trim() : '';
+      if (!trimmed || trimmed.indexOf('*') >= 0) return false;
+      try {
+        var parsed = new URL(trimmed);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+        return parsed.origin === trimmed;
+      } catch (_err) {
+        return false;
+      }
+    }
     function allowedCloudParentOrigin(origin) {
       var origins = localCloudParentOrigins();
       parseCloudParentOrigins(window.H2S_CLOUD_PARENT_ORIGINS).forEach(function (item) {
         var trimmed = typeof item === 'string' ? item.trim() : '';
-        if (trimmed) origins.push(trimmed);
+        if (isExactHttpOrigin(trimmed)) origins.push(trimmed);
       });
       if (window.location && window.location.hostname === 'studio.hum2song.cn') {
         origins.push('https://hum2song.cn');
+        origins.push('https://www.hum2song.cn');
       }
       return origins.indexOf(origin) >= 0;
     }

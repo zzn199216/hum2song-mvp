@@ -13,7 +13,10 @@
     'http://localhost:3012',
     'http://127.0.0.1:3012',
   ];
-  var PRODUCTION_CLOUD_PARENT_ORIGIN = 'https://hum2song.cn';
+  var PRODUCTION_CLOUD_PARENT_ORIGINS = [
+    'https://hum2song.cn',
+    'https://www.hum2song.cn',
+  ];
 
   function isProductionStudioHost() {
     return window.location && window.location.hostname === 'studio.hum2song.cn';
@@ -25,13 +28,29 @@
     return value.split(',');
   }
 
+  function isExactHttpOrigin(origin) {
+    var trimmed = typeof origin === 'string' ? origin.trim() : '';
+    if (!trimmed || trimmed.indexOf('*') >= 0) return false;
+    try {
+      var parsed = new URL(trimmed);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+      return parsed.origin === trimmed;
+    } catch (_err) {
+      return false;
+    }
+  }
+
   function configuredCloudOrigins() {
     var origins = LOCAL_CLOUD_PARENT_ORIGINS.slice();
     parseCloudParentOrigins(window.H2S_CLOUD_PARENT_ORIGINS).forEach(function (origin) {
       var trimmed = typeof origin === 'string' ? origin.trim() : '';
-      if (trimmed) origins.push(trimmed);
+      if (isExactHttpOrigin(trimmed)) origins.push(trimmed);
     });
-    if (isProductionStudioHost()) origins.push(PRODUCTION_CLOUD_PARENT_ORIGIN);
+    if (isProductionStudioHost()) {
+      PRODUCTION_CLOUD_PARENT_ORIGINS.forEach(function (origin) {
+        origins.push(origin);
+      });
+    }
     return new Set(origins);
   }
 

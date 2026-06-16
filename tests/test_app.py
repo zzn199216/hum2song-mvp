@@ -67,3 +67,42 @@ def test_production_cors_uses_explicit_config(monkeypatch, tmp_path):
         assert "access-control-allow-origin" not in denied.headers
     finally:
         get_settings.cache_clear()
+
+
+def test_ui_injects_safe_cloud_parent_origins(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "outputs"))
+    monkeypatch.setenv(
+        "H2S_CLOUD_PARENT_ORIGINS",
+        ",".join(
+            [
+                "https://hum2song.cn",
+                "https://www.hum2song.cn",
+                "https://hum2song.com",
+                "https://www.hum2song.com",
+                "https://*.hum2song.com",
+                "https://hum2song.com/path",
+            ]
+        ),
+    )
+    monkeypatch.setenv("H2S_TEST_SECRET_TOKEN", "do-not-inject-secret-value")
+    get_settings.cache_clear()
+    try:
+        app = create_app()
+        with TestClient(app) as c:
+            response = c.get("/ui")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        html = response.text
+        assert "window.H2S_CLOUD_PARENT_ORIGINS" in html
+        assert (
+            'window.H2S_CLOUD_PARENT_ORIGINS = ["https://hum2song.cn",'
+            '"https://www.hum2song.cn","https://hum2song.com",'
+            '"https://www.hum2song.com"];'
+        ) in html
+        assert "https://*.hum2song.com" not in html
+        assert "https://hum2song.com/path" not in html
+        assert "do-not-inject-secret-value" not in html
+        assert "H2S_TEST_SECRET_TOKEN" not in html
+    finally:
+        get_settings.cache_clear()
