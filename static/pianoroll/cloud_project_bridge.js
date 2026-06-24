@@ -18,6 +18,15 @@
     'https://www.hum2song.cn',
   ];
 
+  function _normalizeStudioLocale(locale) {
+    var raw = String(locale || '').trim().toLowerCase().replace(/_/g, '-');
+    if (!raw) return null;
+    if (raw === 'zh' || raw.indexOf('zh-') === 0) return 'zh';
+    if (raw === 'ja' || raw === 'ja-jp' || raw.indexOf('ja-') === 0) return 'ja';
+    if (raw === 'en' || raw.indexOf('en-') === 0) return 'en';
+    return null;
+  }
+
   function isProductionStudioHost() {
     return window.location && window.location.hostname === 'studio.hum2song.cn';
   }
@@ -548,8 +557,8 @@
 
       case 'H2S_HOST_SET_LOCALE': {
         if (data.version !== 1) return;
-        var loc = data.locale;
-        if (loc !== 'en' && loc !== 'zh') return;
+        var loc = _normalizeStudioLocale(data.locale);
+        if (!loc) return;
         try{
           var _h = typeof location !== 'undefined' ? String(location.hostname || '') : '';
           if (_h === 'localhost' || _h === '127.0.0.1'){
@@ -558,7 +567,6 @@
         }catch(e){}
         var MAX_DEFER = 50;
         var langSupported = function (I18N, code) {
-          if (code === 'en' || code === 'zh') return true;
           var list = typeof I18N.availableLanguages === 'function' ? I18N.availableLanguages() : [];
           for (var li = 0; li < list.length; li++) {
             var it = list[li];

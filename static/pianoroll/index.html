@@ -195,6 +195,10 @@
       flex-direction:column;
     }
     #aiAssistDock.open{ height:400px; width:340px; }
+    body.studio-lang-select-active #aiAssistDock.open{
+      opacity:.18;
+      pointer-events:none;
+    }
     #aiAssistResizeHandle{ position:absolute; top:0; left:0; width:20px; height:20px; cursor:nwse-resize; z-index:10; user-select:none; background:linear-gradient(135deg, rgba(255,255,255,.15) 0%, transparent 50%); border-radius:var(--radius) 0 6px 0; }
     #aiAssistResizeHandle:hover{ background:linear-gradient(135deg, rgba(255,255,255,.25) 0%, transparent 50%); }
     #aiAssistHeader{
@@ -1704,9 +1708,9 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=ai-optimize-musical-v1"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=worker-default-v1"></script>
-  <script src="/static/i18n/i18n.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/i18n/i18n.js?v=ja-i18n-64389e6"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
@@ -1731,10 +1735,10 @@
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=ja-i18n-64389e6"></script>
   <script src="/static/pianoroll/controllers/library_controller.js"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=worker-default-v1"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=ja-i18n-64389e6"></script>
   <script src="/static/pianoroll/controllers/audio_controller.js"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
@@ -1744,8 +1748,8 @@
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_wav_controller.js"></script>
   <script src="/static/pianoroll/core/score_heuristic_split.js"></script>
-  <script src="/static/pianoroll/core/audio_convert_segment.js?v=worker-default-v1"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/core/audio_convert_segment.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=ja-i18n-64389e6"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -1940,9 +1944,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=worker-default-v1"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=typed-ai-optfail-detail-20260526-0355"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=worker-default-v1"></script>
+  <script src="/static/pianoroll/app.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=ja-i18n-64389e6"></script>
   <script>
   (function () {
     try {

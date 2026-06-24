@@ -9,9 +9,10 @@ function assert(cond, msg){
   if (!cond) throw new Error(msg || 'Assertion failed');
 }
 
-// PR-G1c: zh.json must have all keys from en.json
+// PR-G1c: locale JSON files must have all keys from en.json
 var enPath = path.join(__dirname, '../../static/i18n/locales/en.json');
 var zhPath = path.join(__dirname, '../../static/i18n/locales/zh.json');
+var jaPath = path.join(__dirname, '../../static/i18n/locales/ja.json');
 if (fs.existsSync(enPath) && fs.existsSync(zhPath)){
   var en = JSON.parse(fs.readFileSync(enPath, 'utf8'));
   var zh = JSON.parse(fs.readFileSync(zhPath, 'utf8'));
@@ -77,6 +78,27 @@ if (fs.existsSync(enPath) && fs.existsSync(zhPath)){
   assert(zh['lastOpt.fail.truncated_generation'] === 'AI 输出被截断，未应用到工程。你可以重试，或选择更短片段。', 'zh truncated generation copy should be product-facing');
 }
 
+if (fs.existsSync(enPath)) {
+  var enLocale = JSON.parse(fs.readFileSync(enPath, 'utf8'));
+  var manifestPath = path.join(__dirname, '../../static/i18n/manifest.json');
+  var manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  var manifestCodes = manifest.map(function(it){ return it && it.code; });
+  assert(manifestCodes.indexOf('ja') !== -1, 'manifest should expose Japanese locale');
+  manifest.forEach(function(it){
+    var code = it && it.code;
+    var localePath = path.join(__dirname, '../../static/i18n/locales/' + code + '.json');
+    assert(fs.existsSync(localePath), 'manifest locale file should exist: ' + code);
+    var locale = JSON.parse(fs.readFileSync(localePath, 'utf8'));
+    Object.keys(enLocale).forEach(function(k){
+      assert(locale[k] != null, code + '.json missing key: ' + k);
+    });
+  });
+  assert(fs.existsSync(jaPath), 'ja.json should exist');
+  var ja = JSON.parse(fs.readFileSync(jaPath, 'utf8'));
+  assert(ja['top.importAudio'] === '音声をインポート', 'ja top.importAudio should be localized');
+  assert(ja['aiAssist.title'] === 'AI アシスタント', 'ja AI assistant title should be localized');
+}
+
 // Studio index: beginner hint bar (first-open guidance)
 var indexHtmlPath = path.join(__dirname, '../../static/pianoroll/index.html');
 if (fs.existsSync(indexHtmlPath)) {
@@ -99,6 +121,8 @@ if (fs.existsSync(indexHtmlPath)) {
   assert(indexHtml.indexOf('data-i18n="lastOpt.label"') !== -1, 'index.html last optimize row must use i18n label');
   assert(indexHtml.indexOf('id="btnLastOptimizeDetails"') !== -1, 'index.html must include last optimize details button');
   assert(indexHtml.indexOf('id="studioLastOptimizeDetails"') !== -1, 'index.html must include last optimize details panel');
+  assert(indexHtml.indexOf('studio-lang-select-active') !== -1, 'language select should temporarily de-emphasize AI dock while open');
+  assert(indexHtml.indexOf('ja-i18n-') !== -1, 'Japanese locale release should bump Studio script cache version');
 }
 
 // Last optimize: staleness uses revision + project doc key (see app.js)
@@ -111,6 +135,28 @@ if (fs.existsSync(appJsPath)) {
   assert(appJs.indexOf('_initLastOptimizeDetails') !== -1, 'app.js should wire last optimize details popover');
   assert(appJs.indexOf('modalSyncGhostFromClipParent') !== -1, 'app.render should refresh clip-editor ghost when modal open');
   assert(/\.topbar\s*\{[\s\S]*?flex-wrap:\s*wrap/.test(appJs) === false, 'responsive topbar CSS should live in index.html, not app.js');
+  assert(appJs.indexOf('_normalizeStudioLocale') !== -1, 'app.js should normalize host locales such as ja-JP to Studio locale codes');
+  assert(appJs.indexOf('ja-jp') !== -1, 'app.js should recognize ja-JP host locale');
+  assert(appJs.indexOf('studio-lang-select-active') !== -1, 'app.js should mark language select activity for overlay-safe interaction');
+}
+
+var i18nCorePath = path.join(__dirname, '../../static/i18n/i18n.js');
+if (fs.existsSync(i18nCorePath)) {
+  var i18nCore = fs.readFileSync(i18nCorePath, 'utf8');
+  assert(/function loadManifest[\s\S]*H2S_STUDIO_ASSET_VERSION/.test(i18nCore), 'i18n manifest load should use Studio asset version cache-busting');
+}
+
+var assetVersionPath = path.join(__dirname, '../../static/pianoroll/studio_asset_version.js');
+if (fs.existsSync(assetVersionPath)) {
+  var assetVersionSrc = fs.readFileSync(assetVersionPath, 'utf8');
+  assert(assetVersionSrc.indexOf('ja-i18n-') !== -1, 'Studio asset version should change for Japanese locale release');
+}
+
+var bridgePath = path.join(__dirname, '../../static/pianoroll/cloud_project_bridge.js');
+if (fs.existsSync(bridgePath)) {
+  var bridgeJs = fs.readFileSync(bridgePath, 'utf8');
+  assert(bridgeJs.indexOf('_normalizeStudioLocale') !== -1, 'cloud_project_bridge should normalize host locale messages');
+  assert(bridgeJs.indexOf('ja-jp') !== -1, 'cloud_project_bridge should accept ja-JP host locale messages');
 }
 
 // Clip editor ghost: parent revision overlay sync (editor_runtime.js)
@@ -144,8 +190,14 @@ I18N.setLang('en', { persist: false });
 assert(I18N.getLang() === 'en', 'non-persistent setLang updates active language');
 assert(storage.getItem('hum2song_studio_lang') === 'zh', 'non-persistent setLang does not overwrite hum2song_studio_lang');
 
+I18N.setLang('ja-JP', { persist: false });
+assert(I18N.getLang() === 'ja', 'setLang normalizes ja-JP to ja');
+
+I18N.setLang('zh-CN', { persist: false });
+assert(I18N.getLang() === 'zh', 'setLang normalizes zh-CN to zh');
+
 I18N.init({ fromStorage: false, useNavigator: false });
-assert(I18N.getLang() === 'en', 'init embed mode does not clobber in-memory lang with storage or navigator');
+assert(I18N.getLang() === 'zh', 'init embed mode does not clobber in-memory lang with storage or navigator');
 
 I18N.setLang('zh');
 I18N.setLang('en', { persist: false });

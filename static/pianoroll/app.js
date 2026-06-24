@@ -40,6 +40,14 @@
   const LS_KEY_DEV_TRANSCRIPTION_BAR_SEGMENT = 'hum2song_studio_dev_transcription_bar_segment';
   /** Dev-only: set localStorage to '1' to log [H2S perf] timings (import explode, persist, render; editor modalDraw phase object). */
   const LS_KEY_DEV_PERF_TIMING = 'hum2song_studio_dev_perf_timing';
+  function _normalizeStudioLocale(locale){
+    const raw = String(locale || '').trim().toLowerCase().replace(/_/g, '-');
+    if (!raw) return null;
+    if (raw === 'zh' || raw.indexOf('zh-') === 0) return 'zh';
+    if (raw === 'ja' || raw === 'ja-jp' || raw.indexOf('ja-') === 0) return 'ja';
+    if (raw === 'en' || raw.indexOf('en-') === 0) return 'en';
+    return null;
+  }
   function _devPerfTimingEnabled(){
     try{
       return typeof localStorage !== 'undefined' && String(localStorage.getItem(LS_KEY_DEV_PERF_TIMING) || '') === '1';
@@ -8751,7 +8759,7 @@ renderTimeline(){
       try{
         if (typeof window.I18N === 'undefined' || !lang) return;
         const I18N = window.I18N;
-        const code = String(lang).trim().toLowerCase().slice(0, 8);
+        const code = _normalizeStudioLocale(lang);
         if (!code) return;
         await I18N.load(code);
         I18N.setLang(code, { persist });
@@ -8774,7 +8782,7 @@ renderTimeline(){
           try{
             const u = new URL(window.location.href);
             const v = u.searchParams.get('hostLocale');
-            if (v === 'en' || v === 'zh') return v;
+            return _normalizeStudioLocale(v);
           }catch(e){}
           return null;
         };
@@ -8795,6 +8803,19 @@ renderTimeline(){
         }
 
         const populate = () => { this._syncInspectorLangSelect(); };
+        const setLangSelectActive = (ev) => {
+          try{
+            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+            if (document.body) document.body.classList.add('studio-lang-select-active');
+          }catch(e){}
+        };
+        const clearLangSelectActive = () => {
+          try{
+            setTimeout(() => {
+              try{ if (document.body) document.body.classList.remove('studio-lang-select-active'); }catch(e){}
+            }, 120);
+          }catch(e){}
+        };
 
         const onLangChange = async () => {
           const lang = sel.value;
@@ -8802,8 +8823,14 @@ renderTimeline(){
           try{
             await this.applyStudioLanguage(lang, { persist: true, source: 'user' });
           }catch(e){ /* applyStudioLanguage already logged */ }
+          clearLangSelectActive();
         };
 
+        ['pointerdown', 'mousedown', 'click'].forEach((evt) => {
+          sel.addEventListener(evt, setLangSelectActive);
+        });
+        sel.addEventListener('focus', setLangSelectActive);
+        sel.addEventListener('blur', clearLangSelectActive);
         sel.addEventListener('change', onLangChange);
 
         Promise.all([

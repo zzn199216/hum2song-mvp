@@ -13,11 +13,20 @@
 
   var G = typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : this));
   const LS_KEY = 'hum2song_studio_lang';
-  const DEFAULT_LIST = [{ code: 'en', label: 'English' }, { code: 'zh', label: '中文' }];
+  const DEFAULT_LIST = [{ code: 'en', label: 'English' }, { code: 'zh', label: '中文' }, { code: 'ja', label: '日本語' }];
 
   var _lang = 'en';
   var _dicts = {};
   var _manifest = null;
+
+  function normalizeLang(lang){
+    var raw = String(lang || '').trim().toLowerCase().replace(/_/g, '-');
+    if (!raw) return 'en';
+    if (raw === 'zh' || raw.indexOf('zh-') === 0) return 'zh';
+    if (raw === 'ja' || raw === 'ja-jp' || raw.indexOf('ja-') === 0) return 'ja';
+    if (raw === 'en' || raw.indexOf('en-') === 0) return 'en';
+    return raw.slice(0, 8) || 'en';
+  }
 
   function _storage(){
     try{
@@ -33,7 +42,7 @@
 
   function setLang(lang, opts){
     if (!lang || typeof lang !== 'string') return;
-    _lang = String(lang).trim().toLowerCase().slice(0, 8) || 'en';
+    _lang = normalizeLang(lang);
     var persist = !(opts && typeof opts === 'object' && opts.persist === false);
     if (persist){
       try{ _storage().setItem(LS_KEY, _lang); }catch(e){}
@@ -65,7 +74,7 @@
 
   function register(lang, dict, meta){
     if (!lang || typeof lang !== 'string') return;
-    var code = String(lang).trim().toLowerCase().slice(0, 8);
+    var code = normalizeLang(lang);
     _dicts[code] = (dict && typeof dict === 'object') ? dict : {};
   }
 
@@ -74,7 +83,7 @@
     var fetchFn = opts.fetchFn || (typeof G.fetch === 'function' ? G.fetch : null);
     if (!fetchFn) throw new Error('i18n.load: fetch unavailable and opts.fetchFn not provided');
     var base = (opts.baseUrl != null) ? opts.baseUrl : '/static/i18n/locales';
-    var url = base.replace(/\/+$/, '') + '/' + String(lang).trim().toLowerCase().slice(0, 8) + '.json';
+    var url = base.replace(/\/+$/, '') + '/' + normalizeLang(lang) + '.json';
     if (G.H2S_STUDIO_ASSET_VERSION) url += '?v=' + encodeURIComponent(String(G.H2S_STUDIO_ASSET_VERSION));
     return fetchFn(url).then(function(r){ if (!r.ok) throw new Error('i18n.load: ' + r.status); return r.json(); }).then(function(d){ register(lang, d); return d; });
   }
@@ -85,6 +94,7 @@
     if (!fetchFn) return Promise.reject(new Error('i18n.loadManifest: fetch unavailable and opts.fetchFn not provided'));
     var base = (opts.baseUrl != null) ? opts.baseUrl : '/static/i18n';
     var url = base.replace(/\/+$/, '') + '/manifest.json';
+    if (G.H2S_STUDIO_ASSET_VERSION) url += '?v=' + encodeURIComponent(String(G.H2S_STUDIO_ASSET_VERSION));
     return fetchFn(url).then(function(r){ if (!r.ok) throw new Error('i18n.loadManifest: ' + r.status); return r.json(); }).then(function(arr){
       _manifest = Array.isArray(arr) ? arr : DEFAULT_LIST;
       return _manifest;
@@ -112,7 +122,10 @@
       return getLang();
     }
     var nav = (typeof G.navigator !== 'undefined' && G.navigator && G.navigator.language) ? G.navigator.language : '';
-    if (nav && String(nav).toLowerCase().indexOf('zh') === 0){ setLang('zh'); } else { setLang('en'); }
+    var navLocale = String(nav || '').toLowerCase();
+    if (navLocale.indexOf('zh') === 0){ setLang('zh'); }
+    else if (navLocale.indexOf('ja') === 0){ setLang('ja'); }
+    else { setLang('en'); }
     return getLang();
   }
 

@@ -40,11 +40,11 @@ for (const src of requiredVersionedScripts) {
   assert(!/[\\/?#]/.test(assetVersion), src + ' cache-bust version should be a plain marker');
 }
 
-assert(ver === 'worker-default-v1', 'studio_asset_version.js should preserve current production marker');
-assert(scriptVersion('studio_asset_version.js') === 'ai-optimize-musical-v1', 'index.html should preserve production studio_asset_version.js cache marker');
+assert(ver === 'ja-i18n-64389e6', 'studio_asset_version.js should preserve current production marker');
+assert(scriptVersion('studio_asset_version.js') === ver, 'index.html should load studio_asset_version.js with the studio asset version marker');
 assert(scriptVersion('h2s_startup_perf.js') === ver, 'index.html should load startup perf with the studio asset version marker');
 assert(scriptVersion('app.js') === ver, 'index.html should load app.js with the studio asset version marker');
-assert(scriptVersion('cloud_project_bridge.js') === 'typed-ai-optfail-detail-20260526-0355', 'index.html should preserve production cloud_project_bridge.js cache marker');
+assert(scriptVersion('cloud_project_bridge.js') === ver, 'index.html should load cloud_project_bridge.js with the studio asset version marker');
 assert(scriptVersion('cloud_materials_panel.js') === ver, 'index.html should load cloud materials panel with the studio asset version marker');
 assert(scriptVersion('ui/library_view.js') === ver, 'index.html should load library view with the studio asset version marker');
 assert(scriptVersion('ui/selection_view.js') === ver, 'index.html should load selection view with the studio asset version marker');
