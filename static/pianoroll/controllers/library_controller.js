@@ -121,7 +121,7 @@
       const project = getProjectV2() || getProject();
       const clips = _getProjectClips(project);
       if (!clips.length){
-        rootEl.innerHTML = view.emptyMessage();
+        rootEl.innerHTML = (typeof view.emptyMessageHTML === 'function') ? view.emptyMessageHTML() : view.emptyMessage();
         return;
       }
       const app = opts.app || (typeof window !== 'undefined' ? window.H2SApp : null);
@@ -141,6 +141,21 @@
     }
 
     function _handleClick(e){
+      const emptyBtn = e.target && e.target.closest ? e.target.closest('[data-h2s-empty-act]') : null;
+      if (emptyBtn){
+        const emptyAct = emptyBtn.getAttribute('data-h2s-empty-act');
+        if (emptyAct === 'import'){
+          const importBtn = (typeof document !== 'undefined') ? document.getElementById('btnImportAudio') : null;
+          if (importBtn) importBtn.click();
+          return;
+        }
+        if (emptyAct === 'record'){
+          const recordBtn = (typeof document !== 'undefined') ? document.getElementById('btnRecord') : null;
+          if (recordBtn) recordBtn.click();
+          return;
+        }
+      }
+
       const btn = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
       if (!btn){
         const t = e.target;

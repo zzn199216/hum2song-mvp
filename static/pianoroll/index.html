@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hum2Song Studio MVP</title>
+  <title>Hum2Song Editor</title>
   <link rel="icon" href="/static/favicon.ico" />
   <style>
     :root{
@@ -240,6 +240,13 @@
     #aiAssistSend{ align-self:flex-end; }
 
     /* Beginner first-open hint (dismissible; local dev) */
+    #studioBackendReadiness{ display:none !important; }
+    .badge.mvpBadge{ display:none !important; }
+    .clipListEmpty{ padding:10px 8px 6px; }
+    .clipListEmptyTitle{ margin:0 0 6px; font-weight:800; font-size:13px; }
+    .clipListEmptyLead{ margin:0 0 8px; color:var(--muted); font-size:12px; line-height:1.45; }
+    .clipListEmptySteps{ margin:0 0 10px; padding-left:18px; color:var(--muted); font-size:12px; line-height:1.45; }
+    .clipListEmptyActions{ display:flex; flex-wrap:wrap; gap:6px; }
     .beginnerHintBar{
       flex-shrink:0;
       display:flex;
@@ -1103,7 +1110,7 @@
     <div class="brand">
       <span style="font-size:18px;">Hum2Song</span>
       <span style="opacity:.8;">Studio</span>
-      <span class="badge">MVP</span>
+      <span class="badge mvpBadge">MVP</span>
     </div>
     <button type="button" id="btnProjectHome" class="btn ghost" data-i18n="top.projectHomeBtn" data-i18n-title="top.projectHomeBtnTitle">Project</button>
     <div class="row" style="align-items:center; gap:8px;">
@@ -1317,7 +1324,7 @@
       <div class="panelHeader">
         <h3 data-i18n="inspector.title">Inspector</h3>
         <select id="selLang" class="btn mini" title="Language" style="margin-left:auto; min-width:90px;"></select>
-        <span class="badge">MVP</span>
+        <span class="badge mvpBadge">MVP</span>
       </div>
       <div class="panelBody" id="inspectorPanelBody">
         <div id="inspectorEmptyState" class="insSection muted" style="padding:16px; text-align:center; font-size:13px; line-height:1.5;" data-i18n="inspector.emptyState">Select a clip from the library or a clip instance on the timeline to get started.</div>

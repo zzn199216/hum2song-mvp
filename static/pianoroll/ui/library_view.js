@@ -18,8 +18,47 @@
 })(typeof window !== 'undefined' ? window : null, function(){
   'use strict';
 
+  function _t(key, fallback){
+    try{
+      const I = (typeof globalThis !== 'undefined' && globalThis.I18N) ? globalThis.I18N : null;
+      if (I && typeof I.t === 'function'){
+        const v = I.t(key);
+        if (v && v !== key) return v;
+      }
+    }catch(_){ /* ignore */ }
+    return fallback;
+  }
+
   function emptyMessage(){
-    return 'No clips yet. Record or Upload to start.';
+    return _t('cliplib.noClips', 'Start from a sound — import audio or record a take.');
+  }
+
+  function emptyMessageHTML(){
+    const title = _t('cliplib.emptyTitle', 'Start from a sound');
+    const lead = _t('cliplib.emptyLead', 'Import audio or record — Hum2Song will generate an editable melody.');
+    const step1 = _t('cliplib.emptyStep1', 'Step 1: Record or upload a hum / melody');
+    const step2 = _t('cliplib.emptyStep2', 'Step 2: Hum2Song turns it into editable notes');
+    const step3 = _t('cliplib.emptyStep3', 'Step 3: Edit the melody or let AI arrange a full song');
+    const ctaImport = _t('cliplib.emptyCtaImport', 'Import audio');
+    const ctaRecord = _t('cliplib.emptyCtaRecord', 'Record');
+    const ctaSample = _t('cliplib.emptyCtaSample', 'Open sample');
+    const ctaSampleHint = _t('cliplib.emptyCtaSampleHint', 'Guided sample coming soon.');
+    return (
+      '<div class="clipListEmpty" role="region" aria-label="' + _defaultEscapeHtml(title) + '">' +
+        '<p class="clipListEmptyTitle">' + _defaultEscapeHtml(title) + '</p>' +
+        '<p class="clipListEmptyLead">' + _defaultEscapeHtml(lead) + '</p>' +
+        '<ol class="clipListEmptySteps">' +
+          '<li>' + _defaultEscapeHtml(step1) + '</li>' +
+          '<li>' + _defaultEscapeHtml(step2) + '</li>' +
+          '<li>' + _defaultEscapeHtml(step3) + '</li>' +
+        '</ol>' +
+        '<div class="clipListEmptyActions">' +
+          '<button type="button" class="btn" data-h2s-empty-act="import">' + _defaultEscapeHtml(ctaImport) + '</button>' +
+          '<button type="button" class="btn" data-h2s-empty-act="record">' + _defaultEscapeHtml(ctaRecord) + '</button>' +
+          '<button type="button" class="btn ghost" data-h2s-empty-act="sample" disabled title="' + _defaultEscapeHtml(ctaSampleHint) + '">' + _defaultEscapeHtml(ctaSample) + '</button>' +
+        '</div>' +
+      '</div>'
+    );
   }
 
   function _defaultEscapeHtml(s){
@@ -292,6 +331,7 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
 
   return {
     emptyMessage,
+    emptyMessageHTML,
     clipCardInnerHTML,
     historyControlsHTML,
   };
