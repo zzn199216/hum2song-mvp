@@ -20,6 +20,14 @@
 })(typeof window !== 'undefined' ? window : null, function(){
   'use strict';
 
+  let ClipThumbnailView = null;
+  try {
+    ClipThumbnailView = require('./clip_thumbnail_view.js');
+  } catch (e) { /* browser */ }
+  if (!ClipThumbnailView && typeof window !== 'undefined' && window.H2SClipThumbnailView){
+    ClipThumbnailView = window.H2SClipThumbnailView;
+  }
+
   function _defaultEscapeHtml(s){
     s = String(s == null ? '' : s);
     return s
@@ -61,7 +69,18 @@
         <button class="instAct" type="button" data-act="instOptimize" data-inst-id="${instId}">${escapeHtml(optimizeLabel)}</button>
       </div>`;
 
+    const thumbWidth = (typeof args.thumbWidth === 'number' && isFinite(args.thumbWidth)) ? args.thumbWidth : 80;
+    const thumbHeight = (typeof args.thumbHeight === 'number' && isFinite(args.thumbHeight)) ? args.thumbHeight : 60;
+    const thumbOptions = {};
+    if (typeof args.spanSec === 'number' && isFinite(args.spanSec) && args.spanSec > 0){
+      thumbOptions.spanSec = args.spanSec;
+    }
+    const thumbHtml = (args.clip && ClipThumbnailView && typeof ClipThumbnailView.instThumbHTML === 'function')
+      ? ClipThumbnailView.instThumbHTML(args.clip, thumbWidth, thumbHeight, thumbOptions)
+      : '';
+
     return `
+      ${thumbHtml}
       <div class="instBody inst-body" data-role="inst-body">
         <div class="instTitle inst-title">${isAudio ? ('<span class="inst-badge">' + escapeHtml(audioBadge) + '</span> ') : ''}${clipName}</div>
         <div class="instSub inst-sub"><span>${fmtSec(startSec)}</span><span>${subRight}</span></div>
@@ -133,7 +152,7 @@ function ensureTimelineSnapSelect(args){
 }
 
   return {
-    VERSION: 'timeline_view_v2_r8',
+    VERSION: 'timeline_view_v2_r9_thumbs',
     instanceInnerHTML,
     ensureTimelineSnapSelect,
   };

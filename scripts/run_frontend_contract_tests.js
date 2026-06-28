@@ -69,6 +69,24 @@ const libView = require('../static/pianoroll/ui/library_view.js');
   assert(/data-act=\"remove\"/.test(html), 'missing data-act=remove');
   assert(/btn-inst-remove/.test(html), 'missing btn-inst-remove alias');
 
+  const clip = {
+    id: 'thumb_contract',
+    kind: 'note',
+    score: { tracks: [{ notes: [{ startBeat: 0, durationBeat: 1, pitch: 60 }] }] },
+  };
+  const htmlWithThumb = timelineView.instanceInnerHTML({
+    clip,
+    clipName: 'Thumb Clip',
+    startSec: 0,
+    noteCount: 1,
+    thumbWidth: 120,
+    thumbHeight: 60,
+    fmtSec,
+    escapeHtml,
+  });
+  assert(/data-role=\"inst-thumb\"/.test(htmlWithThumb), 'missing inst-thumb when clip provided');
+  assert(/instThumbSvg/.test(htmlWithThumb), 'missing thumbnail svg');
+
   assert(/Remove/.test(html), 'missing Remove label');
   assert(/×/.test(html), 'missing x glyph');
   pass('timeline view includes body + title/sub/remove');

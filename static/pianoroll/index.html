@@ -753,7 +753,7 @@
       height:60px;
       border-radius:12px;
       border:1px solid rgba(59,130,246,.65);
-      background: rgba(59,130,246,.22);
+      background: rgba(15,23,42,.35);
       box-shadow: 0 8px 20px rgba(0,0,0,.25);
       display:flex;
       flex-direction:column;
@@ -761,22 +761,49 @@
       padding:8px 10px;
       cursor:pointer;
       user-select:none;
+      overflow:hidden;
+    }
+    .instThumb{
+      position:absolute;
+      inset:0;
+      z-index:0;
+      pointer-events:none;
+      background:linear-gradient(180deg, rgba(37,99,235,.42) 0%, rgba(29,78,216,.28) 100%);
+    }
+    .instance--audio .instThumb{
+      background:linear-gradient(180deg, rgba(5,150,105,.38) 0%, rgba(4,120,87,.24) 100%);
+    }
+    .instBody,
+    .instActions,
+    .instRemove{
+      position:relative;
+      z-index:1;
+    }
+    .instTitle,
+    .instSub{
+      text-shadow:0 1px 2px rgba(0,0,0,.55), 0 0 6px rgba(0,0,0,.35);
     }
     .instance:hover{ border-color: rgba(96,165,250,.95); }
     .instance.selected{
       border-color: rgba(255,255,255,.85);
-      background: rgba(59,130,246,.35);
+      background: rgba(15,23,42,.45);
       box-shadow: 0 0 0 2px rgba(59,130,246,.35), 0 10px 25px rgba(0,0,0,.35);
+    }
+    .instance.selected .instThumb{
+      background:linear-gradient(180deg, rgba(37,99,235,.55) 0%, rgba(29,78,216,.38) 100%);
     }
     .instance--audio{
       border-color: rgba(16,185,129,.72);
-      background: rgba(16,185,129,.16);
+      background: rgba(15,23,42,.35);
     }
     .instance--audio:hover{ border-color: rgba(52,211,153,.92); }
     .instance--audio.selected{
       border-color: rgba(255,255,255,.85);
-      background: rgba(16,185,129,.26);
+      background: rgba(15,23,42,.45);
       box-shadow: 0 0 0 2px rgba(16,185,129,.35), 0 10px 25px rgba(0,0,0,.35);
+    }
+    .instance--audio.selected .instThumb{
+      background:linear-gradient(180deg, rgba(5,150,105,.52) 0%, rgba(4,120,87,.36) 100%);
     }
     .inst-badge{
       display:inline-block;
@@ -1731,7 +1758,9 @@
   <script src="/static/pianoroll/core/optimize_templates_v1.js"></script>
   <script src="/static/pianoroll/controllers/agent_controller.js?v=typed-ai-optfail-detail-20260526-0355"></script>
   <script src="/static/pianoroll/controllers/arrangement_controller.js?v=arrangement-creative-v1"></script>
-  <script src="/static/pianoroll/ui/timeline_view.js"></script>
+  <script src="/static/pianoroll/core/clip_thumbnail_math.js?v=clip-thumb-v2"></script>
+  <script src="/static/pianoroll/ui/clip_thumbnail_view.js?v=clip-thumb-v2"></script>
+  <script src="/static/pianoroll/ui/timeline_view.js?v=clip-thumb-v2"></script>
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js"></script>

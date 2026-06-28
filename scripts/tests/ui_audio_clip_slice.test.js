@@ -69,6 +69,40 @@ function testTimelineAudioVsNote(){
   });
   assert(/\b7\s+notes\b/.test(htmlN), 'note sub');
   assert(!/<button[^>]*data-act="instEdit"[^>]*disabled/.test(htmlN), 'note inst edit not disabled');
+
+  const noteClipObj = {
+    id: 'n-thumb',
+    kind: 'note',
+    score: { tracks: [{ notes: [{ startBeat: 0, durationBeat: 1, pitch: 62 }] }] },
+  };
+  const htmlNoteThumb = tv.instanceInnerHTML({
+    clip: noteClipObj,
+    clipName: 'Melody',
+    startSec: 1,
+    spanSec: 2,
+    noteCount: 1,
+    isAudio: false,
+    thumbWidth: 100,
+    thumbHeight: 60,
+    fmtSec,
+    escapeHtml,
+  });
+  assert(/data-role="inst-thumb"/.test(htmlNoteThumb), 'note instance thumbnail');
+
+  const audioClipObj = { id: 'a-thumb', kind: 'audio', audio: { durationSec: 2 }, meta: { spanBeat: 4 } };
+  const htmlAudioThumb = tv.instanceInnerHTML({
+    clip: audioClipObj,
+    clipName: 'FX',
+    startSec: 0,
+    spanSec: 2,
+    noteCount: 0,
+    isAudio: true,
+    thumbWidth: 100,
+    thumbHeight: 60,
+    fmtSec,
+    escapeHtml,
+  });
+  assert(/data-role="inst-thumb"/.test(htmlAudioThumb), 'audio instance thumbnail');
 }
 
 function testAppV1ProjectionSource(){

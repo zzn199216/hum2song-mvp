@@ -14,6 +14,7 @@ runOne('scripts/run_frontend_editor_contract_tests.js');
 runOne('scripts/run_frontend_numeric_invariants_tests.js');
 runOne('scripts/run_frontend_bpm_invariants_tests.js');
 runOne('scripts/run_frontend_timeline_unit_tests.js');
+runOne('scripts/tests/clip_thumbnail_math.test.js');
 
 runOne('scripts/tests/agent_patchsummary_smoke.test.js');
 runOne('scripts/tests/velocity_shape.test.js');

@@ -658,12 +658,16 @@
             // Prefer view helper (keeps markup stable + supports instBody + data-act remove).
             if (window.H2STimelineView && typeof window.H2STimelineView.instanceInnerHTML === 'function'){
               el.innerHTML = window.H2STimelineView.instanceInnerHTML({
+                clip: clip,
                 clipName: clip.name,
                 startSec: startSec,
                 noteCount: (typeof st.count === 'number') ? st.count : 0,
                 spanSec: spanSec,
                 isAudio: isAudio,
                 instId: inst.id,
+                thumbWidth: w,
+                thumbHeight: 60,
+                spanSec: spanSec,
                 fmtSec: ctrl._fmtSec.bind(ctrl),
                 escapeHtml: ctrl._escapeHtml.bind(ctrl),
                 notesLabel: _t('trackpanel.notes'),
