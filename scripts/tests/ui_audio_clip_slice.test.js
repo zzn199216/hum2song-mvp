@@ -32,6 +32,7 @@ function testLibraryAudioVsNote(){
   const htmlN = libView.clipCardInnerHTML(noteClip, noteStats, fmtSec, escapeHtml);
   assert(!/clip-card-audio/.test(htmlN), 'note card not audio styled');
   assert(/data-clip-kind="note"/.test(htmlN), 'data-clip-kind note');
+  assert(/data-act="clipName"/.test(htmlN), 'library clip rename input');
   assert(/\b5\s+notes\b/.test(htmlN), 'note count subline');
   assert(!/<button[^>]*data-act="edit"[^>]*disabled/.test(htmlN), 'note edit not disabled');
   assert(!/<button[^>]*data-act="optimize"[^>]*disabled/.test(htmlN), 'note optimize not disabled');

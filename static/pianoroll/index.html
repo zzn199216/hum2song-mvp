@@ -519,8 +519,37 @@
       border:1px solid rgba(52,211,153,.45);
       vertical-align:middle;
     }
+    .clip-title{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      min-width:0;
+    }
+    .clip-title .clip-name-input{
+      flex:1 1 auto;
+      min-width:0;
+    }
     .clipAdvanced summary{ font-size:11px; }
     .clipTitle{ font-weight:800; font-size:13px; }
+    .clip-name-input{
+      width:100%;
+      font-weight:800;
+      font-size:13px;
+      line-height:1.25;
+      padding:3px 6px;
+      border-radius:8px;
+      border:1px solid transparent;
+      background:rgba(0,0,0,.22);
+      color:inherit;
+      box-sizing:border-box;
+      cursor:text;
+    }
+    .clip-name-input:hover,
+    .clip-name-input:focus{
+      border-color:rgba(59,130,246,.55);
+      background:rgba(0,0,0,.38);
+      outline:none;
+    }
     .clipMeta{ display:flex; justify-content:space-between; color:var(--muted); font-size:12px; }
     .miniBtns{ display:flex; gap:8px; }
     .btn.mini{ padding:6px 8px; border-radius:10px; font-size:12px; font-weight:700; }
@@ -755,10 +784,8 @@
       border:1px solid rgba(59,130,246,.65);
       background: rgba(15,23,42,.35);
       box-shadow: 0 8px 20px rgba(0,0,0,.25);
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
-      padding:8px 10px;
+      display:block;
+      padding:0;
       cursor:pointer;
       user-select:none;
       overflow:hidden;
@@ -776,12 +803,41 @@
     .instBody,
     .instActions,
     .instRemove{
-      position:relative;
+      position:absolute;
       z-index:1;
+      pointer-events:none;
+    }
+    .instBody{
+      inset:0;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      padding:4px 8px 4px 8px;
+      box-sizing:border-box;
     }
     .instTitle,
     .instSub{
       text-shadow:0 1px 2px rgba(0,0,0,.55), 0 0 6px rgba(0,0,0,.35);
+      pointer-events:none;
+    }
+    .instTitle{
+      font-weight:800;
+      font-size:11px;
+      line-height:1.2;
+      max-width:calc(100% - 28px);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      align-self:flex-start;
+    }
+    .instSub{
+      font-size:10px;
+      color:rgba(255,255,255,.72);
+      display:flex;
+      justify-content:space-between;
+      gap:6px;
+      align-self:stretch;
+      margin-top:auto;
     }
     .instance:hover{ border-color: rgba(96,165,250,.95); }
     .instance.selected{
@@ -816,15 +872,11 @@
       border:1px solid rgba(52,211,153,.45);
       vertical-align:middle;
     }
-    .instActions{ position:absolute; top:4px; right:28px; display:none; gap:4px; flex-direction:row; align-items:center; z-index:2; }
+    .instActions{ position:absolute; top:4px; right:28px; display:none; gap:4px; flex-direction:row; align-items:center; z-index:2; pointer-events:auto; }
     .instance:hover .instActions{ display:flex; }
     .instance.selected .instActions{ display:flex; }
     .instAct{ padding:2px 6px; font-size:10px; font-weight:600; border-radius:6px; border:1px solid rgba(255,255,255,.25); background:rgba(0,0,0,.3); color:inherit; cursor:pointer; opacity:.9; }
     .instAct:hover{ background:rgba(255,255,255,.12); }
-    .instTitle{ font-weight:900; font-size:13px; }
-    .instSub{ font-size:12px; color:rgba(255,255,255,.72); display:flex; justify-content:space-between; }
-
-    
     .instRemove{
       position:absolute;
       top:6px;
@@ -835,6 +887,7 @@
       border:1px solid rgba(239,68,68,.35);
       background: rgba(239,68,68,.14);
       color:#fecaca;
+      pointer-events:auto;
       font-weight:900;
       font-size:14px;
       line-height:18px;
@@ -1758,9 +1811,9 @@
   <script src="/static/pianoroll/core/optimize_templates_v1.js"></script>
   <script src="/static/pianoroll/controllers/agent_controller.js?v=typed-ai-optfail-detail-20260526-0355"></script>
   <script src="/static/pianoroll/controllers/arrangement_controller.js?v=arrangement-creative-v1"></script>
-  <script src="/static/pianoroll/core/clip_thumbnail_math.js?v=clip-thumb-v2"></script>
-  <script src="/static/pianoroll/ui/clip_thumbnail_view.js?v=clip-thumb-v2"></script>
-  <script src="/static/pianoroll/ui/timeline_view.js?v=clip-thumb-v2"></script>
+  <script src="/static/pianoroll/core/clip_thumbnail_math.js?v=clip-ui-v1"></script>
+  <script src="/static/pianoroll/ui/clip_thumbnail_view.js?v=clip-ui-v1"></script>
+  <script src="/static/pianoroll/ui/timeline_view.js?v=clip-ui-v1"></script>
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js"></script>

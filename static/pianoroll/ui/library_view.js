@@ -116,7 +116,7 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
     fmtSec = (typeof fmtSec === 'function') ? fmtSec : _defaultFmtSec;
     escapeHtml = (typeof escapeHtml === 'function') ? escapeHtml : _defaultEscapeHtml;
 
-    const _tDefaults = { 'cliplib.play':'Play', 'cliplib.addToSong':'Add to Song', 'cliplib.convertSegment':'Convert selected segment', 'cliplib.convertSegmentTitle':'Transcribe the selected time range into editable notes (server)', 'cliplib.edit':'Edit', 'cliplib.remove':'Remove', 'cliplib.optimize':'Optimize', 'cliplib.details':'Details', 'cliplib.preset':'Preset', 'cliplib.default':'Default', 'cliplib.notes':'notes', 'cliplib.badgeAudio':'Original audio', 'cliplib.lastOptimized':'Last optimized', 'cliplib.last':'Last', 'opt.dynamicsAccent':'Dynamics Accent', 'opt.dynamicsLevel':'Dynamics Level', 'opt.durationGentle':'Duration Gentle' };
+    const _tDefaults = { 'cliplib.play':'Play', 'cliplib.addToSong':'Add to Song', 'cliplib.convertSegment':'Convert selected segment', 'cliplib.convertSegmentTitle':'Transcribe the selected time range into editable notes (server)', 'cliplib.edit':'Edit', 'cliplib.remove':'Remove', 'cliplib.optimize':'Optimize', 'cliplib.details':'Details', 'cliplib.preset':'Preset', 'cliplib.default':'Default', 'cliplib.notes':'notes', 'cliplib.badgeAudio':'Original audio', 'cliplib.lastOptimized':'Last optimized', 'cliplib.last':'Last', 'cliplib.renameClip':'Clip name', 'opt.dynamicsAccent':'Dynamics Accent', 'opt.dynamicsLevel':'Dynamics Level', 'opt.durationGentle':'Duration Gentle' };
     const win = (typeof window !== 'undefined') ? window : null;
     const t = (win && win.I18N && typeof win.I18N.t === 'function') ? (k) => win.I18N.t(k) : (k) => (_tDefaults[k] !== undefined ? _tDefaults[k] : k);
 
@@ -124,7 +124,8 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
     const isSelected = selectedClipId && String(clip.id || '') === String(selectedClipId);
     const presetVal = (selectedPreset != null && selectedPreset !== '') ? String(selectedPreset) : '';
     const presetLabel = presetVal === 'dynamics_accent' ? t('opt.dynamicsAccent') : presetVal === 'dynamics_level' ? t('opt.dynamicsLevel') : presetVal === 'duration_gentle' ? t('opt.durationGentle') : t('cliplib.default');
-    const name = escapeHtml(clip.name || 'Untitled');
+    const rawName = String(clip.name || 'Untitled');
+    const name = escapeHtml(rawName);
     const notes = Number(stats.count ?? stats.notes ?? 0) || 0;
     const spanSec = Number(stats.spanSec ?? 0) || 0;
     const isAudio = (clip.kind === 'audio');
@@ -271,7 +272,9 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
 
     return (
       `<div class="clip-card clipCard${isSelected ? ' clipSelected' : ''}${isAudio ? ' clip-card-audio' : ''}" data-clip-id="${id}" data-clip-kind="${isAudio ? 'audio' : 'note'}">` +
-        `<div class="clip-title">${isAudio ? ('<span class="clip-badge">' + escapeHtml(t('cliplib.badgeAudio') || 'Original audio') + '</span> ') : ''}${name}</div>` +
+        `<div class="clip-title">${isAudio ? ('<span class="clip-badge">' + escapeHtml(t('cliplib.badgeAudio') || 'Original audio') + '</span> ') : ''}` +
+          `<input type="text" class="clip-name-input" data-act="clipName" data-id="${id}" data-initial-value="${name}" value="${name}" aria-label="${escapeHtml(t('cliplib.renameClip'))}" />` +
+        `</div>` +
         `<div class="clip-sub">${subLine}</div>` +
         lastLineHtml +
         `<div class="clip-actions" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; align-items:center;">` +

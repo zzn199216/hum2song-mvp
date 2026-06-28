@@ -86,6 +86,7 @@ const libView = require('../static/pianoroll/ui/library_view.js');
   });
   assert(/data-role=\"inst-thumb\"/.test(htmlWithThumb), 'missing inst-thumb when clip provided');
   assert(/instThumbSvg/.test(htmlWithThumb), 'missing thumbnail svg');
+  assert(/class=\"instBody/.test(htmlWithThumb), 'missing instBody with thumbnail');
 
   assert(/Remove/.test(html), 'missing Remove label');
   assert(/×/.test(html), 'missing x glyph');

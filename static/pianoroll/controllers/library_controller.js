@@ -140,6 +140,23 @@
       rootEl.innerHTML = html;
     }
 
+    function _applyClipRename(clipId, newName){
+      const app = opts.app || (typeof window !== 'undefined' ? window.H2SApp : null);
+      const p2 = getProjectV2();
+      if (!p2 || !p2.clips || !p2.clips[clipId]) return false;
+      const trimmed = String(newName || '').trim() || 'Untitled';
+      const clip = p2.clips[clipId];
+      if (trimmed === (clip.name || '')) return false;
+      clip.name = trimmed;
+      if (app && typeof app.setProjectFromV2 === 'function'){
+        app.setProjectFromV2(p2);
+      } else {
+        _notifyChanged('clip_rename');
+        render();
+      }
+      return true;
+    }
+
     function _handleClick(e){
       const emptyBtn = e.target && e.target.closest ? e.target.closest('[data-h2s-empty-act]') : null;
       if (emptyBtn){
@@ -259,8 +276,43 @@
     function _handleChange(e){
       const el = e.target;
       if (!el || !el.getAttribute) return;
+      const act = el.getAttribute('data-act');
+      if (act === 'clipName'){
+        const clipId = el.getAttribute('data-id');
+        if (!clipId) return;
+        _applyClipRename(clipId, el.value);
+        return;
+      }
       // PR-D2d: optimizePreset moved to Inspector (inspOptimizePreset)
       // PR-D2a: revSelect moved to Inspector (inspRevSelect)
+    }
+
+    function _handleKeydown(e){
+      const el = e.target;
+      if (!el || el.getAttribute('data-act') !== 'clipName') return;
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        el.blur();
+        return;
+      }
+      if (e.key === 'Escape'){
+        e.preventDefault();
+        const initial = el.getAttribute('data-initial-value') || '';
+        el.value = initial;
+        el.blur();
+      }
+    }
+
+    function _handleFocusIn(e){
+      const el = e.target;
+      if (!el || el.getAttribute('data-act') !== 'clipName') return;
+      try{ el.select(); }catch(_){ /* ignore */ }
+    }
+
+    function _handlePointerDown(e){
+      const el = e.target;
+      if (!el || el.getAttribute('data-act') !== 'clipName') return;
+      try{ e.stopPropagation(); }catch(_){ /* ignore */ }
     }
 
     if (rootEl){
@@ -273,6 +325,9 @@
           rootEl.removeEventListener('click', prev.click, true);
           rootEl.removeEventListener('click', prev.summaryClick);
           rootEl.removeEventListener('change', prev.change);
+          rootEl.removeEventListener('keydown', prev.keydown);
+          rootEl.removeEventListener('focusin', prev.focusin);
+          rootEl.removeEventListener('pointerdown', prev.pointerdown, true);
         }
       }catch(_){ /* ignore */ }
       function _handleSummaryClick(e){
@@ -282,12 +337,22 @@
         }
       }
       try{
-        rootEl.__h2sLibraryHandlers = { click: _handleClick, summaryClick: _handleSummaryClick, change: _handleChange };
+        rootEl.__h2sLibraryHandlers = {
+          click: _handleClick,
+          summaryClick: _handleSummaryClick,
+          change: _handleChange,
+          keydown: _handleKeydown,
+          focusin: _handleFocusIn,
+          pointerdown: _handlePointerDown,
+        };
       }catch(_){ /* ignore */ }
       // Use capture so Optimize can be handled even if a fallback listener is attached later.
       rootEl.addEventListener('click', _handleClick, true);
       rootEl.addEventListener('click', _handleSummaryClick, false);
       rootEl.addEventListener('change', _handleChange);
+      rootEl.addEventListener('keydown', _handleKeydown);
+      rootEl.addEventListener('focusin', _handleFocusIn);
+      rootEl.addEventListener('pointerdown', _handlePointerDown, true);
     }
 
     return { render };
