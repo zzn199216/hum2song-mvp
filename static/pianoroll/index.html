@@ -982,6 +982,7 @@
     }
     .modal.show{ display:flex; }
     .modalCard{
+      position:relative;
       width: min(1200px, calc(100% - 40px));
       height: min(760px, calc(100% - 40px));
       margin:20px;
@@ -992,7 +993,38 @@
       overflow:hidden;
       display:flex;
       flex-direction:column;
+      box-sizing:border-box;
     }
+    .modalCard--maximized{ margin:12px; }
+    .modalResizeHandle{
+      position:absolute;
+      z-index:20;
+      touch-action:none;
+    }
+    .modalResizeHandle--n{ top:0; left:12px; right:12px; height:8px; cursor:ns-resize; }
+    .modalResizeHandle--s{ bottom:0; left:12px; right:12px; height:8px; cursor:ns-resize; }
+    .modalResizeHandle--e{ top:12px; right:0; bottom:12px; width:8px; cursor:ew-resize; }
+    .modalResizeHandle--w{ top:12px; left:0; bottom:12px; width:8px; cursor:ew-resize; }
+    .modalResizeHandle--ne{ top:0; right:0; width:14px; height:14px; cursor:nesw-resize; }
+    .modalResizeHandle--nw{ top:0; left:0; width:14px; height:14px; cursor:nwse-resize; }
+    .modalResizeHandle--se{ bottom:0; right:0; width:14px; height:14px; cursor:nwse-resize; }
+    .modalResizeHandle--sw{ bottom:0; left:0; width:14px; height:14px; cursor:nesw-resize; }
+    .modalMaximizeBtn{ min-width:34px; font-size:14px; line-height:1; padding:6px 8px; }
+    .editorToolsGroup{
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      flex-wrap:wrap;
+    }
+    .editorMarqueeOverlay{
+      position:absolute;
+      border:1px dashed rgba(96,165,250,.95);
+      background:rgba(96,165,250,.12);
+      pointer-events:none;
+      z-index:5;
+      display:none;
+    }
+    .editorMarqueeOverlay.show{ display:block; }
     .modalHeader{
       height:56px;
       display:flex;
@@ -1561,8 +1593,22 @@
           <div class="editorTools">
             <button id="btnClipPlay" class="btn icon primary" title="Play">P</button>
             <button id="btnClipStop" class="btn icon" title="Stop">S</button>
+            <span class="editorToolsGroup" data-i18n-title="editor.toolSelection">
+              <button type="button" id="btnEditorToolPointer" class="btn icon primary" data-i18n-title="editor.toolPointer">↖</button>
+              <button type="button" id="btnEditorToolMarquee" class="btn icon" data-i18n-title="editor.toolMarquee">▭</button>
+            </span>
+            <span class="editorToolsGroup" data-i18n-title="editor.timeZoom">
+              <button type="button" id="btnEditorTimeZoomOut" class="btn mini" data-i18n-title="editor.timeZoomOut">−</button>
+              <span class="pill" id="pillTimeZoom">100%</span>
+              <button type="button" id="btnEditorTimeZoomIn" class="btn mini" data-i18n-title="editor.timeZoomIn">+</button>
+              <button type="button" id="btnEditorTimeFitWidth" class="btn mini" data-i18n-title="editor.timeFitWidth">Fit</button>
+            </span>
             <button id="btnInsertNote" class="btn" data-i18n="editor.insertNote">Insert Note</button>
             <button id="btnDeleteNote" class="btn danger" data-i18n="editor.deleteNote">Delete Note</button>
+            <button type="button" id="btnEditorCopyNotes" class="btn" data-i18n="editor.copyNotes" data-i18n-title="editor.copyNotesTitle" disabled>Copy</button>
+            <button type="button" id="btnEditorPasteNotes" class="btn" data-i18n="editor.pasteNotes" data-i18n-title="editor.pasteNotesTitle" disabled>Paste</button>
+            <button type="button" id="btnEditorExtractClip" class="btn" data-i18n="editor.extractClip" data-i18n-title="editor.extractClipTitle" disabled>Extract clip</button>
+            <button type="button" id="btnEditorDuplicateClip" class="btn" data-i18n="editor.duplicateClip" data-i18n-title="editor.duplicateClipTitle" disabled>Duplicate clip</button>
             <span class="pill" id="pillCursor">Cursor: 0.00s</span>
             <span class="pill" id="pillSnap" data-i18n="editor.snap">Snap</span>
             <select id="selSnap" class="btn" style="padding:8px 10px;">
@@ -1594,10 +1640,11 @@
               <div class="editorGridWrap">
                 <div class="editorGridInner">
                   <canvas id="canvas" width="1400" height="540"></canvas>
+                  <div id="editorMarqueeOverlay" class="editorMarqueeOverlay" aria-hidden="true"></div>
                   <div id="editorPlayhead" class="editorPlayhead"></div>
                 </div>
               </div>
-              <div id="velocitySplitter" class="editorVelocitySplitter" title="Drag to resize velocity lane"></div>
+              <div id="velocitySplitter" class="editorVelocitySplitter" data-i18n-title="editor.velocitySplitter"></div>
               <div id="velocityLaneWrap" class="editorVelocityLaneWrap">
                 <div class="editorVelocityLaneHeader">
                   <span id="velocityLaneLabel">Vel: —</span>
@@ -1614,6 +1661,31 @@
             <div class="kv"><b data-i18n="editor.notes">Notes</b><span id="kvClipNotes">0</span></div>
             <div class="kv"><b data-i18n="editor.pitch">Pitch</b><span id="kvClipPitch">-</span></div>
             <div class="kv"><b data-i18n="editor.span">Span</b><span id="kvClipSpan">-</span></div>
+            <details class="help" id="editorAutoSplitPanel" style="margin-bottom:8px;">
+              <summary style="cursor:pointer; font-weight:700;" data-i18n="editor.clipAutoSplit">Clip auto-split</summary>
+              <p class="muted" style="font-size:12px; margin:6px 0;" data-i18n="editor.clipAutoSplitDesc">Split long note clips into shorter clips by pauses and length. This is not audio stem separation (not vocals/drums/bass).</p>
+              <label style="display:flex; gap:8px; align-items:center; font-size:12px; margin:4px 0;">
+                <input type="checkbox" id="chkAutoSplitPhrase" checked />
+                <span data-i18n="editor.clipAutoSplitPhrase">Split by pauses &amp; max length after conversion</span>
+              </label>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; font-size:12px; margin:4px 0;">
+                <label><span data-i18n="editor.clipAutoSplitGap">Gap (s)</span> <input type="number" id="inpAutoSplitGap" min="0.3" max="5" step="0.1" value="0.9" style="width:56px;" /></label>
+                <label><span data-i18n="editor.clipAutoSplitMax">Max (s)</span> <input type="number" id="inpAutoSplitMaxDur" min="4" max="120" step="1" value="14" style="width:56px;" /></label>
+              </div>
+              <details style="margin-top:6px;">
+                <summary style="cursor:pointer; font-size:12px;" data-i18n="editor.advanced">Advanced</summary>
+                <label style="display:flex; gap:8px; align-items:flex-start; font-size:12px; margin:6px 0;">
+                  <input type="checkbox" id="chkAutoSplitPitchRange" />
+                  <span data-i18n="editor.clipAutoSplitPitchRange">Split notes by pitch range (High/Mid/Low). Groups notes by pitch height — not instrument stems.</span>
+                </label>
+                <label style="display:flex; gap:8px; align-items:center; font-size:12px; margin:4px 0;">
+                  <input type="checkbox" id="chkAutoSplitBar" />
+                  <span data-i18n="editor.clipAutoSplitBar">Split on bar boundaries</span>
+                </label>
+                <button type="button" id="btnEditorAutoSplitNow" class="btn" style="margin-top:6px;" data-i18n="editor.clipAutoSplitNow">Split this clip now…</button>
+              </details>
+            </details>
+            <div class="kv"><b data-i18n="editor.selected">Selected</b><span id="kvClipSelection">0 notes</span></div>
             <details class="help" style="margin-bottom:8px;">
               <summary style="cursor:pointer; font-weight:700;" data-i18n="editor.help">Help</summary>
               <div style="margin-top:6px; padding-left:4px;">
@@ -1622,7 +1694,8 @@
                 <div data-i18n="editor.helpStep2">2) Press Insert Note: add a default note at the selected cell.</div>
                 <div data-i18n="editor.helpStep3">3) Click a note: select; drag to move; drag the right edge to resize.</div>
                 <div data-i18n="editor.helpStep4">4) Press Delete: delete selected note.</div>
-                <div>5) Velocity lane (below grid): drag bars to set velocity (1-127); Shift for fine adjustment.</div>
+                <div data-i18n="editor.helpStep5">5) Velocity lane (below grid): drag bars to set velocity (1-127); Shift for fine adjustment.</div>
+                <div data-i18n="editor.helpStep6">6) Box select (▭ tool): multi-select notes; Copy/Paste/Extract/Duplicate in toolbar.</div>
                 <div style="margin-top:8px; color:rgba(255,255,255,.62);" data-i18n="editor.helpCancelSave">
                   Cancel discards changes; Save writes back into the clip.
                 </div>
@@ -1788,13 +1861,13 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=ja-i18n-64389e6"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=ja-i18n-64389e6"></script>
-  <script src="/static/i18n/i18n.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=clip-edit-v13"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=clip-edit-v13"></script>
+  <script src="/static/i18n/i18n.js?v=clip-edit-v13"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
-  <script src="/static/pianoroll/project.js"></script>
+  <script src="/static/pianoroll/project.js?v=clip-edit-v13"></script>
   <script src="/static/pianoroll/core/local_audio_assets.js"></script>
   <script src="/static/pianoroll/controllers/instrument_library_store.js"></script>
   <script src="/static/pianoroll/core/instrument_manifest.js?v=1"></script>
@@ -1817,21 +1890,25 @@
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=clip-edit-v13"></script>
   <script src="/static/pianoroll/controllers/library_controller.js"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=ja-i18n-64389e6"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=clip-edit-v13"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=clip-edit-v13"></script>
   <script src="/static/pianoroll/controllers/audio_controller.js"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
   <script src="/static/pianoroll/llm_client.js"></script>
-  <script src="/static/pianoroll/controllers/editor_runtime.js"></script>
+  <script src="/static/pianoroll/ui/editor_modal_resize.js?v=clip-edit-v1"></script>
+  <script src="/static/pianoroll/core/editor_coords.js?v=clip-edit-v13"></script>
+  <script src="/static/pianoroll/core/editor_selection.js?v=clip-edit-v13"></script>
+  <script src="/static/pianoroll/core/clip_auto_split.js?v=clip-edit-v1"></script>
+  <script src="/static/pianoroll/controllers/editor_runtime.js?v=clip-edit-v13"></script>
   <script src="/static/pianoroll/controllers/export_flatten_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_wav_controller.js"></script>
   <script src="/static/pianoroll/core/score_heuristic_split.js"></script>
-  <script src="/static/pianoroll/core/audio_convert_segment.js?v=ja-i18n-64389e6"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v13"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=clip-edit-v13"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -2026,9 +2103,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=ja-i18n-64389e6"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=ja-i18n-64389e6"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=ja-i18n-64389e6"></script>
+  <script src="/static/pianoroll/app.js?v=clip-edit-v13"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=clip-edit-v13"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=clip-edit-v13"></script>
   <script>
   (function () {
     try {

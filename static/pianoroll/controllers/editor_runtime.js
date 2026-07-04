@@ -8,6 +8,10 @@
       const _t = (root && root.I18N && typeof root.I18N.t === 'function') ? root.I18N.t.bind(root.I18N) : function(k){ return k; };
       const H2SProject = opts.H2SProject || (root && root.H2SProject) || null;
       const H2SApp = opts.H2SApp || (root && root.H2SApp) || (root && root.window && root.window.H2SApp) || null;
+      const H2SEditorCoords = opts.H2SEditorCoords || (root && root.H2SEditorCoords) || null;
+      const H2SEditorSelection = opts.H2SEditorSelection || (root && root.H2SEditorSelection) || null;
+      const H2SEditorModalResize = opts.H2SEditorModalResize || (root && root.H2SEditorModalResize) || null;
+      const H2SClipAutoSplit = opts.H2SClipAutoSplit || (root && root.H2SClipAutoSplit) || null;
 
       // Optional app-glue helpers (prefer injection; fall back to global H2SApp methods when present).
       const getProjectV2 = (typeof opts.getProjectV2 === 'function') ? opts.getProjectV2 :
@@ -213,6 +217,91 @@
           }
         }
         return null;
+      }
+
+      /** Timeline placement for extract/duplicate: align to source clip instance, not playhead. */
+      function _resolveSourceClipPlacement(project, clipId, app){
+        const cid = String(clipId || '');
+        const bpm = (project && project.bpm) ? Number(project.bpm) : 120;
+        let inst = null;
+
+        const p2 = app && typeof app.getProjectV2 === 'function' ? app.getProjectV2() : null;
+        if (p2 && Array.isArray(p2.instances) && Array.isArray(p2.tracks)){
+          const trackIndexById = {};
+          p2.tracks.forEach((t, i) => {
+            const tid = t && (t.trackId || t.id) ? String(t.trackId || t.id) : '';
+            if (tid) trackIndexById[tid] = i;
+          });
+          const selId = app && app.state && app.state.selectedInstanceId ? String(app.state.selectedInstanceId) : '';
+          const v2Pick = (i) => {
+            if (!i || String(i.clipId) !== cid) return null;
+            const ti = (i.trackId && trackIndexById[i.trackId] != null) ? trackIndexById[i.trackId] : 0;
+            const startBeat = Number(i.startBeat || 0);
+            const startSec = (H2SProject && typeof H2SProject.beatToSec === 'function')
+              ? H2SProject.beatToSec(startBeat, bpm)
+              : (startBeat * 60 / bpm);
+            return { startSec: Math.max(0, startSec), trackIndex: ti, instanceId: i.id };
+          };
+          if (selId){
+            const sel = p2.instances.find((i) => i && String(i.id) === selId);
+            inst = v2Pick(sel);
+          }
+          if (!inst){
+            const matches = p2.instances.filter((i) => i && String(i.clipId) === cid);
+            if (matches.length === 1) inst = v2Pick(matches[0]);
+            else if (matches.length > 1){
+              const activeTi = app && app.state && Number.isFinite(Number(app.state.activeTrackIndex))
+                ? Number(app.state.activeTrackIndex) : 0;
+              const pick = matches.find((i) => v2Pick(i) && v2Pick(i).trackIndex === activeTi) || matches[0];
+              inst = v2Pick(pick);
+            }
+          }
+        }
+
+        if (!inst){
+          const instances = (project && Array.isArray(project.instances)) ? project.instances : [];
+          const selId = app && app.state && app.state.selectedInstanceId ? String(app.state.selectedInstanceId) : '';
+          if (selId){
+            const sel = instances.find((i) => i && String(i.id) === selId);
+            if (sel && String(sel.clipId) === cid){
+              inst = {
+                startSec: Number.isFinite(Number(sel.startSec)) ? Number(sel.startSec) : 0,
+                trackIndex: Number.isFinite(Number(sel.trackIndex)) ? Math.max(0, Math.floor(Number(sel.trackIndex))) : 0,
+                instanceId: sel.id,
+              };
+            }
+          }
+          if (!inst){
+            const matches = instances.filter((i) => i && String(i.clipId) === cid);
+            if (matches.length === 1){
+              inst = {
+                startSec: Number.isFinite(Number(matches[0].startSec)) ? Number(matches[0].startSec) : 0,
+                trackIndex: Number.isFinite(Number(matches[0].trackIndex)) ? Math.max(0, Math.floor(Number(matches[0].trackIndex))) : 0,
+                instanceId: matches[0].id,
+              };
+            } else if (matches.length > 1){
+              const activeTi = app && app.state && Number.isFinite(Number(app.state.activeTrackIndex))
+                ? Number(app.state.activeTrackIndex) : 0;
+              const pick = matches.find((i) => Number(i.trackIndex) === activeTi) || matches[0];
+              inst = {
+                startSec: Number.isFinite(Number(pick.startSec)) ? Number(pick.startSec) : 0,
+                trackIndex: Number.isFinite(Number(pick.trackIndex)) ? Math.max(0, Math.floor(Number(pick.trackIndex))) : 0,
+                instanceId: pick.id,
+              };
+            }
+          }
+        }
+
+        if (inst) return inst;
+        return { startSec: 0, trackIndex: 0, instanceId: null };
+      }
+
+      function _ensureTimelineTrackIndex(app, trackIndex){
+        if (!app || typeof app.addTrack !== 'function') return;
+        const need = Math.max(1, Math.floor(Number(trackIndex) || 0) + 1);
+        while ((app.project && app.project.tracks ? app.project.tracks.length : 0) < need){
+          app.addTrack();
+        }
       }
 
       // PR-8C/8H: LLM debug helpers (must be in create() scope so modalBindControls handlers can access them)
@@ -497,6 +586,9 @@
         // Provide accessors similar to app.js
         get project(){ return getProject(); },
         get state(){ return getState(); },
+        _runtimeApp(){
+          return (H2SApp || (root && root.H2SApp) || null);
+        },
         render(){
           try { render(); } catch(e){}
         },
@@ -587,12 +679,14 @@
       } else {
         savedScoreSec = H2SProject.deepClone(clip.score);
       }
+      savedScoreSec = H2SProject.ensureScoreIds(H2SProject.deepClone(savedScoreSec));
 
       this.state.modal.show = true;
       this.state.modal.clipId = clipId;
       this.state.modal.savedScore = H2SProject.deepClone(savedScoreSec);
       this.state.modal.draftScore = H2SProject.deepClone(savedScoreSec);
       this.state.modal.dirty = false;
+      this.modalEnsureDraftScoreNoteIds();
 
       // T3-4: ghost + patch summary (revision UI bridge) — parent revision score under current head
       try{
@@ -789,8 +883,20 @@
       if (snapV !== 'off') this.state.modal.snapLastNonOff = snapV;
       this.state.modal.cursorSec = 0;
       this.state.modal.selectedNoteId = null;
+      this.state.modal.selectedNoteIds = null;
       this.state.modal.selectedCell = null;
+      this.state.modal.selection = (H2SEditorSelection && typeof H2SEditorSelection.emptySelection === 'function')
+        ? H2SEditorSelection.emptySelection()
+        : { noteRefs: [], tool: 'pointer' };
+      this.modalSyncLegacySelectionFromRefs();
+      this.state.modal.marquee = null;
       this.state.modal.mode = 'none';
+      try{
+        const tz0 = (typeof localStorage !== 'undefined') ? Number(localStorage.getItem('h2s_editor_time_zoom') || '1') : 1;
+        this.state.modal.timeZoom = (H2SEditorCoords && typeof H2SEditorCoords.clampTimeZoom === 'function')
+          ? H2SEditorCoords.clampTimeZoom(tz0)
+          : (isFinite(tz0) && tz0 > 0 ? tz0 : 1);
+      }catch(_tz){ this.state.modal.timeZoom = 1; }
 
       const st = H2SProject.scoreStats(this.state.modal.draftScore);
       const center = Math.round((st.minPitch + st.maxPitch) / 2);
@@ -818,6 +924,15 @@
       $('#modalSub').textContent = `${_t('editor.notes')} ${st.count} | ${_t('editor.pitch')} ${H2SProject.midiToName(st.minPitch)}..${H2SProject.midiToName(st.maxPitch)} | ${_t('editor.span')} ${fmtSec(st.spanSec)}`;
       $('#modal').classList.add('show');
       $('#modal').setAttribute('aria-hidden', 'false');
+
+      if (H2SEditorModalResize && typeof H2SEditorModalResize.attach === 'function'){
+        try{
+          H2SEditorModalResize.attach($('#modal'), () => {
+            this.modalResizeCanvasToContent();
+            this.modalRequestDraw();
+          });
+        }catch(_mr){}
+      }
 
       $('#editorStatus').textContent = _t('editor.tipSnap');
 
@@ -873,6 +988,10 @@
       } else {
         this.modalUpdateEditorOptimizeUI();
       }
+      this.modalBindClipEditControlsV1();
+      this.modalLoadAutoSplitPanel();
+      this.modalUpdateSelectionUI();
+      this.modalUpdateTimeZoomLabel();
       log(`Open editor: ${clip.name}`);
     },
 
@@ -962,7 +1081,13 @@
       this.state.modal.draftScore = null;
       this.state.modal.savedScore = null;
       this.state.modal.selectedNoteId = null;
+      this.state.modal.selectedNoteIds = null;
       this.state.modal.selectedCell = null;
+      this.state.modal.selection = (H2SEditorSelection && H2SEditorSelection.emptySelection)
+        ? H2SEditorSelection.emptySelection()
+        : { noteRefs: [], tool: 'pointer' };
+      this.modalSyncLegacySelectionFromRefs();
+      this.state.modal.marquee = null;
       this.state.modal.mode = 'none';
       this.state.modal._sourceClipWasBeat = false;
       this.state.modal._projectWantsBeat = false;
@@ -1050,7 +1175,9 @@
       const velocityLaneWrap = $('#velocityLaneWrap');
       const st = H2SProject.scoreStats(this.state.modal.draftScore);
       const span = Math.max(4, st.spanSec);
-      const w = Math.max(1200, Math.ceil(span * this.state.modal.pxPerSec) + 140);
+      const w = (H2SEditorCoords && typeof H2SEditorCoords.contentWidthForSpan === 'function')
+        ? H2SEditorCoords.contentWidthForSpan(span, this.state.modal)
+        : Math.max(1200, Math.ceil(span * this.modalEffectivePxPerSec()) + 140);
 
       // Pitch view policy:
       // - If pitch range (padded) exceeds visible rows -> enable native vertical scrolling over full 0..127.
@@ -1083,6 +1210,8 @@
       } else {
         canvas.height = wrapH;
       }
+      canvas.style.width = w + 'px';
+      canvas.style.height = canvas.height + 'px';
 
       // Velocity lane: match grid width; height from state; HiDPI
       if (velocityCanvas && velocityLaneWrap){
@@ -1137,6 +1266,7 @@
       $('#kvClipSpan').textContent = fmtSec(st.spanSec);
       $('#pillCursor').textContent = (_t('editor.cursorFmt') || 'Cursor: {sec}').replace('{sec}', fmtSec(this.state.modal.cursorSec));
       $('#pillSnap').textContent = $('#selSnap').value === 'off' ? _t('editor.snapOff') : (_t('editor.snapFmt') || 'Snap 1/{n}').replace('{n}', $('#selSnap').value);
+      if (typeof this.modalUpdateSelectionUI === 'function') this.modalUpdateSelectionUI();
     },
 
     // PR-4/PR-6b: Update Editor Optimize preset, prompt, and status from current clip (e.g. after Optimize).
@@ -1335,29 +1465,12 @@
       const msScoreStats = _split();
 
       // Determine pitch window
-      const useVScroll = !!this.state.modal.usePitchVScroll;
-      const rows = this.state.modal.pitchViewRows;
-      let pitchMin, pitchMax;
-      if (useVScroll){
-        pitchMin = 0;
-        pitchMax = 127;
-      } else {
-        const range = st.maxPitch - st.minPitch + 1;
-        if (range <= rows){
-          // auto-fit with small padding
-          const pad = 2;
-          pitchMin = Math.max(0, st.minPitch - pad);
-          pitchMax = Math.min(127, st.maxPitch + pad);
-        } else {
-          const half = Math.floor(rows / 2);
-          const c = this.state.modal.pitchCenter;
-          pitchMin = H2SProject.clamp(c - half, 0, 127 - rows);
-          pitchMax = pitchMin + rows;
-        }
-      }
+      const pitchWin = this.modalPitchWindow();
+      const pitchMin = pitchWin.pitchMin;
+      const pitchMax = pitchWin.pitchMax;
 
-      const padL = this.state.modal.padL;
-      const padT = this.state.modal.padT;
+      const padL = (H2SEditorCoords && H2SEditorCoords.padL) ? H2SEditorCoords.padL(this.state.modal) : this.state.modal.padL;
+      const padT = (H2SEditorCoords && H2SEditorCoords.padT) ? H2SEditorCoords.padT(this.state.modal) : this.state.modal.padT;
 
       // row height
       // We keep a stable row height (controlled by pitch zoom) and vary how many
@@ -1375,7 +1488,8 @@
       ctx.fillRect(0,0,canvas.width,canvas.height);
 
       // grid
-      const pxPerSec = this.state.modal.pxPerSec;
+      const pxPerSec = this.modalEffectivePxPerSec();
+      const Coords = H2SEditorCoords;
       const gridSec = this.modalSnapSec() || (60/(this.project.bpm||120))/4; // fallback 1/16
       const gridPx = gridSec * pxPerSec;
 
@@ -1417,8 +1531,8 @@
       if (this.state.modal.selectedCell){
         const cell = this.state.modal.selectedCell;
         if (cell.pitch >= pitchMin && cell.pitch <= pitchMax){
-          const x = padL + cell.startSec * pxPerSec;
-          const y = padT + (pitchMax - cell.pitch) * rowH;
+          const x = Coords ? Coords.timeToX(cell.startSec, this.state.modal) : (padL + cell.startSec * pxPerSec);
+          const y = Coords ? Coords.pitchToY(cell.pitch, this.state.modal, pitchMin, pitchMax) : (padT + (pitchMax - cell.pitch) * rowH);
           ctx.fillStyle = 'rgba(59,130,246,.10)';
           ctx.fillRect(x, y, gridPx, rowH);
           ctx.strokeStyle = 'rgba(96,165,250,.35)';
@@ -1428,8 +1542,10 @@
       const msGridBg = _split();
 
       // notes
-      // ghost overlay (faint fill + subtle outline, non-interactive)
-      if (this.state.modal.ghostScore){
+      // ghost overlay (faint fill; skip while notes are selected to avoid false "all highlighted" look)
+      const selCount = (this.state.modal.selection && this.state.modal.selection.noteRefs)
+        ? this.state.modal.selection.noteRefs.length : 0;
+      if (this.state.modal.ghostScore && !selCount){
         const gnotes = [];
         const gscore = this.state.modal.ghostScore;
         if (gscore && gscore.tracks){
@@ -1441,17 +1557,17 @@
         ctx.lineWidth = 1;
         for (const n of gnotes){
           if (n.pitch < pitchMin || n.pitch > pitchMax) continue;
-          const x = padL + n.start * pxPerSec;
-          const y = padT + (pitchMax - n.pitch) * rowH + 1;
-          const w = Math.max(6, n.duration * pxPerSec);
+          const x = Coords ? Coords.timeToX(n.start, this.state.modal) : (padL + n.start * pxPerSec);
+          const y = Coords ? Coords.pitchToY(n.pitch, this.state.modal, pitchMin, pitchMax) : (padT + (pitchMax - n.pitch) * rowH + 1);
+          const w = Coords ? Math.max(6, Number(n.duration) * Coords.effectivePxPerSec(this.state.modal)) : Math.max(6, n.duration * pxPerSec);
           const h = rowH - 2;
           const gx = x - 1.5;
           const gy = y - 1.5;
           const gw = w + 3;
           const gh = h + 3;
           ctx.beginPath(); // isolate each ghost so fill/stroke apply once (no alpha stacking)
-          ctx.fillStyle = 'rgba(255,255,255,0.18)';
-          ctx.strokeStyle = 'rgba(255,255,255,0.70)';
+          ctx.fillStyle = 'rgba(255,255,255,0.10)';
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
           roundRect(ctx, gx, gy, gw, gh, 7);
           ctx.fill();
           ctx.stroke();
@@ -1460,35 +1576,80 @@
       }
       const msGhost = _split();
 
-      const notes = this.modalAllNotes();
+      this.modalSyncLegacySelectionFromRefs();
+      const scoreForDraw = this.state.modal.draftScore;
+      let notesCount = 0;
+      if (scoreForDraw && scoreForDraw.tracks){
+        for (const tr0 of scoreForDraw.tracks){
+          notesCount += (tr0 && tr0.notes ? tr0.notes.length : 0);
+        }
+      }
       const msModalAllNotes = _split();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
       ctx.beginPath(); // reset path so blue fill/stroke don't repaint ghost rects
-      for (const n of notes){
-        if (n.pitch < pitchMin || n.pitch > pitchMax) continue;
-        const x = padL + n.start * pxPerSec;
-        const y = padT + (pitchMax - n.pitch) * rowH + 1;
-        const w = Math.max(6, n.duration * pxPerSec);
+      const drawNoteRect = (n, selected) => {
+        if (n.pitch < pitchMin || n.pitch > pitchMax) return;
+        const x = Coords ? Coords.timeToX(n.start, this.state.modal) : (padL + n.start * pxPerSec);
+        const y = Coords ? Coords.pitchToY(n.pitch, this.state.modal, pitchMin, pitchMax) : (padT + (pitchMax - n.pitch) * rowH + 1);
+        const w = Coords ? Math.max(6, Number(n.duration) * Coords.effectivePxPerSec(this.state.modal)) : Math.max(6, n.duration * pxPerSec);
         const h = rowH - 2;
-        const selected = (this.state.modal.selectedNoteId === n.id);
-
-        // body
-        ctx.fillStyle = selected ? 'rgba(96,165,250,.95)' : 'rgba(59,130,246,.85)';
-        ctx.strokeStyle = selected ? 'rgba(255,255,255,.80)' : 'rgba(29,78,216,.90)';
-        roundRect(ctx, x, y, w, h, 6);
-        ctx.fill();
-        ctx.stroke();
-
-        // resize handles (symmetric left/right; keep center move zone on narrow notes)
+        ctx.beginPath(); // each note is its own path — otherwise fill/stroke repaint every prior rect
+        if (selected){
+          ctx.fillStyle = 'rgba(249, 115, 22, 0.98)';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 3;
+          roundRect(ctx, x - 1, y - 1, w + 2, h + 2, 6);
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = 'rgba(37, 99, 235, 0.88)';
+          ctx.strokeStyle = 'rgba(30, 64, 175, 0.95)';
+          ctx.lineWidth = 1;
+          roundRect(ctx, x, y, w, h, 6);
+          ctx.fill();
+          ctx.stroke();
+        }
         const handles = this.modalResizeZoneWidths(w);
-        ctx.fillStyle = 'rgba(255,255,255,.18)';
+        ctx.fillStyle = selected ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.18)';
         ctx.fillRect(x, y, handles.left, h);
         ctx.fillRect(x + w - handles.right, y, handles.right, h);
-      }
+      };
+      const drawAllNotes = () => {
+        if (!scoreForDraw || !scoreForDraw.tracks) return;
+        for (const tr of scoreForDraw.tracks){
+          if (!tr) continue;
+          const tid = String(tr.id != null ? tr.id : '');
+          const trackNotes = tr.notes || [];
+          for (let ni = 0; ni < trackNotes.length; ni++){
+            const n = trackNotes[ni];
+            if (!n) continue;
+            if (!this.modalIsNoteRefSelected(n.id, tid, ni)){
+              drawNoteRect(n, false);
+            }
+          }
+        }
+        for (const tr of scoreForDraw.tracks){
+          if (!tr) continue;
+          const tid = String(tr.id != null ? tr.id : '');
+          const trackNotes = tr.notes || [];
+          for (let ni = 0; ni < trackNotes.length; ni++){
+            const n = trackNotes[ni];
+            if (!n) continue;
+            if (this.modalIsNoteRefSelected(n.id, tid, ni)){
+              drawNoteRect(n, true);
+            }
+          }
+        }
+      };
+      drawAllNotes();
       const msNoteBodies = _split();
 
       // playhead (cursor) — when playing, overlay div is used; avoid double playhead
       if (!this.state.modal.isPlaying){
-        const cx = padL + this.state.modal.cursorSec * pxPerSec;
+        const cx = Coords ? Coords.timeToX(this.state.modal.cursorSec, this.state.modal) : (padL + this.state.modal.cursorSec * pxPerSec);
         ctx.strokeStyle = 'rgba(239,68,68,.95)';
         ctx.beginPath();
         ctx.moveTo(Math.floor(cx)+0.5, 0);
@@ -1504,6 +1665,7 @@
 
       this.modalDrawVelocityLane();
       const msVelocityLane = _split();
+      this.modalUpdateMarqueeOverlay();
 
       // Skip right-panel stats during active drag/resize/velocity interactions (hot path).
       // Next draw after pointerup runs with mode 'none' and refreshes the panel.
@@ -1560,7 +1722,7 @@
           canvasTail: Number(msCanvasTail.toFixed(3)),
           velocityLane: Number(msVelocityLane.toFixed(3)),
           rightPanel: Number(msRightPanel.toFixed(3)),
-          notesCount: notes.length,
+          notesCount: notesCount,
         });
       }
     },
@@ -1590,29 +1752,38 @@
       ctx.fillRect(0, 0, cssW, cssH);
 
       const padL = this.state.modal.padL;
-      const pxPerSec = this.state.modal.pxPerSec;
+      const pxPerSec = this.modalEffectivePxPerSec();
       const laneH = cssH;
       const padV = 4;
       const drawH = Math.max(4, laneH - padV);
-      const notes = this.modalAllNotes();
-      const selectedId = this.state.modal.selectedNoteId;
+      const scoreForVel = this.state.modal.draftScore;
 
       const clampBarW = (x) => H2SProject.clamp(x, 6, 14);
-      for (const n of notes){
-        const vel = H2SProject.clamp(Math.round(Number(n.velocity) ?? 100), 1, 127);
-        const noteX = padL + n.start * pxPerSec;
-        const noteW = n.duration * pxPerSec;
-        const barW = clampBarW(Math.max(0, noteW - 2));
-        const barX = noteX + (noteW - barW) / 2;
-        const barHeight = (vel / 127) * drawH;
-        const barY = laneH - barHeight - padV / 2;
-        const selected = (n.id === selectedId);
-        ctx.fillStyle = selected ? 'rgba(96,165,250,.92)' : 'rgba(59,130,246,.68)';
-        ctx.strokeStyle = selected ? 'rgba(255,255,255,.85)' : 'rgba(29,78,216,.65)';
-        ctx.lineWidth = selected ? 1.5 : 1;
-        roundRect(ctx, barX, barY, barW, Math.max(2, barHeight), 4);
-        ctx.fill();
-        ctx.stroke();
+      if (scoreForVel && scoreForVel.tracks){
+        for (const tr of scoreForVel.tracks){
+          if (!tr) continue;
+          const tid = String(tr.id != null ? tr.id : '');
+          const trackNotes = tr.notes || [];
+          for (let ni = 0; ni < trackNotes.length; ni++){
+            const n = trackNotes[ni];
+            if (!n) continue;
+            const vel = H2SProject.clamp(Math.round(Number(n.velocity) ?? 100), 1, 127);
+            const noteX = padL + n.start * pxPerSec;
+            const noteW = n.duration * pxPerSec;
+            const barW = clampBarW(Math.max(0, noteW - 2));
+            const barX = noteX + (noteW - barW) / 2;
+            const barHeight = (vel / 127) * drawH;
+            const barY = laneH - barHeight - padV / 2;
+            const selected = this.modalIsNoteRefSelected(n.id, tid, ni);
+            ctx.beginPath();
+            ctx.fillStyle = selected ? 'rgba(249, 115, 22, 0.98)' : 'rgba(37, 99, 235, 0.68)';
+            ctx.strokeStyle = selected ? '#ffffff' : 'rgba(30, 64, 175, 0.65)';
+            ctx.lineWidth = selected ? 2 : 1;
+            roundRect(ctx, barX, barY, barW, Math.max(2, barHeight), 4);
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
       }
 
       const lbl = $('#velocityLaneLabel');
@@ -1636,18 +1807,26 @@
       const out = [];
       if (!score || !score.tracks) return out;
       for (const t of score.tracks){
-        for (const n of (t.notes || [])){
+        if (!t) continue;
+        const notes = t.notes || [];
+        for (let ni = 0; ni < notes.length; ni++){
+          const n = notes[ni];
+          if (n) {
+            n._trackId = String(t.id != null ? t.id : '');
+            n._noteIndex = ni;
+          }
           out.push(n);
         }
       }
       return out;
     },
 
-    modalFindNoteById(id){
+    modalFindNoteById(id, trackId){
       const score = this.state.modal.draftScore;
       if (!score || !score.tracks) return null;
       for (const t of score.tracks){
-        const idx = (t.notes || []).findIndex(n => n.id === id);
+        if (trackId && String(t.id) !== String(trackId)) continue;
+        const idx = (t.notes || []).findIndex(n => n && n.id === id);
         if (idx >= 0) return { track:t, note:t.notes[idx], index: idx };
       }
       return null;
@@ -1663,6 +1842,496 @@
       // Keep at least 1px center move zone for very narrow notes.
       if ((edge * 2) >= w) edge = Math.max(1, Math.floor((w - 1) / 2));
       return { left: edge, right: edge };
+    },
+
+    modalEffectivePxPerSec(){
+      const m = this.state.modal;
+      if (H2SEditorCoords && typeof H2SEditorCoords.effectivePxPerSec === 'function'){
+        return H2SEditorCoords.effectivePxPerSec(m);
+      }
+      const base = m && m.pxPerSec != null ? Number(m.pxPerSec) : 180;
+      const tz = m && m.timeZoom != null ? Number(m.timeZoom) : 1;
+      return base * (isFinite(tz) && tz > 0 ? tz : 1);
+    },
+
+    modalPitchWindow(){
+      const st = H2SProject.scoreStats(this.state.modal.draftScore);
+      if (H2SEditorCoords && typeof H2SEditorCoords.resolvePitchWindow === 'function'){
+        return H2SEditorCoords.resolvePitchWindow(this.state.modal, st);
+      }
+      const m = this.state.modal;
+      const useVScroll = !!m.usePitchVScroll;
+      if (useVScroll) return { pitchMin: 0, pitchMax: 127, useVScroll: true };
+      const rows = m.pitchViewRows != null ? Number(m.pitchViewRows) : 36;
+      const range = st.maxPitch - st.minPitch + 1;
+      let pitchMin;
+      let pitchMax;
+      if (range <= rows){
+        const pad = 2;
+        pitchMin = Math.max(0, st.minPitch - pad);
+        pitchMax = Math.min(127, st.maxPitch + pad);
+      } else {
+        const half = Math.floor(rows / 2);
+        const c = m.pitchCenter != null ? Number(m.pitchCenter) : 60;
+        pitchMin = H2SProject.clamp(c - half, 0, 127 - rows);
+        pitchMax = pitchMin + rows;
+      }
+      return { pitchMin, pitchMax, useVScroll: false };
+    },
+
+    modalSyncLegacySelectionFromRefs(){
+      const sel = this.state.modal.selection;
+      let refs = sel && Array.isArray(sel.noteRefs) ? sel.noteRefs : [];
+      if (H2SEditorSelection && typeof H2SEditorSelection.normalizeNoteRefs === 'function' && refs.length){
+        const score = this.state.modal.draftScore;
+        refs = H2SEditorSelection.normalizeNoteRefs(score, refs);
+        if (sel) sel.noteRefs = refs;
+      }
+      if (H2SEditorSelection && typeof H2SEditorSelection.buildSelectionHighlightSet === 'function'){
+        this.state.modal._selectionHighlightKeys = H2SEditorSelection.buildSelectionHighlightSet(refs);
+      } else {
+        this.state.modal._selectionHighlightKeys = null;
+      }
+      if (!refs.length){
+        this.state.modal.selectedNoteId = null;
+        this.state.modal.selectedNoteIds = null;
+        return;
+      }
+      if (refs.length === 1){
+        this.state.modal.selectedNoteId = refs[0].noteId;
+        this.state.modal.selectedNoteIds = null;
+        return;
+      }
+      this.state.modal.selectedNoteId = refs[0].noteId;
+      this.state.modal.selectedNoteIds = refs.map((r) => String(r.noteId));
+    },
+
+    modalEnsureDraftScoreNoteIds(){
+      const score = this.state.modal.draftScore;
+      if (!score || !H2SProject || typeof H2SProject.ensureScoreIds !== 'function') return;
+      const needsFix = H2SEditorSelection
+        && typeof H2SEditorSelection.scoreHasDuplicateNoteIds === 'function'
+        && H2SEditorSelection.scoreHasDuplicateNoteIds(score);
+      if (needsFix){
+        try { H2SProject.ensureScoreIds(score); } catch(_e){}
+        const refs = this.state.modal.selection && this.state.modal.selection.noteRefs;
+        if (refs && refs.length && H2SEditorSelection.normalizeNoteRefs){
+          this.state.modal.selection.noteRefs = H2SEditorSelection.normalizeNoteRefs(score, refs);
+        }
+      }
+    },
+
+    modalIsNoteRefSelected(noteId, trackId, noteIndex){
+      if (noteIndex == null || noteIndex === '') return false;
+      const tid = String(trackId != null ? trackId : '');
+      const ni = Number(noteIndex);
+      const keys = this.state.modal._selectionHighlightKeys;
+      if (keys && keys.size){
+        if (H2SEditorSelection && typeof H2SEditorSelection.selectionHighlightKey === 'function'){
+          if (keys.has(H2SEditorSelection.selectionHighlightKey(tid, ni))) return true;
+        } else if (keys.has(tid + '\0i:' + String(ni))){
+          return true;
+        }
+      }
+      const refs = (this.state.modal.selection && this.state.modal.selection.noteRefs) || [];
+      for (let i = 0; i < refs.length; i++){
+        const r = refs[i];
+        if (!r || String(r.trackId) !== tid) continue;
+        if (r.noteIndex != null && r.noteIndex !== '' && Number(r.noteIndex) === ni) return true;
+      }
+      return false;
+    },
+
+    modalCanvasPointFromEvent(ev){
+      const canvas = $('#canvas');
+      const gridWrap = $('.editorGridWrap');
+      if (H2SEditorCoords && typeof H2SEditorCoords.eventToCanvasPx === 'function'){
+        return H2SEditorCoords.eventToCanvasPx(ev, canvas, gridWrap);
+      }
+      if (!canvas || !ev) return { px: 0, py: 0 };
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width ? (canvas.width / rect.width) : 1;
+      const scaleY = rect.height ? (canvas.height / rect.height) : 1;
+      return {
+        px: (ev.clientX - rect.left) * scaleX,
+        py: (ev.clientY - rect.top) * scaleY,
+      };
+    },
+
+    modalUpdateSelectionUI(){
+      this.modalSyncLegacySelectionFromRefs();
+      if (typeof document === 'undefined' || !$) return;
+      const refs = (this.state.modal.selection && this.state.modal.selection.noteRefs) || [];
+      const kv = $('#kvClipSelection');
+      if (kv) {
+        const n = refs.length;
+        const fmt = n === 1 ? _t('editor.selectionCountOne') : _t('editor.selectionCount');
+        kv.textContent = (fmt || '{n}').replace('{n}', String(n));
+      }
+      const hasSel = refs.length > 0;
+      const hasClip = !!(H2SEditorSelection && refs.length);
+      const copyBtn = $('#btnEditorCopyNotes');
+      const pasteBtn = $('#btnEditorPasteNotes');
+      const extractBtn = $('#btnEditorExtractClip');
+      const dupBtn = $('#btnEditorDuplicateClip');
+      if (copyBtn) copyBtn.disabled = !hasSel;
+      if (pasteBtn) pasteBtn.disabled = !this.state.modal.noteClipboard;
+      if (extractBtn) extractBtn.disabled = !hasClip;
+      if (dupBtn) dupBtn.disabled = !hasClip;
+      const tool = (this.state.modal.selection && this.state.modal.selection.tool) || 'pointer';
+      const ptrBtn = $('#btnEditorToolPointer');
+      const marBtn = $('#btnEditorToolMarquee');
+      if (ptrBtn) ptrBtn.classList.toggle('primary', tool === 'pointer');
+      if (marBtn) marBtn.classList.toggle('primary', tool === 'marquee');
+    },
+
+    modalUpdateTimeZoomLabel(){
+      if (typeof document === 'undefined' || !$) return;
+      const tz = this.state.modal.timeZoom != null ? Number(this.state.modal.timeZoom) : 1;
+      const pill = $('#pillTimeZoom');
+      if (pill) pill.textContent = Math.round((isFinite(tz) ? tz : 1) * 100) + '%';
+    },
+
+    modalApplyTimeZoomDelta(delta){
+      const Coords = H2SEditorCoords;
+      const m = this.state.modal;
+      const cur = m.timeZoom != null ? Number(m.timeZoom) : 1;
+      const next = Coords && typeof Coords.clampTimeZoom === 'function'
+        ? Coords.clampTimeZoom(cur + delta)
+        : Math.max(0.25, Math.min(4, cur + delta));
+      if (Math.abs(next - cur) < 0.001) return;
+      const canvas = $('#canvas');
+      const gridWrap = $('.editorGridWrap');
+      if (Coords && gridWrap && canvas && typeof Coords.scrollLeftForZoomAnchor === 'function'){
+        const rect = canvas.getBoundingClientRect();
+        const anchorX = rect.left + gridWrap.clientWidth / 2;
+        gridWrap.scrollLeft = Coords.scrollLeftForZoomAnchor(gridWrap, m, anchorX, canvas, next);
+      }
+      m.timeZoom = next;
+      try { localStorage.setItem('h2s_editor_time_zoom', String(next)); } catch(_e){}
+      this.modalUpdateTimeZoomLabel();
+      this.modalResizeCanvasToContent();
+      this.modalRequestDraw();
+    },
+
+    modalFitTimeWidth(){
+      const Coords = H2SEditorCoords;
+      const gridWrap = $('.editorGridWrap');
+      const st = H2SProject.scoreStats(this.state.modal.draftScore);
+      const span = Math.max(4, st.spanSec);
+      if (!Coords || !gridWrap) return;
+      const next = Coords.timeZoomForFitSpan(span, gridWrap.clientWidth, this.state.modal);
+      this.state.modal.timeZoom = next;
+      try { localStorage.setItem('h2s_editor_time_zoom', String(next)); } catch(_e){}
+      this.modalUpdateTimeZoomLabel();
+      gridWrap.scrollLeft = 0;
+      this.modalResizeCanvasToContent();
+      this.modalRequestDraw();
+    },
+
+    modalSetSelectionTool(tool){
+      if (!this.state.modal.selection) this.state.modal.selection = { noteRefs: [], tool: 'pointer' };
+      this.state.modal.selection.tool = tool === 'marquee' ? 'marquee' : 'pointer';
+      this.modalUpdateSelectionUI();
+    },
+
+    modalUpdateMarqueeOverlay(){
+      if (typeof document === 'undefined' || !$) return;
+      const overlay = $('#editorMarqueeOverlay');
+      const canvas = $('#canvas');
+      if (!overlay || !canvas) return;
+      const mq = this.state.modal.marquee;
+      if (!mq){
+        overlay.classList.remove('show');
+        overlay.style.cssText = '';
+        return;
+      }
+      const x0 = Math.min(mq.x0, mq.x1);
+      const y0 = Math.min(mq.y0, mq.y1);
+      const x1 = Math.max(mq.x0, mq.x1);
+      const y1 = Math.max(mq.y0, mq.y1);
+      const cssW = canvas.clientWidth || canvas.width;
+      const cssH = canvas.clientHeight || canvas.height;
+      const scaleX = canvas.width ? cssW / canvas.width : 1;
+      const scaleY = canvas.height ? cssH / canvas.height : 1;
+      overlay.classList.add('show');
+      overlay.style.left = (x0 * scaleX) + 'px';
+      overlay.style.top = (y0 * scaleY) + 'px';
+      overlay.style.width = Math.max(1, (x1 - x0) * scaleX) + 'px';
+      overlay.style.height = Math.max(1, (y1 - y0) * scaleY) + 'px';
+    },
+
+    modalLoadAutoSplitPanel(){
+      if (!H2SClipAutoSplit || typeof H2SClipAutoSplit.loadPrefs !== 'function') return;
+      if (typeof document === 'undefined' || !$) return;
+      const prefs = H2SClipAutoSplit.loadPrefs();
+      const chkPhrase = $('#chkAutoSplitPhrase');
+      const chkPitch = $('#chkAutoSplitPitchRange');
+      const chkBar = $('#chkAutoSplitBar');
+      const inpGap = $('#inpAutoSplitGap');
+      const inpMax = $('#inpAutoSplitMaxDur');
+      if (chkPhrase) chkPhrase.checked = prefs.splitByPhrase !== false;
+      if (chkPitch) chkPitch.checked = !!prefs.splitByPitchRange;
+      if (chkBar) chkBar.checked = !!prefs.splitByBar;
+      if (inpGap) inpGap.value = String(prefs.minGapSec);
+      if (inpMax) inpMax.value = String(prefs.maxDurationSec);
+    },
+
+    modalSaveAutoSplitPrefsFromPanel(){
+      if (!H2SClipAutoSplit || typeof H2SClipAutoSplit.savePrefs !== 'function') return null;
+      const chkPhrase = $('#chkAutoSplitPhrase');
+      const chkPitch = $('#chkAutoSplitPitchRange');
+      const chkBar = $('#chkAutoSplitBar');
+      const inpGap = $('#inpAutoSplitGap');
+      const inpMax = $('#inpAutoSplitMaxDur');
+      const prefs = {
+        splitByPhrase: !!(chkPhrase && chkPhrase.checked),
+        minGapSec: inpGap ? Number(inpGap.value) : H2SClipAutoSplit.DEFAULT_PREFS.minGapSec,
+        maxDurationSec: inpMax ? Number(inpMax.value) : H2SClipAutoSplit.DEFAULT_PREFS.maxDurationSec,
+        splitByPitchRange: !!(chkPitch && chkPitch.checked),
+        splitByBar: !!(chkBar && chkBar.checked),
+        maxBarsPerSegment: H2SClipAutoSplit.DEFAULT_PREFS.maxBarsPerSegment,
+        suppressWeakFragments: H2SClipAutoSplit.DEFAULT_PREFS.suppressWeakFragments,
+      };
+      H2SClipAutoSplit.savePrefs(prefs);
+      return prefs;
+    },
+
+    modalSaveDraftToClip(){
+      const clipId = this.state.modal.clipId;
+      const clip = _findClip(this.project, clipId);
+      if (!clip) return false;
+      const p2b = ((typeof getProjectV2 === 'function') ? getProjectV2() : null) || null;
+      const bpm = (p2b && p2b.bpm) ? p2b.bpm : (this.project && this.project.bpm ? this.project.bpm : 120);
+      const wantsBeatNow = !!(p2b && (p2b.timebase === 'beat' || Number(p2b.version) === 2));
+      const storeAsBeat = !!(wantsBeatNow || this.state.modal._sourceClipWasBeat || this.state.modal._projectWantsBeat || _isBeatScore(clip.score));
+      if (storeAsBeat){
+        const draftSec = H2SProject.ensureScoreIds(H2SProject.deepClone(this.state.modal.draftScore));
+        let scoreBeat = _scoreSecToBeat(draftSec, bpm);
+        clip.score = scoreBeat;
+        _recomputeClipMetaFromBeatScore(clip, scoreBeat);
+        if (wantsBeatNow && p2b && p2b.clips && p2b.clips[clipId]){
+          try{
+            p2b.clips[clipId].score = scoreBeat;
+            _recomputeClipMetaFromBeatScore(p2b.clips[clipId], scoreBeat);
+          }catch(_e){}
+        }
+        if (typeof commitV2 === 'function'){
+          let p2save = null;
+          try { p2save = getProjectV2(); } catch(_e){ p2save = p2b; }
+          if (p2save) commitV2(p2save, 'editor_save');
+          else persist();
+        } else persist();
+      } else {
+        clip.score = H2SProject.ensureScoreIds(H2SProject.deepClone(this.state.modal.draftScore));
+        const st = H2SProject.scoreStats(clip.score);
+        clip.meta = Object.assign({}, clip.meta || {}, { notes: st.count, pitchMin: st.minPitch, pitchMax: st.maxPitch, spanSec: st.spanSec });
+        persist();
+      }
+      this.state.modal.savedScore = H2SProject.deepClone(this.state.modal.draftScore);
+      this.state.modal.dirty = false;
+      this.render();
+      return true;
+    },
+
+    modalCopySelection(){
+      if (!H2SEditorSelection) return;
+      const refs = this.state.modal.selection && this.state.modal.selection.noteRefs;
+      if (!refs || !refs.length) return;
+      const extracted = H2SEditorSelection.extractNotesToScore(this.state.modal.draftScore, this.state.modal.selection);
+      if (!extracted || !extracted.score) return;
+      this.state.modal.noteClipboard = H2SProject.deepClone(extracted.score);
+      this.modalUpdateSelectionUI();
+      try { $('#editorStatus').textContent = (_t('editor.statusCopied') || 'Copied {n} note(s).').replace('{n}', String(refs.length)); } catch(_e){}
+    },
+
+    modalPasteNotes(){
+      const clip = this.state.modal.noteClipboard;
+      if (!clip || !clip.tracks) return;
+      const score = this.state.modal.draftScore;
+      if (!score || !Array.isArray(score.tracks) || !score.tracks.length) return;
+      const cursor = Number(this.state.modal.cursorSec || 0);
+      const pastedRefs = [];
+      for (const srcTr of clip.tracks){
+        const destTr = score.tracks.find((t) => t && String(t.id) === String(srcTr.id)) || score.tracks[0];
+        if (!destTr.notes) destTr.notes = [];
+        for (const n of (srcTr.notes || [])){
+          const newId = (H2SProject && typeof H2SProject.uid === 'function') ? H2SProject.uid('n_') : ('n_' + Math.random().toString(16).slice(2, 10));
+          const copy = {
+            id: newId,
+            pitch: n.pitch,
+            start: cursor + Number(n.start || 0),
+            duration: n.duration,
+            velocity: n.velocity,
+          };
+          destTr.notes.push(copy);
+          pastedRefs.push({ trackId: String(destTr.id), noteId: newId, noteIndex: destTr.notes.length - 1 });
+        }
+        destTr.notes.sort((a, b) => (Number(a.start) || 0) - (Number(b.start) || 0));
+      }
+      this.state.modal.selection = { noteRefs: pastedRefs, tool: (this.state.modal.selection && this.state.modal.selection.tool) || 'pointer' };
+      this.modalSyncLegacySelectionFromRefs();
+      this.state.modal.dirty = true;
+      this.modalUpdateSelectionUI();
+      this.modalRequestDraw();
+      try { $('#editorStatus').textContent = (_t('editor.statusPasted') || 'Pasted {n} note(s).').replace('{n}', String(pastedRefs.length)); } catch(_e){}
+    },
+
+    modalDuplicateSelectionToNewClip(){
+      if (!H2SEditorSelection) return;
+      const app = this._runtimeApp();
+      if (!app) return;
+      const refs = this.state.modal.selection && this.state.modal.selection.noteRefs;
+      if (!refs || !refs.length) return;
+      const clipId = this.state.modal.clipId;
+      const extracted = H2SEditorSelection.extractNotesToScore(this.state.modal.draftScore, this.state.modal.selection, {
+        preserveStart: true,
+        singleTrack: true,
+      });
+      if (!extracted || !extracted.score) return;
+      const srcClip = _findClip(this.project, clipId);
+      const baseName = (srcClip && srcClip.name) ? String(srcClip.name) + ' (selection)' : 'Selection';
+      const placement = _resolveSourceClipPlacement(this.project, clipId, app);
+      const placeTrackIndex = placement.trackIndex + 1;
+      _ensureTimelineTrackIndex(app, placeTrackIndex);
+      if (typeof app._materializeScoreDocToTimeline === 'function'){
+        app._materializeScoreDocToTimeline(H2SProject.ensureScoreIds(extracted.score), {
+          baseName,
+          placeStartSec: placement.startSec,
+          placeTrackIndex,
+          forceSingleClip: true,
+        });
+      }
+      try { $('#editorStatus').textContent = _t('editor.statusDuplicateClip'); } catch(_e){}
+    },
+
+    modalExtractSelectionToNewClip(){
+      if (!H2SEditorSelection) return;
+      const app = this._runtimeApp();
+      if (!app) return;
+      const refs = this.state.modal.selection && this.state.modal.selection.noteRefs;
+      if (!refs || !refs.length) return;
+      if (this.state.modal.dirty){
+        const ok = (typeof window !== 'undefined' && typeof window.confirm === 'function')
+          ? window.confirm(_t('editor.confirmExtractSave'))
+          : true;
+        if (!ok) return;
+        if (!this.modalSaveDraftToClip()) return;
+      }
+      const clipId = this.state.modal.clipId;
+      const extracted = H2SEditorSelection.extractNotesToScore(this.state.modal.draftScore, this.state.modal.selection, {
+        preserveStart: true,
+        singleTrack: true,
+      });
+      if (!extracted || !extracted.score) return;
+      const srcClip = _findClip(this.project, clipId);
+      const baseName = (srcClip && srcClip.name) ? String(srcClip.name) + ' (extract)' : 'Extract';
+      const placement = _resolveSourceClipPlacement(this.project, clipId, app);
+      const placeTrackIndex = placement.trackIndex + 1;
+      _ensureTimelineTrackIndex(app, placeTrackIndex);
+      this.state.modal.draftScore = H2SEditorSelection.removeSelectedNotesFromScore(this.state.modal.draftScore, this.state.modal.selection);
+      this.state.modal.selection = H2SEditorSelection.emptySelection();
+      this.modalSyncLegacySelectionFromRefs();
+      this.state.modal.dirty = true;
+      this.modalSaveDraftToClip();
+      if (typeof app._materializeScoreDocToTimeline === 'function'){
+        app._materializeScoreDocToTimeline(H2SProject.ensureScoreIds(extracted.score), {
+          baseName,
+          placeStartSec: placement.startSec,
+          placeTrackIndex,
+          forceSingleClip: true,
+        });
+      }
+      this.modalUpdateSelectionUI();
+      this.modalResizeCanvasToContent();
+      this.modalRequestDraw();
+      try { $('#editorStatus').textContent = _t('editor.statusExtractClip'); } catch(_e){}
+    },
+
+    modalAutoSplitCurrentClip(){
+      if (!H2SClipAutoSplit) return;
+      const app = this._runtimeApp();
+      if (!app) return;
+      const clipId = this.state.modal.clipId;
+      const clip = _findClip(this.project, clipId);
+      if (!clip) return;
+      if (this.state.modal.dirty){
+        const ok = (typeof window !== 'undefined' && typeof window.confirm === 'function')
+          ? window.confirm(_t('editor.confirmSplitSave'))
+          : true;
+        if (!ok) return;
+        this.modalSaveDraftToClip();
+      }
+      const prefs = this.modalSaveAutoSplitPrefsFromPanel() || H2SClipAutoSplit.loadPrefs();
+      const p2b = getProjectV2 && getProjectV2();
+      const bpm = (p2b && p2b.bpm) ? p2b.bpm : (this.project && this.project.bpm ? this.project.bpm : 120);
+      let scoreForSplit = clip.score;
+      if (_isBeatScore(clip.score)){
+        try { scoreForSplit = _scoreBeatToSec(clip.score, bpm); } catch(_e){ scoreForSplit = H2SProject.deepClone(clip.score); }
+      } else {
+        scoreForSplit = H2SProject.deepClone(clip.score);
+      }
+      scoreForSplit = H2SProject.ensureScoreIds(scoreForSplit);
+      const plan = H2SClipAutoSplit.planClipSegments(scoreForSplit, prefs);
+      if (!plan || plan.length <= 1){
+        try { $('#editorStatus').textContent = _t('editor.statusNoSplitNeeded'); } catch(_e){}
+        return;
+      }
+      const okSplit = (typeof window !== 'undefined' && typeof window.confirm === 'function')
+        ? window.confirm((_t('editor.confirmSplitClip') || '').replace('{n}', String(plan.length)))
+        : true;
+      if (!okSplit) return;
+      const baseName = (clip.name || 'Clip').replace(/ · \d+$/, '').replace(/ \(extract\)$/, '').replace(/ \(selection\)$/, '');
+      const inst = (this.project.instances || []).find((x) => x && x.clipId === clipId);
+      const playheadSec = inst ? Number(inst.startSec || 0) : Number(this.project.ui.playheadSec || 0);
+      this.closeModal(false);
+      this.project.instances = (this.project.instances || []).filter((i) => i && i.clipId !== clipId);
+      this.project.clips = (this.project.clips || []).filter((c) => c && c.id !== clipId);
+      persist();
+      if (typeof app._materializeScoreDocToTimeline === 'function'){
+        app._materializeScoreDocToTimeline(scoreForSplit, {
+          baseName,
+          playheadSec,
+          prefs,
+        });
+      }
+      try { $('#editorStatus').textContent = (_t('editor.statusSplitDone') || '').replace('{n}', String(plan.length)); } catch(_e){}
+    },
+
+    modalBindClipEditControlsV1(){
+      if (!this.__isBrowser) return;
+      const g = (typeof window !== 'undefined') ? window : global;
+      if (g && g.__h2s_clip_edit_controls_v1) return;
+      if (g) g.__h2s_clip_edit_controls_v1 = true;
+      const doc = document;
+      const bind = (id, fn) => {
+        const el = doc.getElementById(id);
+        if (!el) return;
+        el.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const rt = (g.H2SApp && g.H2SApp.editorRt) ? g.H2SApp.editorRt : null;
+          if (!rt) return;
+          fn.call(rt, ev);
+        });
+      };
+      bind('btnEditorToolPointer', function(){ this.modalSetSelectionTool('pointer'); });
+      bind('btnEditorToolMarquee', function(){ this.modalSetSelectionTool('marquee'); });
+      bind('btnEditorTimeZoomIn', function(){ this.modalApplyTimeZoomDelta(0.15); });
+      bind('btnEditorTimeZoomOut', function(){ this.modalApplyTimeZoomDelta(-0.15); });
+      bind('btnEditorTimeFitWidth', function(){ this.modalFitTimeWidth(); });
+      bind('btnEditorCopyNotes', function(){ this.modalCopySelection(); });
+      bind('btnEditorPasteNotes', function(){ this.modalPasteNotes(); });
+      bind('btnEditorExtractClip', function(){ this.modalExtractSelectionToNewClip(); });
+      bind('btnEditorDuplicateClip', function(){ this.modalDuplicateSelectionToNewClip(); });
+      bind('btnEditorAutoSplitNow', function(){ this.modalAutoSplitCurrentClip(); });
+      ['chkAutoSplitPhrase', 'chkAutoSplitPitchRange', 'chkAutoSplitBar', 'inpAutoSplitGap', 'inpAutoSplitMaxDur'].forEach((id) => {
+        const el = doc.getElementById(id);
+        if (!el) return;
+        el.addEventListener('change', () => {
+          const rt = (g.H2SApp && g.H2SApp.editorRt) ? g.H2SApp.editorRt : null;
+          if (rt && typeof rt.modalSaveAutoSplitPrefsFromPanel === 'function') rt.modalSaveAutoSplitPrefsFromPanel();
+        });
+      });
     },
 
 
@@ -1755,7 +2424,9 @@
         }
         let velocityShapeNoteIds = null;
         const modal = rt && rt.state && rt.state.modal;
-        if (modal){
+        if (modal && modal.selection && Array.isArray(modal.selection.noteRefs) && modal.selection.noteRefs.length){
+          velocityShapeNoteIds = modal.selection.noteRefs.map(function(r){ return String(r.noteId); });
+        } else if (modal){
           if (modal.selectedNoteIds && modal.selectedNoteIds.length >= 2){
             velocityShapeNoteIds = modal.selectedNoteIds.slice().map(function(id){ return String(id); });
           } else if (modal.selectedNoteId){
@@ -2586,7 +3257,49 @@
               const k = String(ev.key || '');
               if (k === 'Delete' || k === 'Backspace'){
                 ev.preventDefault();
-                rt.modalDeleteSelectedNote();
+                ev.stopPropagation();
+                rt.modalDeleteSelectedNotes();
+                return;
+              }
+              if (k === 'Escape'){
+                const refs = rt.state.modal.selection && rt.state.modal.selection.noteRefs;
+                const hadSelection = (refs && refs.length > 0) || !!rt.state.modal.marquee || !!rt.state.modal.selectedNoteId;
+                if (!hadSelection) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                rt.state.modal.selection = (H2SEditorSelection && H2SEditorSelection.emptySelection)
+                  ? H2SEditorSelection.emptySelection()
+                  : { noteRefs: [], tool: 'pointer' };
+                rt.state.modal.marquee = null;
+                rt.modalSyncLegacySelectionFromRefs();
+                rt.modalUpdateSelectionUI();
+                rt.modalRequestDraw();
+                return;
+              }
+              if ((k === 'a' || k === 'A') && (ev.ctrlKey || ev.metaKey)){
+                ev.preventDefault();
+                ev.stopPropagation();
+                if (H2SEditorSelection && typeof H2SEditorSelection.collectAllNoteRefs === 'function'){
+                  rt.state.modal.selection = {
+                    noteRefs: H2SEditorSelection.collectAllNoteRefs(rt.state.modal.draftScore),
+                    tool: (rt.state.modal.selection && rt.state.modal.selection.tool) || 'pointer',
+                  };
+                  rt.modalSyncLegacySelectionFromRefs();
+                  rt.modalUpdateSelectionUI();
+                  rt.modalRequestDraw();
+                }
+                return;
+              }
+              if ((k === 'c' || k === 'C') && (ev.ctrlKey || ev.metaKey)){
+                ev.preventDefault();
+                ev.stopPropagation();
+                rt.modalCopySelection();
+                return;
+              }
+              if ((k === 'v' || k === 'V') && (ev.ctrlKey || ev.metaKey)){
+                ev.preventDefault();
+                ev.stopPropagation();
+                rt.modalPasteNotes();
                 return;
               }
               if ((k === 'z' || k === 'Z') && !ev.ctrlKey && !ev.metaKey && !ev.altKey){
@@ -2652,76 +3365,88 @@
       // Keep notes in time order for predictable hit-test / rendering.
       t.notes.sort((a,b) => (Number(a.start)||0) - (Number(b.start)||0));
 
-      this.state.modal.selectedNoteId = note.id;
+      this.state.modal.selection = {
+        noteRefs: [{ trackId: String(t.id), noteId: String(note.id), noteIndex: t.notes.length - 1 }],
+        tool: 'pointer',
+      };
+      this.modalSyncLegacySelectionFromRefs();
       this.state.modal.selectedCell = null;
       this.state.modal.dirty = true;
       try { $('#editorStatus').textContent = `Inserted note ${note.id} @ ${fmtSec(note.start)}.`; } catch(e){}
       this.modalRequestDraw();
     },
 
-    modalDeleteSelectedNote(){
+    modalDeleteSelectedNotes(){
       if (!this.state.modal.show) return;
+      const refs = this.state.modal.selection && this.state.modal.selection.noteRefs;
+      if (refs && refs.length && H2SEditorSelection){
+        const res = H2SEditorSelection.deleteSelectedNotes(this.state.modal.draftScore, this.state.modal.selection);
+        this.state.modal.draftScore = res.score;
+        this.state.modal.selection = H2SEditorSelection.emptySelection();
+        this.modalSyncLegacySelectionFromRefs();
+        this.state.modal.dirty = true;
+        this.modalUpdateSelectionUI();
+        try { $('#editorStatus').textContent = (_t('editor.statusDeleted') || '').replace('{n}', String(res.deleted)); } catch(e){}
+        this.modalRequestDraw();
+        return;
+      }
       const id = this.state.modal.selectedNoteId;
       if (!id){
-        try { $('#editorStatus').textContent = 'No note selected.'; } catch(e){}
+        try { $('#editorStatus').textContent = _t('editor.statusNoNoteSelected'); } catch(e){}
         return;
       }
       const found = this.modalFindNoteById(id);
       if (!found) {
         this.state.modal.selectedNoteId = null;
-        try { $('#editorStatus').textContent = 'Selected note not found.'; } catch(e){}
+        try { $('#editorStatus').textContent = _t('editor.statusNoteNotFound'); } catch(e){}
         return;
       }
       try{
         found.track.notes.splice(found.index, 1);
       }catch(e){}
       this.state.modal.selectedNoteId = null;
+      this.state.modal.selection = (H2SEditorSelection && H2SEditorSelection.emptySelection)
+        ? H2SEditorSelection.emptySelection()
+        : { noteRefs: [], tool: 'pointer' };
       this.state.modal.dirty = true;
+      this.modalUpdateSelectionUI();
       try { $('#editorStatus').textContent = 'Deleted note.'; } catch(e){}
       this.modalRequestDraw();
     },
 
+    modalDeleteSelectedNote(){
+      this.modalDeleteSelectedNotes();
+    },
+
     modalHitTest(px, py){
-      // Return {type:'resize'|'resize_left'|'note', noteId} or null
-      const canvas = $('#canvas');
-      const padL = this.state.modal.padL;
-      const padT = this.state.modal.padT;
-      const pxPerSec = this.state.modal.pxPerSec;
+      const Coords = H2SEditorCoords;
+      const padL = Coords ? Coords.padL(this.state.modal) : this.state.modal.padL;
+      const padT = Coords ? Coords.padT(this.state.modal) : this.state.modal.padT;
+      const pxPerSec = this.modalEffectivePxPerSec();
       const rowH = this.state.modal.rowH;
+      const pitchWin = this.modalPitchWindow();
+      const pitchMin = pitchWin.pitchMin;
+      const pitchMax = pitchWin.pitchMax;
 
-      const st = H2SProject.scoreStats(this.state.modal.draftScore);
-      let pitchMin, pitchMax;
-      if (this.state.modal.usePitchVScroll){
-        pitchMin = 0; pitchMax = 127;
-      } else {
-        const rows = this.state.modal.pitchViewRows;
-        const range = st.maxPitch - st.minPitch + 1;
-        if (range <= rows){
-          const pad = 2;
-          pitchMin = Math.max(0, st.minPitch - pad);
-          pitchMax = Math.min(127, st.maxPitch + pad);
-        } else {
-          const half = Math.floor(rows / 2);
-          const c = this.state.modal.pitchCenter;
-          pitchMin = H2SProject.clamp(c - half, 0, 127 - rows);
-          pitchMax = pitchMin + rows;
-        }
-      }
-
-      const notes = this.modalAllNotes();
-      // search from topmost (later notes last)
-      for (let i=notes.length-1; i>=0; i--){
-        const n = notes[i];
-        if (n.pitch < pitchMin || n.pitch > pitchMax) continue;
-        const x = padL + n.start * pxPerSec;
-        const y = padT + (pitchMax - n.pitch) * rowH + 1;
-        const w = Math.max(6, n.duration * pxPerSec);
-        const h = rowH - 2;
-        if (px >= x && px <= x+w && py >= y && py <= y+h){
-          const handles = this.modalResizeZoneWidths(w);
-          if (px < x + handles.left) return { type:'resize_left', noteId:n.id };
-          if (px >= x + w - handles.right) return { type:'resize', noteId:n.id };
-          return { type:'note', noteId:n.id };
+      const score = this.state.modal.draftScore;
+      if (!score || !score.tracks) return null;
+      for (let ti = score.tracks.length - 1; ti >= 0; ti--){
+        const tr = score.tracks[ti];
+        const notes = tr && tr.notes ? tr.notes : [];
+        for (let i = notes.length - 1; i >= 0; i--){
+          const n = notes[i];
+          if (!n || !n.id) continue;
+          if (n.pitch < pitchMin || n.pitch > pitchMax) continue;
+          const x = Coords ? Coords.timeToX(n.start, this.state.modal) : (padL + n.start * pxPerSec);
+          const y = Coords ? Coords.pitchToY(n.pitch, this.state.modal, pitchMin, pitchMax) : (padT + (pitchMax - n.pitch) * rowH + 1);
+          const w = Coords ? Math.max(6, Number(n.duration) * Coords.effectivePxPerSec(this.state.modal)) : Math.max(6, n.duration * pxPerSec);
+          const h = rowH - 2;
+          if (px >= x && px <= x+w && py >= y && py <= y+h){
+            const handles = this.modalResizeZoneWidths(w);
+            if (px < x + handles.left) return { type:'resize_left', noteId:n.id, trackId: tr.id, noteIndex: i };
+            if (px >= x + w - handles.right) return { type:'resize', noteId:n.id, trackId: tr.id, noteIndex: i };
+            return { type:'note', noteId:n.id, trackId: tr.id, noteIndex: i };
+          }
         }
       }
       return null;
@@ -2771,11 +3496,15 @@
         this.modalSetCanvasCursor('');
         return;
       }
-      const scaleX = rect.width ? (canvas.width / rect.width) : 1;
-      const scaleY = rect.height ? (canvas.height / rect.height) : 1;
-      const px = (cx - rect.left) * scaleX;
-      const py = (cy - rect.top) * scaleY;
+      const pt = this.modalCanvasPointFromEvent(ev);
+      const px = pt.px;
+      const py = pt.py;
       const hit = this.modalHitTest(px, py);
+      const tool = (m.selection && m.selection.tool) || 'pointer';
+      if (!hit && (tool === 'marquee' || tool === 'pointer')){
+        this.modalSetCanvasCursor('crosshair');
+        return;
+      }
       this.modalSetCanvasCursor(this.modalCursorForHit(hit));
     },
 
@@ -2783,7 +3512,7 @@
       const vCanvas = $('#velocityCanvas');
       if (!vCanvas) return null;
       const padL = this.state.modal.padL;
-      const pxPerSec = this.state.modal.pxPerSec;
+      const pxPerSec = this.modalEffectivePxPerSec();
       const laneH = this.state.modal.velocityLaneCssH != null ? this.state.modal.velocityLaneCssH : 48;
       const padV = 4;
       const drawH = Math.max(4, laneH - padV);
@@ -2982,8 +3711,7 @@ async modalPlay(){
   if (phEl){
     phEl.style.display = 'block';
     const padL = this.state.modal.padL != null ? this.state.modal.padL : 60;
-    const pxPerSec = this.state.modal.pxPerSec != null ? this.state.modal.pxPerSec : 180;
-    phEl.style.left = (padL + startAt * pxPerSec) + 'px';
+    phEl.style.left = (padL + startAt * this.modalEffectivePxPerSec()) + 'px';
   }
 
   // One-time redraw to clear stale canvas playhead (modalDraw skips playhead when isPlaying)
@@ -3026,7 +3754,7 @@ async modalPlay(){
     const ph = $('#editorPlayhead');
     if (ph){
       const pad = this.state.modal.padL != null ? this.state.modal.padL : 60;
-      const pps = this.state.modal.pxPerSec != null ? this.state.modal.pxPerSec : 180;
+      const pps = this.modalEffectivePxPerSec();
       ph.style.left = (pad + sec * pps) + 'px';
     }
     if (_perfPb){
@@ -3103,19 +3831,33 @@ async modalPlay(){
       }
 
       const canvas = $('#canvas');
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = rect.width ? (canvas.width / rect.width) : 1;
-      const scaleY = rect.height ? (canvas.height / rect.height) : 1;
-      const px = (ev.clientX - rect.left) * scaleX;
-      const py = (ev.clientY - rect.top) * scaleY;
+      const pt = this.modalCanvasPointFromEvent(ev);
+      const px = pt.px;
+      const py = pt.py;
+      const tool = (this.state.modal.selection && this.state.modal.selection.tool) || 'pointer';
 
       // HIT TEST FIRST (fix: note operations have priority)
       const hit = this.modalHitTest(px, py);
       if (hit){
-        this.state.modal.selectedNoteId = hit.noteId;
+        const ref = {
+          trackId: String(hit.trackId),
+          noteId: String(hit.noteId),
+          noteIndex: hit.noteIndex != null ? hit.noteIndex : undefined,
+        };
+        if (ev.shiftKey && H2SEditorSelection){
+          const base = (this.state.modal.selection && this.state.modal.selection.noteRefs) || [];
+          this.state.modal.selection = {
+            noteRefs: H2SEditorSelection.toggleNoteRef(base, ref),
+            tool,
+          };
+        } else {
+          this.state.modal.selection = { noteRefs: [ref], tool };
+        }
+        this.modalSyncLegacySelectionFromRefs();
         this.state.modal.selectedCell = null;
+        this.modalUpdateSelectionUI();
 
-        const found = this.modalFindNoteById(hit.noteId);
+        const found = this.modalFindNoteById(hit.noteId, hit.trackId);
         if (!found) return;
 
         const n = found.note;
@@ -3126,6 +3868,7 @@ async modalPlay(){
         this.state.modal.drag.origPitch = n.pitch;
         this.state.modal.drag.origDur = n.duration;
         this.state.modal.drag.resizeEdge = (hit.type === 'resize_left') ? 'left' : (hit.type === 'resize') ? 'right' : undefined;
+        this.state.modal.drag.pxPerSec = this.modalEffectivePxPerSec();
 
         this.state.modal.mode = (hit.type === 'resize' || hit.type === 'resize_left') ? 'resize_note' : 'drag_note';
         _h2sDragPerfSessionBegin(this, this.state.modal.mode);
@@ -3134,44 +3877,46 @@ async modalPlay(){
         return;
       }
 
-      // Click empty -> move cursor + set selected cell
-      const padL = this.state.modal.padL;
-      const padT = this.state.modal.padT;
-      const pxPerSec = this.state.modal.pxPerSec;
+      if (tool === 'marquee' || tool === 'pointer'){
+        if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+        if (canvas && typeof canvas.setPointerCapture === 'function' && ev.pointerId != null){
+          try { canvas.setPointerCapture(ev.pointerId); } catch(_e){}
+        }
+        this.state.modal.mode = 'marquee';
+        this.state.modal.marquee = { x0: px, y0: py, x1: px, y1: py, fromPointer: tool === 'pointer' };
+        _h2sDragPerfSessionBegin(this, 'marquee');
+        this.modalUpdateMarqueeOverlay();
+        return;
+      }
+
+      // Click empty -> move cursor + set selected cell (legacy path; pointer/marquee use drag above)
+      const Coords = H2SEditorCoords;
+      const padL = Coords ? Coords.padL(this.state.modal) : this.state.modal.padL;
+      const padT = Coords ? Coords.padT(this.state.modal) : this.state.modal.padT;
+      const pxPerSec = this.modalEffectivePxPerSec();
 
       // time
-      let tSec = (px - padL) / pxPerSec;
+      let tSec = Coords ? Coords.xToTime(px, this.state.modal) : ((px - padL) / pxPerSec);
       tSec = Math.max(0, tSec);
       tSec = this.modalQuantize(tSec, ev);
       this.state.modal.cursorSec = tSec;
 
       // pitch from y
-      const st = H2SProject.scoreStats(this.state.modal.draftScore);
-      const useVScroll = !!this.state.modal.usePitchVScroll;
-      const rows = this.state.modal.pitchViewRows;
-      let pitchMin, pitchMax;
-      if (useVScroll){
-        pitchMin = 0;
-        pitchMax = 127;
-      } else {
-        const range = st.maxPitch - st.minPitch + 1;
-        if (range <= rows){
-          const pad = 2;
-          pitchMin = Math.max(0, st.minPitch - pad);
-          pitchMax = Math.min(127, st.maxPitch + pad);
-        } else {
-          const half = Math.floor(rows / 2);
-          const c = this.state.modal.pitchCenter;
-          pitchMin = H2SProject.clamp(c - half, 0, 127 - rows);
-          pitchMax = pitchMin + rows;
-        }
-      }
+      const pitchWin = this.modalPitchWindow();
+      const pitchMin = pitchWin.pitchMin;
+      const pitchMax = pitchWin.pitchMax;
       const rowH = this.state.modal.rowH;
-      const row = Math.floor((py - padT) / rowH);
-      const pitch = H2SProject.clamp(pitchMax - row, 0, 127);
+      const pitch = Coords
+        ? Coords.yToPitch(py, this.state.modal, pitchMin, pitchMax)
+        : H2SProject.clamp(pitchMax - Math.floor((py - padT) / rowH), 0, 127);
 
+      this.state.modal.selection = (H2SEditorSelection && H2SEditorSelection.emptySelection)
+        ? H2SEditorSelection.emptySelection()
+        : { noteRefs: [], tool: 'pointer' };
+      this.modalSyncLegacySelectionFromRefs();
       this.state.modal.selectedNoteId = null;
       this.state.modal.selectedCell = { startSec: tSec, pitch };
+      this.modalUpdateSelectionUI();
 
       $('#editorStatus').textContent = `Cursor moved to ${fmtSec(tSec)}; selected cell pitch ${H2SProject.midiToName(pitch)}.`;
       this.modalRequestDraw();
@@ -3216,14 +3961,22 @@ async modalPlay(){
         return;
       }
 
+      if (m.mode === 'marquee'){
+        const pt = this.modalCanvasPointFromEvent(ev);
+        if (m.marquee){
+          m.marquee.x1 = pt.px;
+          m.marquee.y1 = pt.py;
+        }
+        this.modalUpdateMarqueeOverlay();
+        this.modalSetCanvasCursor('crosshair');
+        return;
+      }
+
       if (m.mode !== 'drag_note' && m.mode !== 'resize_note') return;
 
-      const canvas = $('#canvas');
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = rect.width ? (canvas.width / rect.width) : 1;
-      const scaleY = rect.height ? (canvas.height / rect.height) : 1;
-      const px = (ev.clientX - rect.left) * scaleX;
-      const py = (ev.clientY - rect.top) * scaleY;
+      const pt = this.modalCanvasPointFromEvent(ev);
+      const px = pt.px;
+      const py = pt.py;
 
       const found = this.modalFindNoteById(m.drag.noteId);
       if (!found) return;
@@ -3250,7 +4003,7 @@ async modalPlay(){
       const dx = px - m.drag.startX;
       const dy = py - m.drag.startY;
 
-      const secDelta = dx / m.pxPerSec;
+      const secDelta = dx / (m.drag.pxPerSec || this.modalEffectivePxPerSec());
       const pitchDelta = -Math.round(dy / m.rowH);
 
       if (m.mode === 'drag_note'){
@@ -3308,6 +4061,82 @@ async modalPlay(){
     modalPointerUp(ev){
       if (!this.state.modal.show) return;
       const m = this.state.modal;
+      const canvas = $('#canvas');
+      if (canvas && typeof canvas.releasePointerCapture === 'function' && ev && ev.pointerId != null){
+        try {
+          if (canvas.hasPointerCapture && canvas.hasPointerCapture(ev.pointerId)){
+            canvas.releasePointerCapture(ev.pointerId);
+          }
+        } catch(_e){}
+      }
+      if (m.mode === 'marquee'){
+        _h2sDragPerfSessionEnd(this);
+        const mq = m.marquee;
+        m.mode = 'none';
+        m.marquee = null;
+        const activeTool = (m.selection && m.selection.tool) || 'pointer';
+        const MARQUEE_CLICK_PX = 5;
+        const dx = mq ? Math.abs(mq.x1 - mq.x0) : 0;
+        const dy = mq ? Math.abs(mq.y1 - mq.y0) : 0;
+        const isClick = dx < MARQUEE_CLICK_PX && dy < MARQUEE_CLICK_PX;
+
+        if (mq && mq.fromPointer && isClick && activeTool === 'pointer'){
+          const Coords = H2SEditorCoords;
+          let tSec = Coords ? Coords.xToTime(mq.x0, m) : ((mq.x0 - (m.padL || 60)) / this.modalEffectivePxPerSec());
+          tSec = Math.max(0, tSec);
+          tSec = this.modalQuantize(tSec, ev);
+          m.cursorSec = tSec;
+          const pitchWin = this.modalPitchWindow();
+          const pitch = Coords
+            ? Coords.yToPitch(mq.y0, m, pitchWin.pitchMin, pitchWin.pitchMax)
+            : H2SProject.clamp(pitchWin.pitchMax - Math.floor((mq.y0 - (m.padT || 20)) / m.rowH), 0, 127);
+          if (!ev || !ev.shiftKey){
+            m.selection = (H2SEditorSelection && H2SEditorSelection.emptySelection)
+              ? H2SEditorSelection.emptySelection()
+              : { noteRefs: [], tool: activeTool };
+            m.selectedNoteId = null;
+          }
+          m.selectedCell = { startSec: tSec, pitch };
+          this.modalSyncLegacySelectionFromRefs();
+          this.modalUpdateSelectionUI();
+          this.modalUpdateMarqueeOverlay();
+          try { $('#editorStatus').textContent = `Cursor moved to ${fmtSec(tSec)}; selected cell pitch ${H2SProject.midiToName(pitch)}.`; } catch(_e){}
+          this.modalRequestDraw();
+          return;
+        }
+
+        if (mq && H2SEditorSelection && H2SEditorCoords){
+          this.modalEnsureDraftScoreNoteIds();
+          if (H2SProject && typeof H2SProject.ensureScoreIds === 'function'){
+            try { H2SProject.ensureScoreIds(m.draftScore); } catch(_e){}
+          }
+          const rect = {
+            x0: Math.min(mq.x0, mq.x1),
+            y0: Math.min(mq.y0, mq.y1),
+            x1: Math.max(mq.x0, mq.x1),
+            y1: Math.max(mq.y0, mq.y1),
+          };
+          const pitchWin = this.modalPitchWindow();
+          let hits = isClick ? [] : H2SEditorSelection.notesInRect(m.draftScore, rect, H2SEditorCoords, m, pitchWin);
+          if (hits.length && typeof H2SEditorSelection.normalizeNoteRefs === 'function'){
+            hits = H2SEditorSelection.normalizeNoteRefs(m.draftScore, hits);
+          }
+          if (ev && ev.shiftKey && m.selection && m.selection.noteRefs){
+            hits = H2SEditorSelection.mergeNoteRefs(m.selection.noteRefs, hits, false);
+          } else if (isClick && !ev.shiftKey){
+            hits = [];
+          }
+          m.selection = { noteRefs: hits, tool: activeTool };
+          this.modalSyncLegacySelectionFromRefs();
+          this.modalUpdateSelectionUI();
+          try { $('#editorStatus').textContent = hits.length
+            ? (_t('editor.statusSelected') || '').replace('{n}', String(hits.length))
+            : _t('editor.statusNoNotesInSelection'); } catch(_e){}
+        }
+        this.modalUpdateMarqueeOverlay();
+        this.modalRequestDraw();
+        return;
+      }
       if (m.mode === 'drag_note' || m.mode === 'resize_note' || m.mode === 'drag_velocity' || m.mode === 'resize_velocity_lane'){
         _h2sDragPerfSessionEnd(this);
         m.mode = 'none';

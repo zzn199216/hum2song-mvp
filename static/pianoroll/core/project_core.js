@@ -17,12 +17,14 @@
   function ensureScoreIds(score){
     if (!score) return score;
     if (!score.tracks) score.tracks = [];
+    const globalNoteIds = new Set();
     for (const t of score.tracks){
       if (!t.id) t.id = uid('trk_');
       if (typeof t.name !== 'string') t.name = String(t.name ?? '');
       if (!Array.isArray(t.notes)) t.notes = [];
       for (const n of t.notes){
-        if (!n.id) n.id = uid('nt_');
+        if (!n.id || globalNoteIds.has(String(n.id))) n.id = uid('nt_');
+        globalNoteIds.add(String(n.id));
         if (typeof n.pitch !== 'number') n.pitch = Number(n.pitch ?? 60);
         if (typeof n.start !== 'number') n.start = Number(n.start ?? 0);
         if (typeof n.duration !== 'number') n.duration = Number(n.duration ?? 0.2);
