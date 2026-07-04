@@ -20,9 +20,10 @@ assert(/modalDeleteSelectedNotes[\s\S]*?modalCaptureEditorUndo\('delete_notes'\)
 assert(/modalInsertNote[\s\S]*?modalCaptureEditorUndo\('insert_note'\)/.test(editor), 'insert note should capture undo');
 assert(/modalPasteNotes[\s\S]*?modalCaptureEditorUndo\('paste_notes'\)/.test(editor), 'paste should capture undo');
 assert(editor.includes("'resize_note' : 'drag_note'"), 'drag/resize note should capture undo');
-assert(editor.includes("modalCaptureEditorUndo('edit_velocity')"), 'velocity edit should capture undo');
+assert(editor.includes("modalCaptureEditorUndo('edit_velocity'"), 'velocity edit should capture undo');
 assert(/ctrlKey \|\| ev\.metaKey[\s\S]*?modalUndoLastEdit/.test(editor), 'editor should bind Ctrl/Cmd+Z');
 assert(editor.includes("H2SProjectLastUndo.clear('editor')"), 'editor should clear undo slot on open/close');
-assert(en['editor.undoDone'], 'en locale should define editor.undoDone');
+assert(editor.includes('Undo.depth'), 'editor undo should report remaining stack depth');
+assert(en['editor.undoDoneMore'], 'en locale should define editor.undoDoneMore');
 
 console.log('editor_undo.test.js: ok');

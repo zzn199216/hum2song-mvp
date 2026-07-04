@@ -2140,7 +2140,7 @@
       return true;
     },
 
-    modalCaptureEditorUndo(label){
+    modalCaptureEditorUndo(label, extra){
       if (this._editorUndoRestoring) return;
       const Undo = (typeof window !== 'undefined' && window.H2SProjectLastUndo) ? window.H2SProjectLastUndo : null;
       if (!Undo || typeof Undo.capture !== 'function') return;
@@ -2153,7 +2153,9 @@
         selectedCell: m.selectedCell ? H2SProject.deepClone(m.selectedCell) : null,
         cursorSec: m.cursorSec,
       };
-      Undo.capture('editor', m.draftScore, { label: label || 'editor_edit', ui });
+      const meta = { label: label || 'editor_edit', ui };
+      if (extra && extra.mergeKey != null) meta.mergeKey = String(extra.mergeKey);
+      Undo.capture('editor', m.draftScore, meta);
     },
 
     modalUndoLastEdit(){
@@ -2180,7 +2182,13 @@
         this.modalSyncLegacySelectionFromRefs();
         this.modalUpdateSelectionUI();
         this.modalRequestDraw();
-        try { $('#editorStatus').textContent = _t('editor.undoDone', 'Undid last note edit.'); } catch(_e){}
+        const remaining = (Undo.depth && typeof Undo.depth === 'function') ? Undo.depth('editor') : 0;
+        try {
+          const msg = remaining > 0
+            ? _t('editor.undoDoneMore', 'Undid. {n} more step(s) available.').replace(/\{n\}/g, String(remaining))
+            : _t('editor.undoDone', 'Undid last note edit.');
+          $('#editorStatus').textContent = msg;
+        } catch(_e){}
       } finally {
         this._editorUndoRestoring = false;
       }
@@ -3881,7 +3889,7 @@ async modalPlay(){
           this._velDragTargets = targets;
           const found = this.modalFindNoteById(draggedNoteId);
           if (!found) return;
-          this.modalCaptureEditorUndo('edit_velocity');
+          this.modalCaptureEditorUndo('edit_velocity', { mergeKey: 'velocity:' + String(draggedNoteId) });
           const v0 = H2SProject.clamp(Math.round(Number(found.note.velocity) ?? 100), 1, 127);
           this.state.modal.drag.noteId = draggedNoteId;
           this.state.modal.drag.startY = pyCss;
@@ -3935,7 +3943,10 @@ async modalPlay(){
         this.state.modal.drag.resizeEdge = (hit.type === 'resize_left') ? 'left' : (hit.type === 'resize') ? 'right' : undefined;
         this.state.modal.drag.pxPerSec = this.modalEffectivePxPerSec();
 
-        this.modalCaptureEditorUndo((hit.type === 'resize' || hit.type === 'resize_left') ? 'resize_note' : 'drag_note');
+        this.modalCaptureEditorUndo(
+          (hit.type === 'resize' || hit.type === 'resize_left') ? 'resize_note' : 'drag_note',
+          { mergeKey: 'move:' + String(hit.noteId) + ':' + String(hit.type) },
+        );
         this.state.modal.mode = (hit.type === 'resize' || hit.type === 'resize_left') ? 'resize_note' : 'drag_note';
         _h2sDragPerfSessionBegin(this, this.state.modal.mode);
         $('#editorStatus').textContent = (hit.type === 'resize' || hit.type === 'resize_left') ? 'Resize note...' : 'Drag note...';

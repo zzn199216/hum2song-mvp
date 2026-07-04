@@ -680,6 +680,7 @@
   "editor.statusSplitDone": "Clip split into {n} clips.",
   "editor.confirmExtractSave": "Extract moves selected notes to a new clip and removes them from this clip. Save current edits first?",
   "editor.undoDone": "Undid last note edit.",
+  "editor.undoDoneMore": "Undid. {n} more step(s) available.",
   "editor.confirmSplitSave": "Split uses the saved clip. Save current edits first?",
   "editor.confirmSplitClip": "Split this clip into {n} shorter clips? This does not separate audio stems.",
   "editor.velocitySplitter": "Drag to resize velocity lane",

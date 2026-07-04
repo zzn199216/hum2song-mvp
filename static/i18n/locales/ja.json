@@ -663,6 +663,7 @@
   "editor.statusSplitDone": "クリップを {n} 個に分割しました。",
   "editor.confirmExtractSave": "抽出すると選択ノートが新しいクリップに移り、このクリップから削除されます。先に保存しますか？",
   "editor.undoDone": "直前のノート編集を元に戻しました。",
+  "editor.undoDoneMore": "元に戻しました。あと {n} ステップ取り消せます。",
   "editor.confirmSplitSave": "分割は保存済みクリップを使用します。先に保存しますか？",
   "editor.confirmSplitClip": "このクリップを {n} 個の短いクリップに分割しますか？オーディオステム分離ではありません。",
   "editor.velocitySplitter": "ドラッグしてベロシティレーンの高さを調整",
