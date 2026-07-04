@@ -6161,15 +6161,9 @@ renderTimeline(){
       this.render();
     },
 
-    deleteInstance(instId, opts){
+    deleteInstance(instId){
       const idx = this.project.instances.findIndex(x => x.id === instId);
       if (idx < 0) return;
-      const inst = this.project.instances[idx];
-      const clip = inst && inst.clipId ? this.project.clips.find(c => c && c.id === inst.clipId) : null;
-      const label = (clip && clip.name) ? String(clip.name) : String(instId || '');
-      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
-      const skipConfirm = opts && opts.skipConfirm === true;
-      if (!skipConfirm && !confirm(_t('confirm.deleteInstance').replace(/\{name\}/g, label))) return;
       this.project.instances.splice(idx, 1);
       if (this.state.selectedInstanceId === instId) this.state.selectedInstanceId = null;
       persist();

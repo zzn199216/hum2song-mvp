@@ -76,7 +76,7 @@
         if (!instanceId) throw new Error('instanceId required');
         var idx = (app.project.instances || []).findIndex(function (x) { return x && x.id === instanceId; });
         if (idx < 0) throw new Error('instance not found');
-        app.deleteInstance(instanceId, { skipConfirm: true });
+        app.deleteInstance(instanceId);
         return { message: 'removed', data: { instanceId: instanceId } };
       },
     },

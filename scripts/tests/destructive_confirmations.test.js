@@ -31,8 +31,9 @@ const zh = JSON.parse(fs.readFileSync(path.join(root, 'static/i18n/locales/zh.js
 assert(/clearProject\(opts\)[\s\S]*?confirm\(_t\('confirm\.clearLocalProject'/.test(app), 'clear local project should confirm with scoped i18n copy');
 assert(/deleteClip\(clipId\)[\s\S]*?confirm\(msg\)/.test(app), 'delete clip should confirm before removing local library/timeline data');
 assert(app.indexOf("confirm.deleteClipWithInstances") !== -1, 'delete clip confirmation should mention timeline instances');
-assert(/deleteInstance\(instId,\s*opts\)[\s\S]*?confirm\(_t\('confirm\.deleteInstance'/.test(app), 'delete timeline instance should confirm');
-assert(registry.includes("app.deleteInstance(instanceId, { skipConfirm: true })"), 'assistant remove-instance path should keep its existing single confirmation');
+assert(/deleteInstance\(instId\)[\s\S]*?this\.project\.instances\.splice/.test(app), 'delete timeline instance should remove without blocking confirm');
+assert(!/deleteInstance\(instId\)[\s\S]*?confirm\(_t\('confirm\.deleteInstance'/.test(app), 'delete timeline instance should not use native confirm');
+assert(registry.includes('app.deleteInstance(instanceId)'), 'assistant remove-instance path should call deleteInstance directly');
 assert(/removeActiveTrack\(\)[\s\S]*?confirm\(_t\('confirm\.removeTrack'/.test(app), 'remove track should confirm and mention instances');
 assert(/createNewLocalProject\(\)[\s\S]*?confirm\(_t\('confirm\.newLocalProject'/.test(app), 'new local project should confirm before switching away from current local work');
 assert(/importProjectJsonFromFile\(opts\)[\s\S]*?confirm\(_t\('confirm\.importLocalProject'/.test(app), 'import project JSON should confirm local-only replacement/switch');
