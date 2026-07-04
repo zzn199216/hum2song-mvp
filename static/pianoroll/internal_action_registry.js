@@ -96,19 +96,19 @@
         if (!inst) throw new Error('instance not found');
         var P = (typeof ROOT !== 'undefined' && ROOT.H2SProject) ? ROOT.H2SProject : null;
         var bpm = (app.project && typeof app.project.bpm === 'number' && isFinite(app.project.bpm)) ? app.project.bpm : 120;
-        var changed = false;
-        if (payload.startBeat != null && P && typeof P.normalizeBeat === 'function' && typeof P.beatToSec === 'function' && isFinite(Number(payload.startBeat))) {
+        var willChangeStart = payload.startBeat != null && P && typeof P.normalizeBeat === 'function' && typeof P.beatToSec === 'function' && isFinite(Number(payload.startBeat));
+        var willChangeTrack = payload.trackIndex != null && Number.isFinite(Number(payload.trackIndex));
+        if (!willChangeStart && !willChangeTrack) {
+          return { message: 'noop', data: { instanceId: instanceId, noop: true } };
+        }
+        if (typeof app.captureTimelineUndo === 'function') app.captureTimelineUndo('move_instance');
+        if (willChangeStart) {
           var sb2 = P.normalizeBeat(Number(payload.startBeat));
           inst.startSec = P.beatToSec(sb2, bpm);
-          changed = true;
         }
-        if (payload.trackIndex != null && Number.isFinite(Number(payload.trackIndex))) {
+        if (willChangeTrack) {
           var max2 = Math.max(0, ((app.project.tracks || []).length) - 1);
           inst.trackIndex = Math.max(0, Math.min(max2, Math.round(Number(payload.trackIndex))));
-          changed = true;
-        }
-        if (!changed) {
-          return { message: 'noop', data: { instanceId: instanceId, noop: true } };
         }
         if (hooks && typeof hooks.persist === 'function') hooks.persist();
         if (hooks && typeof hooks.render === 'function') hooks.render();

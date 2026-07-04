@@ -686,6 +686,9 @@
       this.state.modal.savedScore = H2SProject.deepClone(savedScoreSec);
       this.state.modal.draftScore = H2SProject.deepClone(savedScoreSec);
       this.state.modal.dirty = false;
+      if (typeof window !== 'undefined' && window.H2SProjectLastUndo && typeof window.H2SProjectLastUndo.clear === 'function'){
+        window.H2SProjectLastUndo.clear('editor');
+      }
       this.modalEnsureDraftScoreNoteIds();
 
       // T3-4: ghost + patch summary (revision UI bridge) — parent revision score under current head
@@ -1080,6 +1083,9 @@
       this.state.modal.clipId = null;
       this.state.modal.draftScore = null;
       this.state.modal.savedScore = null;
+      if (typeof window !== 'undefined' && window.H2SProjectLastUndo && typeof window.H2SProjectLastUndo.clear === 'function'){
+        window.H2SProjectLastUndo.clear('editor');
+      }
       this.state.modal.selectedNoteId = null;
       this.state.modal.selectedNoteIds = null;
       this.state.modal.selectedCell = null;
@@ -2134,6 +2140,53 @@
       return true;
     },
 
+    modalCaptureEditorUndo(label){
+      if (this._editorUndoRestoring) return;
+      const Undo = (typeof window !== 'undefined' && window.H2SProjectLastUndo) ? window.H2SProjectLastUndo : null;
+      if (!Undo || typeof Undo.capture !== 'function') return;
+      const m = this.state.modal;
+      if (!m || !m.show || !m.draftScore) return;
+      const ui = {
+        selection: m.selection ? H2SProject.deepClone(m.selection) : { noteRefs: [], tool: 'pointer' },
+        selectedNoteId: m.selectedNoteId != null ? m.selectedNoteId : null,
+        selectedNoteIds: m.selectedNoteIds ? H2SProject.deepClone(m.selectedNoteIds) : null,
+        selectedCell: m.selectedCell ? H2SProject.deepClone(m.selectedCell) : null,
+        cursorSec: m.cursorSec,
+      };
+      Undo.capture('editor', m.draftScore, { label: label || 'editor_edit', ui });
+    },
+
+    modalUndoLastEdit(){
+      const Undo = (typeof window !== 'undefined' && window.H2SProjectLastUndo) ? window.H2SProjectLastUndo : null;
+      if (!Undo || typeof Undo.consume !== 'function') return false;
+      const slot = Undo.consume('editor');
+      if (!slot || !slot.snapshot) return false;
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, fb) => (fb != null ? fb : k);
+      this._editorUndoRestoring = true;
+      try {
+        this.state.modal.draftScore = H2SProject.deepClone(slot.snapshot);
+        if (slot.ui) {
+          const ui = slot.ui;
+          this.state.modal.selection = ui.selection
+            ? H2SProject.deepClone(ui.selection)
+            : ((H2SEditorSelection && H2SEditorSelection.emptySelection) ? H2SEditorSelection.emptySelection() : { noteRefs: [], tool: 'pointer' });
+          this.state.modal.selectedNoteId = ui.selectedNoteId != null ? ui.selectedNoteId : null;
+          this.state.modal.selectedNoteIds = ui.selectedNoteIds ? H2SProject.deepClone(ui.selectedNoteIds) : null;
+          this.state.modal.selectedCell = ui.selectedCell ? H2SProject.deepClone(ui.selectedCell) : null;
+          if (ui.cursorSec != null && Number.isFinite(Number(ui.cursorSec))) this.state.modal.cursorSec = Number(ui.cursorSec);
+        }
+        const saved = this.state.modal.savedScore;
+        this.state.modal.dirty = !!(saved && JSON.stringify(this.state.modal.draftScore) !== JSON.stringify(saved));
+        this.modalSyncLegacySelectionFromRefs();
+        this.modalUpdateSelectionUI();
+        this.modalRequestDraw();
+        try { $('#editorStatus').textContent = _t('editor.undoDone', 'Undid last note edit.'); } catch(_e){}
+      } finally {
+        this._editorUndoRestoring = false;
+      }
+      return true;
+    },
+
     modalCopySelection(){
       if (!H2SEditorSelection) return;
       const refs = this.state.modal.selection && this.state.modal.selection.noteRefs;
@@ -2148,6 +2201,7 @@
     modalPasteNotes(){
       const clip = this.state.modal.noteClipboard;
       if (!clip || !clip.tracks) return;
+      this.modalCaptureEditorUndo('paste_notes');
       const score = this.state.modal.draftScore;
       if (!score || !Array.isArray(score.tracks) || !score.tracks.length) return;
       const cursor = Number(this.state.modal.cursorSec || 0);
@@ -2229,6 +2283,7 @@
       const placement = _resolveSourceClipPlacement(this.project, clipId, app);
       const placeTrackIndex = placement.trackIndex + 1;
       _ensureTimelineTrackIndex(app, placeTrackIndex);
+      this.modalCaptureEditorUndo('extract_notes');
       this.state.modal.draftScore = H2SEditorSelection.removeSelectedNotesFromScore(this.state.modal.draftScore, this.state.modal.selection);
       this.state.modal.selection = H2SEditorSelection.emptySelection();
       this.modalSyncLegacySelectionFromRefs();
@@ -3296,6 +3351,12 @@
                 rt.modalCopySelection();
                 return;
               }
+              if ((k === 'z' || k === 'Z') && (ev.ctrlKey || ev.metaKey) && !ev.shiftKey){
+                ev.preventDefault();
+                ev.stopPropagation();
+                rt.modalUndoLastEdit();
+                return;
+              }
               if ((k === 'v' || k === 'V') && (ev.ctrlKey || ev.metaKey)){
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -3337,6 +3398,7 @@
         try { $('#editorStatus').textContent = 'Cannot insert: no track.'; } catch(e){}
         return;
       }
+      this.modalCaptureEditorUndo('insert_note');
       const t = score.tracks[0];
       t.notes = Array.isArray(t.notes) ? t.notes : [];
 
@@ -3380,6 +3442,7 @@
       if (!this.state.modal.show) return;
       const refs = this.state.modal.selection && this.state.modal.selection.noteRefs;
       if (refs && refs.length && H2SEditorSelection){
+        this.modalCaptureEditorUndo('delete_notes');
         const res = H2SEditorSelection.deleteSelectedNotes(this.state.modal.draftScore, this.state.modal.selection);
         this.state.modal.draftScore = res.score;
         this.state.modal.selection = H2SEditorSelection.emptySelection();
@@ -3401,6 +3464,7 @@
         try { $('#editorStatus').textContent = _t('editor.statusNoteNotFound'); } catch(e){}
         return;
       }
+      this.modalCaptureEditorUndo('delete_note');
       try{
         found.track.notes.splice(found.index, 1);
       }catch(e){}
@@ -3817,6 +3881,7 @@ async modalPlay(){
           this._velDragTargets = targets;
           const found = this.modalFindNoteById(draggedNoteId);
           if (!found) return;
+          this.modalCaptureEditorUndo('edit_velocity');
           const v0 = H2SProject.clamp(Math.round(Number(found.note.velocity) ?? 100), 1, 127);
           this.state.modal.drag.noteId = draggedNoteId;
           this.state.modal.drag.startY = pyCss;
@@ -3870,6 +3935,7 @@ async modalPlay(){
         this.state.modal.drag.resizeEdge = (hit.type === 'resize_left') ? 'left' : (hit.type === 'resize') ? 'right' : undefined;
         this.state.modal.drag.pxPerSec = this.modalEffectivePxPerSec();
 
+        this.modalCaptureEditorUndo((hit.type === 'resize' || hit.type === 'resize_left') ? 'resize_note' : 'drag_note');
         this.state.modal.mode = (hit.type === 'resize' || hit.type === 'resize_left') ? 'resize_note' : 'drag_note';
         _h2sDragPerfSessionBegin(this, this.state.modal.mode);
         $('#editorStatus').textContent = (hit.type === 'resize' || hit.type === 'resize_left') ? 'Resize note...' : 'Drag note...';

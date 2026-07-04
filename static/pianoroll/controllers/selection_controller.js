@@ -26,6 +26,7 @@
     const onEditClip = opts.onEditClip || function(){};
     const onDuplicateInstance = opts.onDuplicateInstance || function(){};
     const onRemoveInstance = opts.onRemoveInstance || function(){};
+    const onUndoTimeline = opts.onUndoTimeline || function(){ return false; };
     const onAddBass = opts.onAddBass || function(){};
     const onAddAccompaniment = opts.onAddAccompaniment || function(){};
     const onArrangementDetails = opts.onArrangementDetails || function(){};
@@ -197,6 +198,12 @@
       // Do not conflict with editor modal
       if (state.modal && state.modal.show) return;
       if (isTypingTarget(document.activeElement)) return;
+
+      if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && (ev.key === 'z' || ev.key === 'Z')){
+        ev.preventDefault();
+        onUndoTimeline();
+        return;
+      }
 
       if (ev.key === 'Delete' || ev.key === 'Backspace'){
         const sel = currentSelectedInstance();

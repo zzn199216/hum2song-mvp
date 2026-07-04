@@ -2343,6 +2343,49 @@ setProjectFromV2(projectV2){
   this.render();
   return {ok:true};
 },
+
+/** Capture current project (v2) for single-step timeline undo (Ctrl+Z). Frontend-only. */
+captureTimelineUndo(label){
+  if (this._timelineUndoRestoring) return;
+  const Undo = (typeof window !== 'undefined' && window.H2SProjectLastUndo) ? window.H2SProjectLastUndo : null;
+  if (!Undo || typeof Undo.capture !== 'function') return;
+  const p2 = _projectV1ToV2(this.project);
+  if (!p2) return;
+  const ui = {
+    selectedInstanceId: (this.state && this.state.selectedInstanceId != null) ? this.state.selectedInstanceId : null,
+    selectedClipId: (this.state && this.state.selectedClipId != null) ? this.state.selectedClipId : null,
+    activeTrackIndex: (this.state && Number.isFinite(this.state.activeTrackIndex)) ? this.state.activeTrackIndex : 0,
+  };
+  Undo.capture('timeline', p2, { label: label || 'timeline_edit', ui });
+},
+
+canUndoTimelineEdit(){
+  const Undo = (typeof window !== 'undefined' && window.H2SProjectLastUndo) ? window.H2SProjectLastUndo : null;
+  return !!(Undo && typeof Undo.canUndo === 'function' && Undo.canUndo('timeline'));
+},
+
+undoLastTimelineEdit(){
+  const Undo = (typeof window !== 'undefined' && window.H2SProjectLastUndo) ? window.H2SProjectLastUndo : null;
+  if (!Undo || typeof Undo.consume !== 'function') return false;
+  const slot = Undo.consume('timeline');
+  if (!slot || !slot.snapshot) return false;
+  const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, fb) => (fb != null ? fb : k);
+  this._timelineUndoRestoring = true;
+  try {
+    this.setProjectFromV2(slot.snapshot);
+    if (this.state && slot.ui) {
+      const ui = slot.ui;
+      this.state.selectedInstanceId = (ui.selectedInstanceId != null) ? ui.selectedInstanceId : null;
+      this.state.selectedClipId = (ui.selectedClipId != null) ? ui.selectedClipId : null;
+      if (Number.isFinite(ui.activeTrackIndex)) this.state.activeTrackIndex = ui.activeTrackIndex;
+    }
+    log(_t('timeline.undoDone', 'Undid last timeline edit.'));
+  } finally {
+    this._timelineUndoRestoring = false;
+  }
+  return true;
+},
+
 resetForCloudHostSessionChange(hostSessionKey){
   const nextKey = String(hostSessionKey || _cloudHostSessionKeyFromLocation() || 'host-reset').trim().slice(0, 160);
   _clearStoredProjectDocumentsForCloudHostReset();
@@ -2350,6 +2393,9 @@ resetForCloudHostSessionChange(hostSessionKey){
     if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY_CLOUD_HOST_SESSION, nextKey || 'host-reset');
   }catch(e){}
   this._projectV2 = null;
+  if (typeof window !== 'undefined' && window.H2SProjectLastUndo && typeof window.H2SProjectLastUndo.clear === 'function'){
+    window.H2SProjectLastUndo.clear();
+  }
   this._lastOptimizeOptions = null;
   this._lastOptimizeSnapshot = null;
   this._lastArrangementSnapshot = null;
@@ -4228,8 +4274,9 @@ $('#rngPitchCenter').addEventListener('input', () => {
               if (typeof this._openArrangementDetails === 'function') this._openArrangementDetails();
             },
             getHasArrangementDetails: () => !!this._lastArrangementSnapshot,
-            onDuplicateInstance: (instId) => this.duplicateInstance(instId),
-            onRemoveInstance: (instId) => this.deleteInstance(instId),
+    onDuplicateInstance: (instId) => this.duplicateInstance(instId),
+    onRemoveInstance: (instId) => this.deleteInstance(instId),
+    onUndoTimeline: () => this.undoLastTimelineEdit(),
             getConvertLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('cliplib.convertSegment') : 'Convert selected segment'),
             getAudioSegmentPanelOpts: (inst) => {
               if (!inst) return null;
@@ -4377,6 +4424,7 @@ try{
     onSetTrackInstrument: (trackId, instrument) => this.setTrackInstrument(trackId, instrument),
     onSetTrackGainDb: (trackId, gainDb) => this.setTrackGainDb(trackId, gainDb),
     onPersistAndRender: () => { persist(); this.render(); },
+    onBeginInstanceDrag: () => { this.captureTimelineUndo('move_instance'); },
     onRemoveInstance: (instId) => this.deleteInstance(instId),
     escapeHtml,
     fmtSec,
@@ -6152,6 +6200,7 @@ renderTimeline(){
     duplicateInstance(instId){
       const inst = this.project.instances.find(x => x.id === instId);
       if (!inst) return;
+      this.captureTimelineUndo('duplicate_instance');
       const copy = H2SProject.deepClone(inst);
       copy.id = H2SProject.uid('inst_');
       copy.startSec = inst.startSec + 0.2; // small offset to see it
@@ -6164,6 +6213,7 @@ renderTimeline(){
     deleteInstance(instId){
       const idx = this.project.instances.findIndex(x => x.id === instId);
       if (idx < 0) return;
+      this.captureTimelineUndo('remove_instance');
       this.project.instances.splice(idx, 1);
       if (this.state.selectedInstanceId === instId) this.state.selectedInstanceId = null;
       persist();
@@ -6231,6 +6281,7 @@ renderTimeline(){
       const resolvedStart = (startSec != null && Number.isFinite(Number(startSec)))
         ? Math.max(0, Number(startSec))
         : Math.max(0, Number(this.project.ui && this.project.ui.playheadSec != null ? this.project.ui.playheadSec : 0));
+      this.captureTimelineUndo('add_clip_to_timeline');
       const inst = H2SProject.createInstance(clipId, resolvedStart, ti);
       this.project.instances.push(inst);
       this.state.selectedInstanceId = inst.id;

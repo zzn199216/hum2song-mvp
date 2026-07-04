@@ -501,6 +501,7 @@
   "timeline.playhead": "播放头",
   "timeline.tipDrag": "提示：拖动片段块；双击打开编辑器。",
   "timeline.log": "日志",
+  "timeline.undoDone": "已撤销上一步时间线操作。",
   "log.ready": "就绪",
   "log.clickToExpand": "点击展开日志",
 
@@ -678,6 +679,7 @@
   "editor.statusNoSplitNeeded": "无需拆分（片段已足够短）。",
   "editor.statusSplitDone": "片段已拆分为 {n} 个。",
   "editor.confirmExtractSave": "提取会将选中音符移到新片段并从当前片段移除。是否先保存当前编辑？",
+  "editor.undoDone": "已撤销上一步音符编辑。",
   "editor.confirmSplitSave": "拆分使用已保存的片段。是否先保存当前编辑？",
   "editor.confirmSplitClip": "将此片段拆分为 {n} 个较短片段？这不是音频分轨。",
   "editor.velocitySplitter": "拖动以调整力度条高度",

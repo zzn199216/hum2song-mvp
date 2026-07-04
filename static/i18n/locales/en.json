@@ -501,6 +501,7 @@
   "timeline.playhead": "Playhead",
   "timeline.tipDrag": "Tip: drag clip blocks; double-click to open editor.",
   "timeline.log": "Log",
+  "timeline.undoDone": "Undid last timeline edit.",
   "log.ready": "Ready",
   "log.clickToExpand": "Click to expand log",
 
@@ -678,6 +679,7 @@
   "editor.statusNoSplitNeeded": "No split needed (clip already short enough).",
   "editor.statusSplitDone": "Clip split into {n} clips.",
   "editor.confirmExtractSave": "Extract moves selected notes to a new clip and removes them from this clip. Save current edits first?",
+  "editor.undoDone": "Undid last note edit.",
   "editor.confirmSplitSave": "Split uses the saved clip. Save current edits first?",
   "editor.confirmSplitClip": "Split this clip into {n} shorter clips? This does not separate audio stems.",
   "editor.velocitySplitter": "Drag to resize velocity lane",

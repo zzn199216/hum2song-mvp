@@ -793,6 +793,9 @@
         // Start dragging only after threshold.
         cand.started = true;
         state.draggingInstance = cand.instId;
+        if (typeof config.onBeginInstanceDrag === 'function'){
+          try{ config.onBeginInstanceDrag(cand.instId); }catch(e){ console.warn('onBeginInstanceDrag failed', e); }
+        }
 
         // Capture pointer now so drag remains stable even if cursor leaves element.
         try{ cand.el.setPointerCapture(cand.pointerId); }catch(e){}
