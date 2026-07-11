@@ -1248,6 +1248,7 @@
     </div>
     <div class="spacer"></div>
     <button type="button" id="btnBeginnerHelpEntry" class="btn ghost beginnerHelpEntryBtn" data-i18n="beginnerHint.entryHelp" data-i18n-title="beginnerHint.entryHelpTitle">Beginner help</button>
+    <button type="button" id="btnCreditsEntry" class="btn ghost" data-i18n="credits.entry" data-i18n-title="credits.entryTitle">Credits</button>
     <button id="btnAiSettings" class="topbarBtn aiSettingsBtn" data-i18n-title="top.aiSettingsTitle">
         <span class="aiIcon">⚙</span>
         <span class="aiWord">AI</span>
@@ -1333,6 +1334,24 @@
         <div class="beginnerHintRestoreWrap">
           <button type="button" id="btnBeginnerHintRestore" class="btn ghost beginnerHintRestoreBtn" data-i18n="beginnerHint.showAgain">Show getting started bar again</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="creditsPanel" class="beginnerHintHelpPanel hidden" role="dialog" aria-modal="true" aria-hidden="true" data-i18n-aria-label="credits.title">
+    <div class="beginnerHintHelpBackdrop" id="creditsBackdrop" aria-hidden="true"></div>
+    <div class="beginnerHintHelpCard" role="document">
+      <div class="beginnerHintHelpHeader">
+        <h3 id="creditsHeading" data-i18n="credits.title">Credits / Licenses</h3>
+        <button type="button" id="btnCreditsClose" class="btnClose" data-i18n="credits.close">Close</button>
+      </div>
+      <div class="beginnerHintHelpBody">
+        <div class="beginnerHintHelpFailTitle" data-i18n="credits.tonejsTitle">tonejs-instruments samples</div>
+        <p class="smallmuted" data-i18n="credits.tonejsBody">Sample sets from tonejs-instruments are licensed CC-BY-3.0. Attribution: tonejs-instruments samples by Nathan Brosowsky and contributors.</p>
+        <p class="smallmuted">
+          <span data-i18n="credits.sourceLabel">Source:</span>
+          <a href="https://github.com/nbrosowsky/tonejs-instruments" target="_blank" rel="noopener">github.com/nbrosowsky/tonejs-instruments</a>
+        </p>
       </div>
     </div>
   </div>
