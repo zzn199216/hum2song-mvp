@@ -127,6 +127,7 @@
       const app = opts.app || (typeof window !== 'undefined' ? window.H2SApp : null);
       const getPresetForClip = (app && typeof app.getOptimizePresetForClip === 'function') ? app.getOptimizePresetForClip.bind(app) : null;
       const selectedClipId = (app && app.state && app.state.selectedClipId) ? app.state.selectedClipId : null;
+      const selectedClipIds = (app && typeof app.getSelectedClipIds === 'function') ? app.getSelectedClipIds() : (selectedClipId ? [selectedClipId] : []);
       let html = '';
       for (const clip of clips){
         const stats = _clipStats(project, clip);
@@ -135,7 +136,7 @@
         const convertSt = (app && typeof app.getAudioConvertStateForClip === 'function')
           ? app.getAudioConvertStateForClip(clip.id)
           : null;
-        html += view.clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId, convertSt);
+        html += view.clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId, convertSt, { selectedClipIds: selectedClipIds });
       }
       rootEl.innerHTML = html;
     }
@@ -180,7 +181,19 @@
         const card = t && t.closest ? t.closest('.clip-card, .clipCard') : null;
         if (card){
           const clipId = card.getAttribute('data-clip-id');
-          if (clipId && typeof opts.onSelectClip === 'function') opts.onSelectClip(clipId);
+          if (!clipId) return;
+          const app = opts.app || (typeof window !== 'undefined' ? window.H2SApp : null);
+          if (app && typeof app.toggleClipLibrarySelection === 'function'){
+            const ev = e;
+            const replace = !(ev && (ev.ctrlKey || ev.metaKey || ev.shiftKey));
+            const range = !!(ev && ev.shiftKey);
+            app.toggleClipLibrarySelection(clipId, { replace: replace, range: range });
+            app.state.selectedInstanceId = null;
+            if (typeof opts.onSelectClip === 'function') opts.onSelectClip(clipId);
+            else if (typeof app.render === 'function') app.render();
+            return;
+          }
+          if (typeof opts.onSelectClip === 'function') opts.onSelectClip(clipId);
         }
         return;
       }

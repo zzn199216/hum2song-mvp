@@ -9,7 +9,7 @@ from typing import Literal, Optional, Union
 
 from core.config import get_settings
 from core.task_manager import task_manager as contract_task_manager
-from core.utils import TaskManager, build_paths, safe_unlink
+from core.utils import TaskManager, build_paths, resolve_raw_input_path, safe_unlink
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,12 @@ def run_pipeline_for_task(
     settings = get_settings()
     paths = build_paths(task_id, input_filename)
 
-    raw_path: Path = paths["raw_audio"]
+    raw_path: Path = resolve_raw_input_path(
+        settings.upload_dir,
+        task_id,
+        input_filename,
+        paths,
+    )
     clean_wav_path: Path = paths["clean_wav"]
     separation_input_path: Optional[Path] = None
 

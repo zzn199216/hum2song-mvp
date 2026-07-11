@@ -182,8 +182,8 @@ async def generate_music(
     segment_duration_sec: Optional[float] = Query(
         None,
         gt=0,
-        le=60,
-        description="Transcribe window length in seconds (1–60).",
+        le=3600,
+        description="Transcribe window length in seconds (1–3600).",
     ),
     segment_end_sec: Optional[float] = Query(
         None,

@@ -2340,25 +2340,39 @@
         try { $('#editorStatus').textContent = _t('editor.statusNoSplitNeeded'); } catch(_e){}
         return;
       }
+      const Preview = (typeof window !== 'undefined') ? window.H2SClipSplitPreview : null;
+      let confirmMsg = (_t('editor.confirmSplitClip') || '').replace('{n}', String(plan.length));
+      if (Preview && typeof Preview.summarizePlan === 'function' && typeof Preview.formatPlanSummaryText === 'function'){
+        const summary = Preview.summarizePlan(plan, H2SProject);
+        confirmMsg = confirmMsg + '\n\n' + Preview.formatPlanSummaryText(summary);
+      }
       const okSplit = (typeof window !== 'undefined' && typeof window.confirm === 'function')
-        ? window.confirm((_t('editor.confirmSplitClip') || '').replace('{n}', String(plan.length)))
+        ? window.confirm(confirmMsg)
         : true;
       if (!okSplit) return;
+      this.closeModal(false);
+      if (typeof app.autoSplitClipById === 'function'){
+        app.autoSplitClipById(clipId, { skipConfirm: true, prefs, captureUndo: true });
+        try { $('#editorStatus').textContent = (_t('editor.statusSplitDone') || '').replace('{n}', String(plan.length)); } catch(_e){}
+        return;
+      }
       const baseName = (clip.name || 'Clip').replace(/ · \d+$/, '').replace(/ \(extract\)$/, '').replace(/ \(selection\)$/, '');
       const inst = (this.project.instances || []).find((x) => x && x.clipId === clipId);
       const playheadSec = inst ? Number(inst.startSec || 0) : Number(this.project.ui.playheadSec || 0);
-      this.closeModal(false);
+      const placeTrackIndex = inst ? Math.floor(Number(inst.trackIndex) || 0) : (typeof app.resolveDefaultPlacementTrackIndex === 'function' ? app.resolveDefaultPlacementTrackIndex() : 0);
       this.project.instances = (this.project.instances || []).filter((i) => i && i.clipId !== clipId);
       this.project.clips = (this.project.clips || []).filter((c) => c && c.id !== clipId);
       persist();
       if (typeof app._materializeScoreDocToTimeline === 'function'){
         app._materializeScoreDocToTimeline(scoreForSplit, {
+          autoSplit: true,
           baseName,
           playheadSec,
+          placeTrackIndex,
           prefs,
         });
       }
-      try { $('#editorStatus').textContent = (_t('editor.statusSplitDone') || '').replace('{n}', String(plan.length)); } catch(_e){}
+      try { $('#editorStatus').textContent = (_t('editor.statusSplitDone') || '').replace('{n}', String(plan.length)); } catch(_e2){}
     },
 
     modalBindClipEditControlsV1(){

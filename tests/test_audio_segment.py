@@ -47,6 +47,12 @@ def test_clamp_segment_past_end():
     assert dur == pytest.approx(7.77, abs=0.01)
 
 
+def test_clamp_segment_allows_full_file():
+    start, dur = clamp_segment(180.4, 0.0, 180.3958125)
+    assert start == pytest.approx(0.0)
+    assert dur == pytest.approx(180.3958125, abs=0.01)
+
+
 def test_extract_audio_segment_writes_wav(tmp_path):
     sr = 22050
     t = np.linspace(0, 3.0, int(sr * 3), endpoint=False)

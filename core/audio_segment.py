@@ -10,7 +10,7 @@ from typing import Optional, Tuple, Union
 logger = logging.getLogger(__name__)
 
 MIN_SEGMENT_SEC = 1.0
-MAX_SEGMENT_SEC = 60.0
+MAX_SEGMENT_SEC = 3600.0
 
 
 class SegmentValidationError(ValueError):

@@ -52,3 +52,22 @@ def test_generate_invalid_segment_returns_400(client):
             files={"file": ("a.wav", b"fake-wav", "audio/wav")},
         )
     assert r.status_code == 400
+
+
+def test_generate_long_segment_accepted(client):
+    with patch("routers.generation.probe_audio_duration_sec", return_value=180.4):
+        with patch("routers.generation.extract_audio_segment") as mock_extract:
+            def _fake_extract(_inp, out, start, dur):
+                p = Path(out)
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(b"WAV")
+                assert start == pytest.approx(0.0)
+                assert dur == pytest.approx(180.3958125, abs=0.01)
+                return p
+
+            mock_extract.side_effect = _fake_extract
+            r = client.post(
+                "/generate?output_format=mp3&segment_start_sec=0&segment_duration_sec=180.3958125",
+                files={"file": ("a.wav", b"fake-wav", "audio/wav")},
+            )
+    assert r.status_code == 202

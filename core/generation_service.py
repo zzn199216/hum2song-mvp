@@ -199,18 +199,15 @@ class GenerationService:
         self, input_path: Path, output_format: str, task_id: UUID
     ) -> Path:
         """Run pipeline with contract task id (segment uploads use *_segment.wav sidecars)."""
-        try:
-            pipeline_mod = importlib.import_module("core.pipeline")
-            fn = getattr(pipeline_mod, "run_pipeline", None)
-            if callable(fn):
-                res = fn(
-                    input_path,
-                    output_format,
-                    contract_task_id=str(task_id),
-                )
-                return Path(res)
-        except Exception:
-            pass
+        pipeline_mod = importlib.import_module("core.pipeline")
+        fn = getattr(pipeline_mod, "run_pipeline", None)
+        if callable(fn):
+            res = fn(
+                input_path,
+                output_format,
+                contract_task_id=str(task_id),
+            )
+            return Path(res)
         runner = self._get_runner()
         return runner(input_path, output_format)
 

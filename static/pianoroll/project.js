@@ -756,6 +756,43 @@
     };
   }
 
+  function isTimelineTrackEmpty(projectV1, trackIndex){
+    const ti = Math.max(0, Math.floor(Number(trackIndex) || 0));
+    const insts = Array.isArray(projectV1 && projectV1.instances) ? projectV1.instances : [];
+    for (let i = 0; i < insts.length; i++){
+      const inst = insts[i];
+      if (!inst) continue;
+      if (Math.floor(Number(inst.trackIndex) || 0) === ti) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Pick the first empty track below the source audio track; if none, return tracks.length (caller adds track).
+   */
+  function resolveNotePlacementTrackBelow(projectV1, sourceTrackIndex){
+    const src = Math.max(0, Math.floor(Number(sourceTrackIndex) || 0));
+    const trackCount = Math.max(1, Array.isArray(projectV1 && projectV1.tracks) ? projectV1.tracks.length : 1);
+    for (let ti = src + 1; ti < trackCount; ti++){
+      if (isTimelineTrackEmpty(projectV1, ti)){
+        return { trackIndex: ti, needsNewTrack: false };
+      }
+    }
+    return { trackIndex: trackCount, needsNewTrack: true };
+  }
+
+  function _audioConvertNotePlacement(projectV1, startSec, sourceTrackIndex, reason){
+    const notePl = resolveNotePlacementTrackBelow(projectV1, sourceTrackIndex);
+    return {
+      startSec,
+      trackIndex: notePl.trackIndex,
+      aligned: true,
+      reason,
+      needsNewTrack: notePl.needsNewTrack,
+      sourceTrackIndex: Math.max(0, Math.floor(Number(sourceTrackIndex) || 0)),
+    };
+  }
+
   /**
    * Resolve placement for audio -> editable conversion in v1 view space.
    * When `sourceInstanceId` is set, align to that instance (must match `sourceClipId`).
@@ -780,7 +817,7 @@
       }
       const startSec = (isFiniteNumber(inst.startSec) && Number(inst.startSec) >= 0) ? Number(inst.startSec) : fallbackStart;
       const trackIndex = (isFiniteNumber(inst.trackIndex) && Number(inst.trackIndex) >= 0) ? Math.floor(Number(inst.trackIndex)) : fallbackTrack;
-      return { startSec, trackIndex, aligned: true, reason: 'explicit_source_instance' };
+      return _audioConvertNotePlacement(projectV1, startSec, trackIndex, 'explicit_source_instance');
     }
     const matches = Array.isArray(projectV1.instances)
       ? projectV1.instances.filter(inst => inst && String(inst.clipId || '') === String(sourceClipId))
@@ -796,7 +833,7 @@
     const only = matches[0];
     const startSec = (isFiniteNumber(only.startSec) && Number(only.startSec) >= 0) ? Number(only.startSec) : fallbackStart;
     const trackIndex = (isFiniteNumber(only.trackIndex) && Number(only.trackIndex) >= 0) ? Math.floor(Number(only.trackIndex)) : fallbackTrack;
-    return { startSec, trackIndex, aligned: true, reason: 'single_source_instance' };
+    return _audioConvertNotePlacement(projectV1, startSec, trackIndex, 'single_source_instance');
   }
 
   /* -------------------- T1-1 ProjectDoc v2 helpers (beats) -------------------- */
@@ -1602,6 +1639,7 @@ function beginNewClipRevision(project, clipId, opts){
       id: t.id || uid('trk_'),
       name: (typeof t.name === 'string') ? t.name : String(t.name ?? ''),
       instrument: (typeof t.instrument === 'string' && t.instrument.trim()) ? t.instrument : SCHEMA_V2.DEFAULT_INSTRUMENT,
+      role: (typeof t.role === 'string' && t.role.trim()) ? t.role.trim() : undefined,
     })) : [{ id: uid('trk_'), name: 'Track 1', instrument: SCHEMA_V2.DEFAULT_INSTRUMENT }];
     const defaultTrackId = tracks[0].id;
 
@@ -1676,6 +1714,12 @@ function beginNewClipRevision(project, clipId, opts){
       clip2.meta.sourceTempoBpm = sourceTempoBpm;
       // Preserve meta.agent (e.g. patchSummary) when re-building v2 from v1 view (persist path).
       if (c.meta && c.meta.agent) clip2.meta.agent = c.meta.agent;
+      if (c.meta) {
+        const splitKeys = ['splitGroupId', 'splitIndex', 'splitCount', 'splitSourceStartSec', 'splitSourceSpanSec', 'autoSplit', 'autoSplitSource', 'autoSplitBarSegment', 'heuristicPitchSplit'];
+        for (const k of splitKeys) {
+          if (c.meta[k] !== undefined && c.meta[k] !== null) clip2.meta[k] = c.meta[k];
+        }
+      }
 
       clips[clip2.id] = clip2;
       clipOrder.push(clip2.id);
@@ -1696,6 +1740,11 @@ function beginNewClipRevision(project, clipId, opts){
         startBeat,
         transpose: coerceTranspose(inst.transpose)
       });
+      const lastInst = instances[instances.length - 1];
+      if (inst.groupId != null && String(inst.groupId).trim()) lastInst.groupId = String(inst.groupId);
+      if (inst.placementBatchId != null && String(inst.placementBatchId).trim()) {
+        lastInst.placementBatchId = String(inst.placementBatchId);
+      }
     }
 
     const p2 = {
@@ -1942,6 +1991,8 @@ function toggleClipAB(projectV2, clipId){
     createClipFromScore,
     createInstance,
     resolveAudioConvertPlacementV1,
+    isTimelineTrackEmpty,
+    resolveNotePlacementTrackBelow,
 
     // constants
     TIMEBASE,

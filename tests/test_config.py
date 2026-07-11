@@ -37,9 +37,9 @@ def test_sample_rate_correction():
 
 def test_sanity_clamps():
     """测试防御性逻辑"""
-    # 超过 60s -> 60s
-    s = Settings(MAX_AUDIO_SECONDS=1000, _env_file=None)
-    assert s.max_audio_seconds == 60
+    # 超过 3600s -> 3600s
+    s = Settings(MAX_AUDIO_SECONDS=10000, _env_file=None)
+    assert s.max_audio_seconds == 3600
     
     # 阈值 > 0.95 -> 0.95
     s = Settings(ONSET_THRESHOLD=5.0, _env_file=None)

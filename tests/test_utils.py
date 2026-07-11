@@ -7,6 +7,7 @@ import core.utils as utils_module
 from core.utils import (
     TaskManager,
     build_paths,
+    resolve_raw_input_path,
     safe_unlink,
     cleanup_old_files,
     new_job_id,
@@ -68,6 +69,26 @@ def test_build_paths():
     assert paths["clean_wav"].parent.resolve() == s.upload_dir.resolve()
     assert paths["midi"].parent.resolve() == s.output_dir.resolve()
     assert paths["audio_mp3"].parent.resolve() == s.output_dir.resolve()
+
+
+def test_resolve_raw_input_path_prefers_segment_sidecar(tmp_path, monkeypatch):
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    get_settings.cache_clear()
+    s = get_settings()
+    upload_dir = s.upload_dir
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    task_id = "abc-123"
+    segment_name = f"{task_id}_segment.wav"
+    segment_path = upload_dir / segment_name
+    segment_path.write_bytes(b"WAV")
+
+    paths = build_paths(task_id, segment_name)
+    assert paths["raw_audio"].name == f"{task_id}.wav"
+    assert not paths["raw_audio"].exists()
+
+    resolved = resolve_raw_input_path(upload_dir, task_id, segment_name, paths)
+    assert resolved == segment_path.resolve()
 
 
 # --- 3) safe_unlink 测试 ---

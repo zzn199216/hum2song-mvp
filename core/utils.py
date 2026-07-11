@@ -112,7 +112,7 @@ def sanitize_filename(name: str, max_stem: int = 64) -> str:
 def build_paths(job_id: str, original_filename: str) -> Dict[str, Path]:
     """
     统一生成各阶段产物路径：
-    - raw_audio: uploads/<job_id>.<ext>
+    - raw_audio: uploads/<job_id>.<ext>  (canonical; see resolve_raw_input_path for sidecars)
     - clean_wav: uploads/<job_id>_clean.wav
     - midi:      outputs/<job_id>.mid
     - audio_wav: outputs/<job_id>.wav
@@ -138,6 +138,32 @@ def build_paths(job_id: str, original_filename: str) -> Dict[str, Path]:
         "audio_wav": audio_wav,
         "audio_mp3": audio_mp3,
     }
+
+
+def resolve_raw_input_path(
+    upload_dir: Path,
+    task_id: str,
+    input_filename: str,
+    paths: Optional[Dict[str, Path]] = None,
+) -> Path:
+    """
+    Resolve the on-disk upload used for preprocessing.
+
+    Segment sidecars are named ``{task_id}_segment.wav`` but build_paths only
+    knows ``{task_id}.wav`` — prefer the explicit filename when present.
+    """
+    safe_name = sanitize_filename(input_filename)
+    explicit = (Path(upload_dir) / safe_name).resolve()
+    if explicit.exists():
+        return explicit
+
+    if paths is None:
+        paths = build_paths(task_id, input_filename)
+    canonical = paths["raw_audio"].resolve()
+    if canonical.exists():
+        return canonical
+
+    raise FileNotFoundError(f"输入文件不存在: {canonical}")
 
 
 class TaskManager:

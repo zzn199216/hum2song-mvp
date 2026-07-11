@@ -6,7 +6,8 @@
 
   var DEFAULT_SEGMENT_LEN = 30;
   var MIN_SEGMENT_LEN = 1;
-  var MAX_SEGMENT_LEN = 60;
+  /** Upper bound when audio duration is unknown; otherwise full file length is allowed. */
+  var MAX_SEGMENT_LEN = 3600;
   var PRESET_LENGTHS = [15, 30, 60];
 
   function _num(x, fallback) {
@@ -20,7 +21,8 @@
     if (total > 0 && start >= total) {
       start = Math.max(0, total - MIN_SEGMENT_LEN);
     }
-    var dur = Math.max(MIN_SEGMENT_LEN, Math.min(_num(durationSec, DEFAULT_SEGMENT_LEN), MAX_SEGMENT_LEN));
+    var cap = total > 0 ? total : MAX_SEGMENT_LEN;
+    var dur = Math.max(MIN_SEGMENT_LEN, Math.min(_num(durationSec, DEFAULT_SEGMENT_LEN), cap));
     var remaining = total > 0 ? Math.max(0, total - start) : dur;
     if (total > 0) {
       dur = Math.min(dur, remaining);
@@ -46,7 +48,7 @@
     }
     var len = DEFAULT_SEGMENT_LEN;
     if (audioDur > 0) {
-      len = Math.min(DEFAULT_SEGMENT_LEN, Math.max(MIN_SEGMENT_LEN, audioDur - start));
+      len = Math.max(MIN_SEGMENT_LEN, audioDur - start);
     }
     return clampSegment(audioDur, start, len) || { startSec: 0, durationSec: DEFAULT_SEGMENT_LEN, endSec: DEFAULT_SEGMENT_LEN };
   }

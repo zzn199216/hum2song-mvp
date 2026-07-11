@@ -499,6 +499,7 @@
     }
     .clipCard:hover{ border-color: rgba(59,130,246,.45); }
     .clipCard.clipSelected{ border-color: rgba(80,140,255,0.8); background: rgba(80,140,255,0.08); }
+    .clipCard.clipMultiSelected{ outline: 1px dashed rgba(80,140,255,0.55); }
     .clip-card-audio{
       border-color: rgba(16,185,129,.55);
       background: rgba(16,185,129,.10);
@@ -1393,6 +1394,19 @@
             <p id="cloudMaterialsStandalone" class="muted" style="display:none; font-size:11px; margin:6px 0 0;" data-i18n="cloudMaterials.standaloneHint">Cloud materials are available when opened from Hum2Song Cloud.</p>
           </div>
           <div class="hr"></div>
+          <div id="clipLibraryToolbar" class="clipLibraryToolbar row" style="gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+            <button type="button" class="btn mini" id="btnAutoSplitClips" data-i18n="cliplib.autoSplit" title="Split long clip into shorter segments">自动拆轨</button>
+            <button type="button" class="btn mini" id="btnSelectSplitGroup" title="Select all clips in the same split group">Select group</button>
+            <select id="selPlaceAnchor" class="btn mini" title="Placement anchor" style="min-width:8rem;">
+              <option value="playhead">From playhead</option>
+              <option value="selectionStart">From selection start</option>
+              <option value="selectionEnd">From selection end</option>
+              <option value="timelineStart">From timeline start</option>
+            </select>
+            <button type="button" class="btn mini primary" id="btnPlaceClipsSequence" title="Place selected clips sequentially on timeline">Place in sequence</button>
+            <button type="button" class="btn mini" id="btnCompactInstances" title="Remove gaps between grouped instances">Close gaps</button>
+            <button type="button" class="btn mini" id="btnRepeatInstances" title="Repeat selected group">Repeat ×2</button>
+          </div>
           <div id="clipList" class="col"></div>
         </div>
       </div>
@@ -1407,6 +1421,12 @@
           <input id="inpBpm" type="number" min="30" max="260" value="120" />
         </div>
         <div class="pill" id="lblPlayhead">Playhead: 0.00s</div>
+        <div class="timelineZoomBox row" style="gap:4px; align-items:center;">
+          <button type="button" id="btnTimelineZoomOut" class="btn mini" title="Zoom out">−</button>
+          <span id="lblTimelineZoom" class="pill muted" style="min-width:3rem;text-align:center;">100%</span>
+          <button type="button" id="btnTimelineZoomIn" class="btn mini" title="Zoom in">+</button>
+          <button type="button" id="btnTimelineZoomFit" class="btn mini" title="Fit project width">Fit</button>
+        </div>
         <div class="hint" data-i18n="timeline.tipDrag">Tip: drag clip blocks; double-click to open editor.</div>
       </div>
 
@@ -1464,6 +1484,14 @@
           <h4 data-i18n="inspector.timelineSelection">Timeline Selection</h4>
           <div class="muted" style="font-size:11px; margin-bottom:4px;" data-i18n="inspector.timelineSelectionHint">Selected instance on timeline (start/transpose/edit).</div>
           <div id="selectionBox" class="muted">Select a clip instance on timeline.</div>
+          <div class="row" style="gap:6px; align-items:center; margin-top:8px;">
+            <label for="selTrackRole" class="muted" style="font-size:11px;">Track role</label>
+            <select id="selTrackRole" class="btn mini" title="Default track for sequential placement">
+              <option value="">(none)</option>
+              <option value="melody">Melody</option>
+              <option value="accompaniment">Accompaniment</option>
+            </select>
+          </div>
         </div>
         <div class="hr"></div>
         <details id="inspExport" class="insSection">
@@ -1901,13 +1929,17 @@
   <script src="/static/pianoroll/ui/editor_modal_resize.js?v=clip-edit-v1"></script>
   <script src="/static/pianoroll/core/editor_coords.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/core/editor_selection.js?v=clip-edit-v16"></script>
-  <script src="/static/pianoroll/core/clip_auto_split.js?v=clip-edit-v1"></script>
+  <script src="/static/pianoroll/core/score_heuristic_split.js"></script>
+  <script src="/static/pianoroll/core/clip_split_group.js?v=seq-place-v1"></script>
+  <script src="/static/pianoroll/core/clip_split_preview.js?v=seq-place-v1"></script>
+  <script src="/static/pianoroll/core/timeline_sequence_place.js?v=seq-place-v1"></script>
+  <script src="/static/pianoroll/core/timeline_edge_snap.js?v=seq-place-v1"></script>
+  <script src="/static/pianoroll/core/clip_auto_split.js?v=seq-place-v1"></script>
   <script src="/static/pianoroll/core/project_last_undo.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/controllers/editor_runtime.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/controllers/export_flatten_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_wav_controller.js"></script>
-  <script src="/static/pianoroll/core/score_heuristic_split.js"></script>
   <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>

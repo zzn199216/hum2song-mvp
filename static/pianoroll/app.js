@@ -1625,6 +1625,7 @@
             instrument: (t && typeof t.instrument === 'string' && t.instrument) ? t.instrument : 'default',
             gainDb: (t && typeof t.gainDb === 'number' && isFinite(t.gainDb)) ? t.gainDb : 0,
             muted: (t && typeof t.muted === 'boolean') ? t.muted : false,
+            role: (t && typeof t.role === 'string' && t.role) ? t.role : null,
           };
         })
       : [{ id: 'track-1', name: 'Track 1', trackId: 'track-1', instrument: 'default' }];
@@ -1680,7 +1681,14 @@
           pitchMin: (typeof meta.pitchMin === 'number') ? meta.pitchMin : null,
           pitchMax: (typeof meta.pitchMax === 'number') ? meta.pitchMax : null,
           spanSec: _beatToSec(spanBeat, bpm),
-          sourceTempoBpm: (typeof meta.sourceTempoBpm === 'number') ? meta.sourceTempoBpm : null
+          sourceTempoBpm: (typeof meta.sourceTempoBpm === 'number') ? meta.sourceTempoBpm : null,
+          splitGroupId: (meta && meta.splitGroupId != null) ? String(meta.splitGroupId) : null,
+          splitIndex: (meta && typeof meta.splitIndex === 'number') ? meta.splitIndex : null,
+          splitCount: (meta && typeof meta.splitCount === 'number') ? meta.splitCount : null,
+          splitSourceStartSec: (meta && typeof meta.splitSourceStartSec === 'number') ? meta.splitSourceStartSec : null,
+          splitSourceSpanSec: (meta && typeof meta.splitSourceSpanSec === 'number') ? meta.splitSourceSpanSec : null,
+          autoSplit: !!(meta && meta.autoSplit),
+          autoSplitSource: (meta && meta.autoSplitSource != null) ? String(meta.autoSplitSource) : null,
         }
       };
       if (isAudio){
@@ -1700,7 +1708,9 @@
         clipId: inst.clipId,
         trackIndex,
         startSec: _beatToSec(inst.startBeat || 0, bpm),
-        transpose: inst.transpose || 0
+        transpose: inst.transpose || 0,
+        groupId: (inst.groupId != null) ? String(inst.groupId) : null,
+        placementBatchId: (inst.placementBatchId != null) ? String(inst.placementBatchId) : null,
       });
     }
 
@@ -2026,16 +2036,18 @@ function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 // Preserve v2-only track fields (currently: instrument, gainDb).
 try{
   if (prevV2 && Array.isArray(prevV2.tracks) && Array.isArray(p2.tracks)){
-    const instByTid = new Map();
-    const gainByTid = new Map();
-    const mutedByTid = new Map();
-    for (const t of prevV2.tracks){
-      const tid = (t && (t.trackId || t.id)) ? String(t.trackId || t.id) : null;
-      if (!tid) continue;
-      if (typeof t.instrument === 'string' && t.instrument) instByTid.set(tid, t.instrument);
-      if (typeof t.gainDb === 'number' && isFinite(t.gainDb)) gainByTid.set(tid, t.gainDb);
-      if (typeof t.muted === 'boolean') mutedByTid.set(tid, t.muted);
-    }
+      const instByTid = new Map();
+      const gainByTid = new Map();
+      const mutedByTid = new Map();
+      const roleByTid = new Map();
+      for (const t of prevV2.tracks){
+        const tid = (t && (t.trackId || t.id)) ? String(t.trackId || t.id) : null;
+        if (!tid) continue;
+        if (typeof t.instrument === 'string' && t.instrument) instByTid.set(tid, t.instrument);
+        if (typeof t.gainDb === 'number' && isFinite(t.gainDb)) gainByTid.set(tid, t.gainDb);
+        if (typeof t.muted === 'boolean') mutedByTid.set(tid, t.muted);
+        if (typeof t.role === 'string' && t.role) roleByTid.set(tid, t.role);
+      }
 
     for (const t of p2.tracks){
       const tid = (t && (t.trackId || t.id)) ? String(t.trackId || t.id) : null;
@@ -2053,6 +2065,9 @@ try{
 
       const m = mutedByTid.get(tid);
       if (typeof m === 'boolean') t.muted = m;
+
+      const role = roleByTid.get(tid);
+      if (typeof role === 'string' && role) t.role = role;
 
       // Ensure defaults for v2-only fields when missing from v1 migration.
       if (typeof t.instrument !== 'string' || !t.instrument) t.instrument = 'default';
@@ -2354,6 +2369,7 @@ captureTimelineUndo(label){
   const ui = {
     selectedInstanceId: (this.state && this.state.selectedInstanceId != null) ? this.state.selectedInstanceId : null,
     selectedClipId: (this.state && this.state.selectedClipId != null) ? this.state.selectedClipId : null,
+    selectedClipIds: (this.state && Array.isArray(this.state.selectedClipIds)) ? this.state.selectedClipIds.slice() : [],
     activeTrackIndex: (this.state && Number.isFinite(this.state.activeTrackIndex)) ? this.state.activeTrackIndex : 0,
   };
   Undo.capture('timeline', p2, { label: label || 'timeline_edit', ui });
@@ -2377,6 +2393,7 @@ undoLastTimelineEdit(){
       const ui = slot.ui;
       this.state.selectedInstanceId = (ui.selectedInstanceId != null) ? ui.selectedInstanceId : null;
       this.state.selectedClipId = (ui.selectedClipId != null) ? ui.selectedClipId : null;
+      if (Array.isArray(ui.selectedClipIds)) this.state.selectedClipIds = ui.selectedClipIds.slice();
       if (Number.isFinite(ui.activeTrackIndex)) this.state.activeTrackIndex = ui.activeTrackIndex;
     }
     log(_t('timeline.undoDone', 'Undid last timeline edit.'));
@@ -2413,6 +2430,383 @@ resetForCloudHostSessionChange(hostSessionKey){
 },
 getSelectedClipId(){
   return (this.state && this.state.selectedClipId) ? this.state.selectedClipId : null;
+},
+getSelectedClipIds(){
+  if (this.state && Array.isArray(this.state.selectedClipIds) && this.state.selectedClipIds.length){
+    return this.state.selectedClipIds.slice();
+  }
+  const one = this.getSelectedClipId();
+  return one ? [one] : [];
+},
+_setSelectedClipIds(ids, primaryId){
+  if (!this.state) return;
+  const uniq = [];
+  const seen = Object.create(null);
+  for (const raw of (ids || [])){
+    const id = String(raw || '').trim();
+    if (!id || seen[id]) continue;
+    seen[id] = true;
+    uniq.push(id);
+  }
+  this.state.selectedClipIds = uniq;
+  const primary = (primaryId != null && String(primaryId).trim()) ? String(primaryId).trim() : (uniq[0] || null);
+  this.state.selectedClipId = primary;
+},
+toggleClipLibrarySelection(clipId, opts){
+  opts = opts || {};
+  const id = String(clipId || '').trim();
+  if (!id) return;
+  const cur = this.getSelectedClipIds();
+  const idx = cur.indexOf(id);
+  if (opts.replace){
+    this._setSelectedClipIds([id], id);
+    this.state.lastClipLibraryClickId = id;
+    return;
+  }
+  if (opts.range && this.state.lastClipLibraryClickId){
+    const anchor = String(this.state.lastClipLibraryClickId);
+    const clips = Array.isArray(this.project.clips) ? this.project.clips : [];
+    const order = clips.map((c) => String(c.id));
+    const a = order.indexOf(anchor);
+    const b = order.indexOf(id);
+    if (a >= 0 && b >= 0){
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      const rangeIds = order.slice(lo, hi + 1);
+      const merged = cur.slice();
+      for (const rid of rangeIds){
+        if (merged.indexOf(rid) < 0) merged.push(rid);
+      }
+      this._setSelectedClipIds(merged, id);
+      return;
+    }
+  }
+  if (idx >= 0){
+    cur.splice(idx, 1);
+    this._setSelectedClipIds(cur, cur[0] || null);
+  } else {
+    cur.push(id);
+    this._setSelectedClipIds(cur, id);
+  }
+  this.state.lastClipLibraryClickId = id;
+},
+selectSplitGroupClips(clipId){
+  const SG = (typeof window !== 'undefined') ? window.H2SClipSplitGroup : null;
+  const id = String(clipId || this.getSelectedClipId() || '').trim();
+  if (!id || !SG) return false;
+  const clip = (this.project.clips || []).find((c) => c && String(c.id) === id);
+  const meta = clip && SG.getClipSplitGroupMeta ? SG.getClipSplitGroupMeta(clip) : null;
+  if (!meta) return false;
+  const groupClips = SG.findClipsBySplitGroupId(this.project.clips || [], meta.splitGroupId);
+  this._setSelectedClipIds(groupClips.map((c) => c.id), id);
+  return groupClips.length > 0;
+},
+/** User-initiated phrase split for a library note clip (not on import). */
+autoSplitClipById(clipId, opts){
+  opts = opts || {};
+  const P = window.H2SProject;
+  const AutoSplit = (typeof window !== 'undefined') ? window.H2SClipAutoSplit : null;
+  const Preview = (typeof window !== 'undefined') ? window.H2SClipSplitPreview : null;
+  const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, fb) => (fb != null ? fb : k);
+  const id = String(clipId || opts.clipId || this.getSelectedClipId() || '').trim();
+  if (!id || !P || !AutoSplit) return { ok: false, reason: 'missing_api' };
+  const clip = (this.project.clips || []).find((c) => c && String(c.id) === id);
+  if (!clip || !clip.score) {
+    try { alert(_t('cliplib.autoSplitNeedSelection', 'Select a note clip in the library first.')); } catch (_e) {}
+    return { ok: false, reason: 'no_clip' };
+  }
+  if (typeof P.clipKind === 'function' && P.clipKind(clip) === 'audio'){
+    try { alert(_t('cliplib.autoSplitNeedNoteClip', 'Auto-split applies to note clips, not original audio.')); } catch (_e2) {}
+    return { ok: false, reason: 'audio_clip' };
+  }
+  const p2b = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+  const bpm = (p2b && p2b.bpm) ? p2b.bpm : (this.project && this.project.bpm ? this.project.bpm : 120);
+  let scoreForSplit = clip.score;
+  const tracks = scoreForSplit && scoreForSplit.tracks;
+  const looksBeat = tracks && tracks[0] && tracks[0].notes && tracks[0].notes[0]
+    && typeof tracks[0].notes[0].startBeat === 'number';
+  if (looksBeat && P && typeof P.scoreBeatToSec === 'function'){
+    try { scoreForSplit = P.scoreBeatToSec(scoreForSplit, bpm); } catch (_e3) { scoreForSplit = P.deepClone(clip.score); }
+  } else {
+    scoreForSplit = P.deepClone(clip.score);
+  }
+  scoreForSplit = P.ensureScoreIds(scoreForSplit);
+  const prefs = AutoSplit.loadPrefs();
+  const plan = AutoSplit.planClipSegments(scoreForSplit, prefs);
+  if (!plan || plan.length <= 1){
+    try { alert(_t('cliplib.autoSplitNoNeed', 'This clip is already short enough; no split needed.')); } catch (_e4) {}
+    return { ok: false, reason: 'no_split_needed' };
+  }
+  let confirmMsg = _t('cliplib.confirmAutoSplit', 'Split this clip into {n} shorter clips? This is not audio stem separation.').replace('{n}', String(plan.length));
+  if (Preview && typeof Preview.summarizePlan === 'function' && typeof Preview.formatPlanSummaryText === 'function'){
+    confirmMsg += '\n\n' + Preview.formatPlanSummaryText(Preview.summarizePlan(plan, P));
+  }
+  if (opts.skipConfirm !== true){
+    const ok = (typeof window !== 'undefined' && typeof window.confirm === 'function') ? window.confirm(confirmMsg) : true;
+    if (!ok) return { ok: false, reason: 'cancelled' };
+  }
+  const insts = (this.project.instances || []).filter((i) => i && i.clipId === id);
+  const inst = insts.length === 1 ? insts[0] : (insts[0] || null);
+  const placeStartSec = inst ? Number(inst.startSec) || 0 : (this.project.ui.playheadSec || 0);
+  const placeTrackIndex = inst ? Math.floor(Number(inst.trackIndex) || 0) : this.resolveDefaultPlacementTrackIndex();
+  const baseName = String(clip.name || 'Clip').replace(/ · \d+$/, '').replace(/ \(extract\)$/, '').replace(/ \(selection\)$/, '');
+  if (opts.captureUndo !== false) this.captureTimelineUndo('auto_split_clip');
+  this.project.instances = (this.project.instances || []).filter((i) => !i || i.clipId !== id);
+  this.project.clips = (this.project.clips || []).filter((c) => !c || c.id !== id);
+  if (this.state.selectedClipId === id){
+    this.state.selectedClipId = null;
+    this.state.selectedClipIds = [];
+  }
+  if (this.state.selectedInstanceId && insts.some((i) => i && i.id === this.state.selectedInstanceId)){
+    this.state.selectedInstanceId = null;
+  }
+  const res = this._materializeScoreDocToTimeline(scoreForSplit, {
+    autoSplit: true,
+    baseName,
+    playheadSec: placeStartSec,
+    placeTrackIndex,
+    prefs,
+  });
+  if (res && res.ok && res.clipIds && res.clipIds.length){
+    this._setSelectedClipIds(res.clipIds, res.clipIds[0]);
+  }
+  persist();
+  this.render();
+  log('Auto-split: ' + ((res && res.clipCount) || 0) + ' clips.');
+  return res || { ok: false, reason: 'materialize_failed' };
+},
+resolvePlacementAnchorSec(anchor){
+  const Seq = (typeof window !== 'undefined') ? window.H2STimelineSequencePlace : null;
+  if (!Seq || typeof Seq.resolvePlacementAnchorSec !== 'function') {
+    return Math.max(0, Number(this.project.ui && this.project.ui.playheadSec) || 0);
+  }
+  return Seq.resolvePlacementAnchorSec(anchor || this.state.placementAnchor || 'playhead', {
+    project: this.project,
+    selectedInstanceId: this.state.selectedInstanceId,
+    H2SProject: window.H2SProject,
+  });
+},
+resolveDefaultPlacementTrackIndex(){
+  const tracks = this.project.tracks || [];
+  for (let i = 0; i < tracks.length; i++){
+    if (tracks[i] && tracks[i].role === 'accompaniment') return i;
+  }
+  return Number.isFinite(this.state.activeTrackIndex) ? this.state.activeTrackIndex : 0;
+},
+placeClipsInSequence(clipIds, opts){
+  opts = opts || {};
+  const Seq = (typeof window !== 'undefined') ? window.H2STimelineSequencePlace : null;
+  const SG = (typeof window !== 'undefined') ? window.H2SClipSplitGroup : null;
+  if (!Seq || typeof Seq.planSequentialPlacements !== 'function') return { ok: false, reason: 'api_missing' };
+  const ids = Array.isArray(clipIds) && clipIds.length ? clipIds.slice() : this.getSelectedClipIds();
+  if (!ids.length) return { ok: false, reason: 'no_selection' };
+  const anchor = opts.anchor || this.state.placementAnchor || 'playhead';
+  const plan = Seq.planSequentialPlacements(this.project, ids, {
+    anchor: anchor,
+    anchorSec: opts.anchorSec,
+    gapSec: opts.gapSec,
+    trackIndex: opts.trackIndex,
+    selectedInstanceId: this.state.selectedInstanceId,
+  }, window.H2SProject);
+  if (!plan || !plan.ok || !plan.placements || !plan.placements.length) return { ok: false, reason: 'plan_failed' };
+  const trackIndex = (opts.trackIndex != null && isFinite(Number(opts.trackIndex)))
+    ? Math.floor(Number(opts.trackIndex))
+    : this.resolveDefaultPlacementTrackIndex();
+  const batchId = Seq.generatePlacementBatchId ? Seq.generatePlacementBatchId() : ('pb_' + Date.now());
+  const groupId = (SG && SG.clipsShareSplitGroup)
+    ? SG.clipsShareSplitGroup(Seq.resolveClipsForSequence(this.project, ids))
+    : null;
+  this.captureTimelineUndo('place_clips_in_sequence');
+  const created = [];
+  for (let pi = 0; pi < plan.placements.length; pi++){
+    const p = plan.placements[pi];
+    this.addClipToTimeline(p.clipId, p.startSec, trackIndex, { skipPersistRender: true, skipTimelineUndo: true });
+    const inst = (this.project.instances || [])[(this.project.instances || []).length - 1];
+    if (inst){
+      inst.placementBatchId = batchId;
+      if (groupId) inst.groupId = groupId;
+      created.push(inst.id);
+    }
+  }
+  persist();
+  this.render();
+  log('Placed ' + plan.placements.length + ' clips in sequence.');
+  return { ok: true, instanceIds: created, batchId: batchId, placements: plan.placements };
+},
+compactSelectedInstances(opts){
+  opts = opts || {};
+  const Seq = (typeof window !== 'undefined') ? window.H2STimelineSequencePlace : null;
+  if (!Seq || typeof Seq.compactInstancesOnTrack !== 'function') return { ok: false, reason: 'api_missing' };
+  const instId = this.state.selectedInstanceId;
+  const inst = instId ? (this.project.instances || []).find((i) => i && i.id === instId) : null;
+  let targets = [];
+  if (opts.batchId){
+    targets = (this.project.instances || []).filter((i) => i && i.placementBatchId === opts.batchId);
+  } else if (inst && inst.groupId){
+    targets = (this.project.instances || []).filter((i) => i && i.groupId === inst.groupId);
+  } else if (instId){
+    targets = [(this.project.instances || []).find((i) => i && i.id === instId)].filter(Boolean);
+  }
+  if (!targets.length) return { ok: false, reason: 'no_targets' };
+  const trackIndexes = {};
+  for (const t of targets) trackIndexes[Math.floor(Number(t.trackIndex || 0))] = true;
+  this.captureTimelineUndo('compact_instances');
+  const updates = [];
+  for (const ti of Object.keys(trackIndexes)){
+    updates.push.apply(updates, Seq.compactInstancesOnTrack(this.project.instances, this.project, Number(ti), opts.gapSec, window.H2SProject));
+  }
+  persist();
+  this.render();
+  return { ok: true, updates: updates };
+},
+repeatSelectedInstances(repeatCount, opts){
+  opts = opts || {};
+  repeatCount = Math.max(1, Math.min(8, Math.floor(Number(repeatCount) || 1)));
+  const Seq = (typeof window !== 'undefined') ? window.H2STimelineSequencePlace : null;
+  if (!Seq) return { ok: false, reason: 'api_missing' };
+  const selId = this.state.selectedInstanceId;
+  const selInst = selId ? (this.project.instances || []).find((i) => i && i.id === selId) : null;
+  let sourceInsts = [];
+  if (selInst && selInst.groupId){
+    sourceInsts = (this.project.instances || []).filter((i) => i && i.groupId === selInst.groupId);
+  } else if (selInst){
+    sourceInsts = [selInst];
+  }
+  if (!sourceInsts.length) return { ok: false, reason: 'no_selection' };
+  sourceInsts.sort((a, b) => (Number(a.startSec) || 0) - (Number(b.startSec) || 0));
+  const template = sourceInsts.map((inst) => {
+    const clip = Seq.findClip(this.project, inst.clipId);
+    const SG = window.H2SClipSplitGroup;
+    const span = SG ? SG.getClipPlacementSpanSec(clip, window.H2SProject) : 0;
+    return { clipId: inst.clipId, startSec: inst.startSec, spanSec: span };
+  });
+  const repeated = Seq.repeatPlacementsTemplate(template, repeatCount, opts.gapSec);
+  if (!repeated.length) return { ok: false, reason: 'repeat_failed' };
+  const trackIndex = Math.floor(Number(sourceInsts[0].trackIndex) || 0);
+  const batchId = Seq.generatePlacementBatchId();
+  const groupId = selInst && selInst.groupId ? selInst.groupId : batchId;
+  this.captureTimelineUndo('repeat_instances');
+  const created = [];
+  for (let i = 0; i < repeated.length; i++){
+    const p = repeated[i];
+    this.addClipToTimeline(p.clipId, p.startSec, trackIndex, { skipPersistRender: true, skipTimelineUndo: true });
+    const inst = (this.project.instances || [])[(this.project.instances || []).length - 1];
+    if (inst){
+      inst.placementBatchId = batchId;
+      inst.groupId = groupId;
+      created.push(inst.id);
+    }
+  }
+  persist();
+  this.render();
+  return { ok: true, instanceIds: created };
+},
+getTimelinePxPerBeat(){
+  const p2 = this.getProjectV2();
+  if (p2 && p2.ui && typeof p2.ui.pxPerBeat === 'number' && p2.ui.pxPerBeat > 0) return p2.ui.pxPerBeat;
+  const bpm = (this.project && this.project.bpm) ? this.project.bpm : 120;
+  const pxPerSec = (this.project.ui && this.project.ui.pxPerSec) ? this.project.ui.pxPerSec : 160;
+  const P = window.H2SProject;
+  if (P && typeof P.pxPerSecToPxPerBeat === 'function') return P.pxPerSecToPxPerBeat(pxPerSec, bpm);
+  return 240;
+},
+setTimelinePxPerBeat(nextPxPerBeat){
+  const p2 = this.getProjectV2() || _projectV1ToV2(this.project);
+  if (!p2) return { ok: false };
+  const lo = 24;
+  const hi = 640;
+  const val = Math.max(lo, Math.min(hi, Number(nextPxPerBeat) || 240));
+  p2.ui = p2.ui || {};
+  p2.ui.pxPerBeat = val;
+  this.setProjectFromV2(p2);
+  return { ok: true, pxPerBeat: val };
+},
+adjustTimelineZoom(deltaFactor){
+  const cur = this.getTimelinePxPerBeat();
+  const next = cur * (Number(deltaFactor) || 1);
+  return this.setTimelinePxPerBeat(next);
+},
+fitTimelineZoomToProject(){
+  const Seq = (typeof window !== 'undefined') ? window.H2STimelineSequencePlace : null;
+  const SG = window.H2SClipSplitGroup;
+  let endSec = 8;
+  for (const inst of (this.project.instances || [])){
+    if (!inst) continue;
+    const end = Seq && typeof Seq.getInstanceEndSec === 'function'
+      ? Seq.getInstanceEndSec(inst, this.project, window.H2SProject)
+      : ((Number(inst.startSec) || 0) + 4);
+    if (end > endSec) endSec = end;
+  }
+  const timelineEl = (typeof document !== 'undefined') ? document.querySelector('.timeline') : null;
+  const width = timelineEl ? Math.max(320, timelineEl.clientWidth - 120) : 960;
+  const bpm = this.project.bpm || 120;
+  const pxPerSecTarget = width / Math.max(4, endSec);
+  const P = window.H2SProject;
+  const pxPerBeat = P && typeof P.pxPerSecToPxPerBeat === 'function'
+    ? P.pxPerSecToPxPerBeat(pxPerSecTarget, bpm)
+    : pxPerSecTarget * 60 / bpm;
+  return this.setTimelinePxPerBeat(pxPerBeat);
+},
+setTrackRole(trackIndex, role){
+  const p2 = this.getProjectV2() || _projectV1ToV2(this.project);
+  if (!p2 || !Array.isArray(p2.tracks)) return { ok: false };
+  const ti = Math.max(0, Math.floor(Number(trackIndex) || 0));
+  if (!p2.tracks[ti]) return { ok: false };
+  p2.tracks[ti].role = role ? String(role) : undefined;
+  this.setProjectFromV2(p2);
+  return { ok: true };
+},
+offerAccompanimentSplitPipeline(result, anchorInstanceId){
+  const summary = result && result.summary ? result.summary : {};
+  const createdClipIds = Array.isArray(summary.createdClipIds) ? summary.createdClipIds.slice() : [];
+  if (!createdClipIds.length) return { ok: false, reason: 'no_clips' };
+  const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, fb) => (fb || k);
+  const msg = _t('arrange.promptSplitPlace', 'Split accompaniment into bar segments and place sequentially on the timeline?');
+  const ok = (typeof window !== 'undefined' && typeof window.confirm === 'function') ? window.confirm(msg) : false;
+  if (!ok) return { ok: false, reason: 'cancelled' };
+  const AutoSplit = window.H2SClipAutoSplit;
+  const P = window.H2SProject;
+  if (!AutoSplit || !P) return { ok: false, reason: 'api_missing' };
+  const anchorInst = anchorInstanceId
+    ? (this.project.instances || []).find((i) => i && String(i.id) === String(anchorInstanceId))
+    : null;
+  if (anchorInst) this.state.selectedInstanceId = anchorInst.id;
+  this.state.placementAnchor = 'selectionEnd';
+  const allNewIds = [];
+  for (let ci = 0; ci < createdClipIds.length; ci++){
+    const clipId = createdClipIds[ci];
+    const clip = (this.project.clips || []).find((c) => c && String(c.id) === String(clipId));
+    if (!clip || !clip.score) continue;
+    const prefs = Object.assign({}, AutoSplit.loadPrefs(), { splitByPhrase: false, splitByBar: true, splitByPitchRange: false });
+    const plan = AutoSplit.planClipSegments(P.ensureScoreIds(P.deepClone(clip.score)), prefs);
+    if (!plan || plan.length <= 1) {
+      allNewIds.push(clipId);
+      continue;
+    }
+    const insts = (this.project.instances || []).filter((i) => i && i.clipId === clipId);
+    const startSec = insts[0] ? Number(insts[0].startSec) || 0 : this.resolvePlacementAnchorSec('selectionEnd');
+    const trackIndex = insts[0] ? Number(insts[0].trackIndex) || 0 : this.resolveDefaultPlacementTrackIndex();
+    for (const inst of insts) {
+      this.project.instances = (this.project.instances || []).filter((i) => i && i.id !== inst.id);
+    }
+    this.project.clips = (this.project.clips || []).filter((c) => c && c.id !== clipId);
+    const ctx = {
+      project: this.project,
+      H2SProject: P,
+      persist: () => {},
+      render: () => {},
+      addClipToTimeline: () => {},
+      playheadSec: startSec,
+    };
+    const mat = AutoSplit.materializePlannedClips(ctx, plan, { baseName: (clip.name || 'Accompaniment').replace(/ · \d+$/, ''), assignSplitGroup: true });
+    if (mat && mat.clipIds) allNewIds.push.apply(allNewIds, mat.clipIds);
+  }
+  persist();
+  if (allNewIds.length){
+    this._setSelectedClipIds(allNewIds, allNewIds[0]);
+    return this.placeClipsInSequence(allNewIds, { anchor: 'selectionEnd', trackIndex: this.resolveDefaultPlacementTrackIndex() });
+  }
+  return { ok: false, reason: 'split_failed' };
 },
 getSelectedInstanceId(){
   return (this.state && this.state.selectedInstanceId) ? this.state.selectedInstanceId : null;
@@ -3800,6 +4194,9 @@ rollbackClipRevision(clipId){
     state: {
       selectedInstanceId: null,
       selectedClipId: null,
+      selectedClipIds: [],
+      placementAnchor: 'playhead',
+      lastClipLibraryClickId: null,
       activeTrackIndex: 0,
       activeTrackId: null,
       draggingInstance: null,
@@ -4130,6 +4527,32 @@ if (typeof localStorage !== 'undefined') {
       if (btnCancelImport) btnCancelImport.addEventListener('click', () => { this.state.importCancelled = true; });
       this._initMasterVolumeUI();
       $('#btnPlayheadToStart').addEventListener('click', () => { this.project.ui.playheadSec = 0; persist(); this.render(); });
+      const btnTimelineZoomOut = $('#btnTimelineZoomOut');
+      const btnTimelineZoomIn = $('#btnTimelineZoomIn');
+      const btnTimelineZoomFit = $('#btnTimelineZoomFit');
+      if (btnTimelineZoomOut) btnTimelineZoomOut.addEventListener('click', () => { this.adjustTimelineZoom(0.85); });
+      if (btnTimelineZoomIn) btnTimelineZoomIn.addEventListener('click', () => { this.adjustTimelineZoom(1.18); });
+      if (btnTimelineZoomFit) btnTimelineZoomFit.addEventListener('click', () => { this.fitTimelineZoomToProject(); });
+      const selPlaceAnchor = $('#selPlaceAnchor');
+      if (selPlaceAnchor) selPlaceAnchor.addEventListener('change', () => { this.state.placementAnchor = selPlaceAnchor.value || 'playhead'; });
+      const btnSelectSplitGroup = $('#btnSelectSplitGroup');
+      if (btnSelectSplitGroup) btnSelectSplitGroup.addEventListener('click', () => { this.selectSplitGroupClips(this.getSelectedClipId()); this.render(); });
+      const btnAutoSplitClips = $('#btnAutoSplitClips');
+      if (btnAutoSplitClips) btnAutoSplitClips.addEventListener('click', () => { this.autoSplitClipById(this.getSelectedClipId()); });
+      const btnPlaceClipsSequence = $('#btnPlaceClipsSequence');
+      if (btnPlaceClipsSequence) btnPlaceClipsSequence.addEventListener('click', () => {
+        const anchor = (selPlaceAnchor && selPlaceAnchor.value) ? selPlaceAnchor.value : (this.state.placementAnchor || 'playhead');
+        this.placeClipsInSequence(this.getSelectedClipIds(), { anchor: anchor });
+      });
+      const btnCompactInstances = $('#btnCompactInstances');
+      if (btnCompactInstances) btnCompactInstances.addEventListener('click', () => { this.compactSelectedInstances(); });
+      const btnRepeatInstances = $('#btnRepeatInstances');
+      if (btnRepeatInstances) btnRepeatInstances.addEventListener('click', () => { this.repeatSelectedInstances(1); });
+      const selTrackRole = $('#selTrackRole');
+      if (selTrackRole) selTrackRole.addEventListener('change', () => {
+        const ti = Number.isFinite(this.state.activeTrackIndex) ? this.state.activeTrackIndex : 0;
+        this.setTrackRole(ti, selTrackRole.value || null);
+      });
 
       // PR-INS2c: Instrument Library (sampler baseUrl)
       this._initInstrumentLibraryUI();
@@ -4224,7 +4647,15 @@ $('#rngPitchCenter').addEventListener('input', () => {
             onEdit: (clipId) => this.openClipEditor(clipId),
             onRemove: (clipId) => this.deleteClip(clipId),
             onOptimize: (clipId) => this.optimizeClip(clipId),
-            onSelectClip: (clipId) => { this.state.selectedClipId = clipId; this.state.selectedInstanceId = null; this.render(); },
+            onSelectClip: (clipId) => {
+              if (!this.state.selectedClipIds || this.state.selectedClipIds.indexOf(String(clipId)) < 0){
+                this._setSelectedClipIds([clipId], clipId);
+              } else {
+                this.state.selectedClipId = clipId;
+              }
+              this.state.selectedInstanceId = null;
+              this.render();
+            },
           });
         }
       }catch(e){
@@ -4628,6 +5059,13 @@ addTrack(){
   this.state.activeTrackId = id;
   if (typeof this.setProjectFromV2 === 'function') this.setProjectFromV2(p2);
   else { this.project = p2; if (typeof this.persist === 'function') this.persist(); if (typeof this.render === 'function') this.render(); }
+},
+
+ensureTimelineTrackIndex(trackIndex){
+  const need = Math.max(1, Math.floor(Number(trackIndex) || 0) + 1);
+  while ((this.project && this.project.tracks ? this.project.tracks.length : 0) < need){
+    this.addTrack();
+  }
 },
 
 removeActiveTrack(){
@@ -5589,6 +6027,22 @@ ensureTrackButtons(){
       $('#kvClips').textContent = String(this.project.clips.length);
       $('#kvInst').textContent = String(this.project.instances.length);
       $('#inpBpm').value = this.project.bpm;
+      const lblTimelineZoom = $('#lblTimelineZoom');
+      if (lblTimelineZoom && typeof this.getTimelinePxPerBeat === 'function'){
+        const base = 240;
+        const cur = this.getTimelinePxPerBeat();
+        lblTimelineZoom.textContent = Math.round((cur / base) * 100) + '%';
+      }
+      const selPlaceAnchorEl = $('#selPlaceAnchor');
+      if (selPlaceAnchorEl && this.state.placementAnchor){
+        selPlaceAnchorEl.value = this.state.placementAnchor;
+      }
+      const selTrackRoleEl = $('#selTrackRole');
+      if (selTrackRoleEl){
+        const ti = Number.isFinite(this.state.activeTrackIndex) ? this.state.activeTrackIndex : 0;
+        const tr = (this.project.tracks && this.project.tracks[ti]) ? this.project.tracks[ti] : null;
+        selTrackRoleEl.value = (tr && tr.role) ? String(tr.role) : '';
+      }
 
       // PR-UX3b: Inspector progressive disclosure
       this.renderInspector();
@@ -6194,6 +6648,9 @@ renderTimeline(){
       this.setImportStatus(_t('arrange.addAccompanimentDone', 'Accompaniment added via LLM.'), false);
       log(_t('arrange.addAccompanimentDone', 'Accompaniment added via LLM.'));
       this.render();
+      if (result && result.ok && typeof this.offerAccompanimentSplitPipeline === 'function'){
+        try { this.offerAccompanimentSplitPipeline(result, instId); } catch (_e) { /* optional pipeline */ }
+      }
       return result;
     },
 
@@ -6277,11 +6734,12 @@ renderTimeline(){
 
     addClipToTimeline(clipId, startSec, trackIndex, opts){
       const skipPersistRender = opts && opts.skipPersistRender === true;
+      const skipTimelineUndo = opts && opts.skipTimelineUndo === true;
       const ti = (trackIndex == null) ? (Number.isFinite(this.state.activeTrackIndex) ? this.state.activeTrackIndex : 0) : trackIndex;
       const resolvedStart = (startSec != null && Number.isFinite(Number(startSec)))
         ? Math.max(0, Number(startSec))
         : Math.max(0, Number(this.project.ui && this.project.ui.playheadSec != null ? this.project.ui.playheadSec : 0));
-      this.captureTimelineUndo('add_clip_to_timeline');
+      if (!skipTimelineUndo) this.captureTimelineUndo('add_clip_to_timeline');
       const inst = H2SProject.createInstance(clipId, resolvedStart, ti);
       this.project.instances.push(inst);
       this.state.selectedInstanceId = inst.id;
@@ -7428,6 +7886,9 @@ renderTimeline(){
       const score = P.ensureScoreIds(P.deepClone(scoreForClip));
       this._lastHummingScoreDoc = score;
 
+      // Import / transcribe: single clip by default. Auto-split only when opts.autoSplit === true.
+      if (!opts.autoSplit) opts.forceSingleClip = true;
+
       let placeStartSec = (opts.placeStartSec != null && isFinite(Number(opts.placeStartSec)))
         ? Number(opts.placeStartSec)
         : (opts.playheadSec != null ? Number(opts.playheadSec) : (this.project.ui.playheadSec || 0));
@@ -7444,8 +7905,16 @@ renderTimeline(){
         );
         placeStartSec = pl.startSec;
         placeTrackIndex = pl.trackIndex;
+        if (typeof this.ensureTimelineTrackIndex === 'function'){
+          this.ensureTimelineTrackIndex(placeTrackIndex);
+        }
       }
 
+      const clampPlaceTrack = () => {
+        if (opts.sourceAudioClipId) return Math.max(0, Math.floor(placeTrackIndex));
+        const maxTi = Math.max(0, ((this.project.tracks || []).length) - 1);
+        return Math.max(0, Math.min(maxTi, Math.floor(placeTrackIndex)));
+      };
       const importBaseName = opts.baseName || 'Clip';
       const AutoSplit = (typeof window !== 'undefined') ? window.H2SClipAutoSplit : null;
       const matOpts = {
@@ -7459,8 +7928,10 @@ renderTimeline(){
       };
 
       if (opts.forceSingleClip){
-        const maxTi = Math.max(0, ((this.project.tracks || []).length) - 1);
-        placeTrackIndex = Math.max(0, Math.min(maxTi, Math.floor(placeTrackIndex)));
+        if (opts.placeTrackIndex != null && !opts.sourceAudioClipId && typeof this.ensureTimelineTrackIndex === 'function'){
+          this.ensureTimelineTrackIndex(placeTrackIndex);
+        }
+        placeTrackIndex = clampPlaceTrack();
         const clip = P.createClipFromScore(score, { name: importBaseName, sourceTaskId: opts.sourceTaskId || undefined });
         if (!clip.meta) clip.meta = {};
         if (typeof score.tempo_bpm === 'number') clip.meta.sourceTempoBpm = score.tempo_bpm;
@@ -7488,11 +7959,13 @@ renderTimeline(){
           render: () => this.render(),
           addClipToTimeline: (clipId, startSec, trackIdx, o) => this.addClipToTimeline(clipId, startSec, trackIdx, o),
           playheadSec: placeStartSec,
+          placeTrackIndex: placeTrackIndex,
         };
         const prefs = opts.prefs || AutoSplit.loadPrefs();
         const plan = AutoSplit.planClipSegments(score, prefs);
         const res = AutoSplit.materializePlannedClips(ctx, plan, matOpts);
         if (res && res.ok && res.clipIds && res.clipIds.length){
+          const ti = clampPlaceTrack();
           for (let ci = 0; ci < res.clipIds.length; ci++){
             const c = (this.project.clips || []).find((x) => x && x.id === res.clipIds[ci]);
             if (!c) continue;
@@ -7501,15 +7974,8 @@ renderTimeline(){
             else if (typeof score.bpm === 'number') c.meta.sourceTempoBpm = score.bpm;
             if (opts.sourceAudioClipId) c.meta.sourceAudioClipId = String(opts.sourceAudioClipId);
             if (opts.sourceAudioInstanceId) c.meta.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
-            if (res.clipIds.length === 1 && ci === 0){
-              const maxTi = Math.max(0, ((this.project.tracks || []).length) - 1);
-              const ti = Math.max(0, Math.min(maxTi, Math.floor(placeTrackIndex)));
-              const inst = (this.project.instances || []).find((ins) => ins && ins.clipId === c.id);
-              if (inst){
-                inst.startSec = placeStartSec;
-                inst.trackIndex = ti;
-              }
-            }
+            const inst = (this.project.instances || []).find((ins) => ins && ins.clipId === c.id);
+            if (inst) inst.trackIndex = ti;
           }
           persist();
           this.render();
@@ -7518,8 +7984,7 @@ renderTimeline(){
         }
       }
 
-      const maxTi = Math.max(0, ((this.project.tracks || []).length) - 1);
-      placeTrackIndex = Math.max(0, Math.min(maxTi, Math.floor(placeTrackIndex)));
+      placeTrackIndex = clampPlaceTrack();
       const clip = P.createClipFromScore(score, { name: importBaseName, sourceTaskId: opts.sourceTaskId || undefined });
       if (!clip.meta) clip.meta = {};
       if (typeof score.tempo_bpm === 'number') clip.meta.sourceTempoBpm = score.tempo_bpm;

@@ -64,6 +64,22 @@
     );
   }
 
+  function getSplitGroupApi() {
+    return (
+      (typeof globalThis !== 'undefined' && globalThis.H2SClipSplitGroup) ||
+      (typeof root !== 'undefined' && root.H2SClipSplitGroup) ||
+      null
+    );
+  }
+
+  function _segmentSourceSpanSec(barSeg) {
+    if (!barSeg) return null;
+    if (typeof barSeg.tMin === 'number' && typeof barSeg.tMax === 'number' && isFinite(barSeg.tMin) && isFinite(barSeg.tMax)) {
+      return Math.max(0, barSeg.tMax - barSeg.tMin);
+    }
+    return null;
+  }
+
   /**
    * Apply optional pitch-range split (advanced). Returns { score, pitchSplitApplied }.
    */
@@ -130,6 +146,7 @@
       var barSeg = segments[bi];
       var segScore = barSeg && barSeg.score;
       var segTMinAbs = barSeg && typeof barSeg.tMin === 'number' && isFinite(barSeg.tMin) ? barSeg.tMin : 0;
+      var sourceSpanSec = _segmentSourceSpanSec(barSeg);
       if (!segScore) continue;
 
       var explodeParts = null;
@@ -149,6 +166,7 @@
           out.push({
             score: scoreForPart,
             tMinAbs: segTMinAbs + tMinForPart,
+            sourceSpanSec: sourceSpanSec,
             trackName: part.trackName,
             splitIndex: part.splitIndex,
             pitchSplitApplied: true,
@@ -166,6 +184,7 @@
         out.push({
           score: singleScore,
           tMinAbs: segTMinAbs + tMinSingle,
+          sourceSpanSec: sourceSpanSec,
           pitchSplitApplied: pitchRes.pitchSplitApplied,
           barSegmentIndex: segments.length > 1 ? bi : undefined,
         });
@@ -189,6 +208,12 @@
     var playheadSec = ctx.playheadSec != null ? ctx.playheadSec : 0;
     var sourceTaskId = opts.sourceTaskId || null;
     var clipIds = [];
+    var SG = getSplitGroupApi();
+    var assignSplitGroup = plan.length > 1 || !!opts.assignSplitGroup;
+    var splitGroupId = assignSplitGroup && SG && typeof SG.generateSplitGroupId === 'function'
+      ? SG.generateSplitGroupId()
+      : null;
+    var splitCount = assignSplitGroup ? plan.length : 0;
 
     var maxTrackParts = 0;
     for (var i = 0; i < plan.length; i++) {
@@ -223,8 +248,24 @@
       clip.meta.autoSplit = true;
       clip.meta.autoSplitSource = 'phrase';
       if (item.barSegmentIndex != null) clip.meta.autoSplitBarSegment = item.barSegmentIndex;
+      if (assignSplitGroup && splitGroupId && SG && typeof SG.applySplitGroupMeta === 'function') {
+        var spanSec = null;
+        if (typeof item.sourceSpanSec === 'number' && isFinite(item.sourceSpanSec) && item.sourceSpanSec > 0) {
+          spanSec = item.sourceSpanSec;
+        }
+        SG.applySplitGroupMeta(clip, {
+          splitGroupId: splitGroupId,
+          splitIndex: j,
+          splitCount: splitCount,
+          splitSourceStartSec: typeof item.tMinAbs === 'number' ? item.tMinAbs : 0,
+          splitSourceSpanSec: spanSec,
+        });
+      }
 
-      var trackIndex = item.splitIndex != null ? item.splitIndex : 0;
+      var defaultTrack = (ctx.placeTrackIndex != null && isFinite(ctx.placeTrackIndex))
+        ? Math.max(0, Math.floor(Number(ctx.placeTrackIndex)))
+        : 0;
+      var trackIndex = item.splitIndex != null ? (defaultTrack + item.splitIndex) : defaultTrack;
       var instanceStartSec = playheadSec + (item.tMinAbs || 0);
       ctx.project.clips.unshift(clip);
       if (typeof ctx.addClipToTimeline === 'function') {

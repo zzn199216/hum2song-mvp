@@ -839,6 +839,19 @@
         }
       }
 
+      if (!ev.altKey){
+        const EdgeSnap = (typeof globalThis !== 'undefined' && globalThis.H2STimelineEdgeSnap)
+          || (typeof window !== 'undefined' && window.H2STimelineEdgeSnap)
+          || null;
+        if (EdgeSnap && typeof EdgeSnap.snapStartSecToInstanceEdges === 'function'){
+          startSec = EdgeSnap.snapStartSecToInstanceEdges(startSec, cand.instId, proj, {
+            pxPerSec: pxPerSec,
+            trackIndex: typeof inst.trackIndex === 'number' ? inst.trackIndex : cand.originTrackIndex,
+            H2SProject: (typeof window !== 'undefined' && window.H2SProject) ? window.H2SProject : null,
+          });
+        }
+      }
+
       inst.startSec = startSec;
 
       // Update DOM in-place (NO full render!)

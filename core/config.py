@@ -120,8 +120,8 @@ class Settings(BaseSettings):
         # Duration clamp: keep MVP responsive
         if self.max_audio_seconds <= 0:
             self.max_audio_seconds = 20
-        elif self.max_audio_seconds > 60:
-            self.max_audio_seconds = 60
+        elif self.max_audio_seconds > 3600:
+            self.max_audio_seconds = 3600
 
         # Sample rate sanity: allow user override, but prevent nonsense
         # ⚠️ CRITICAL FIX: Ensure fallback aligns with default (22050)

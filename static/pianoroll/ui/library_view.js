@@ -110,9 +110,10 @@
     }
   }
 
-function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId, audioConvertState){
+function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPreset, selectedClipId, audioConvertState, multiSelectOpts){
     clip = clip || {};
     stats = stats || {};
+    multiSelectOpts = multiSelectOpts || {};
     fmtSec = (typeof fmtSec === 'function') ? fmtSec : _defaultFmtSec;
     escapeHtml = (typeof escapeHtml === 'function') ? escapeHtml : _defaultEscapeHtml;
 
@@ -121,11 +122,15 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
     const t = (win && win.I18N && typeof win.I18N.t === 'function') ? (k) => win.I18N.t(k) : (k) => (_tDefaults[k] !== undefined ? _tDefaults[k] : k);
 
     const id = escapeHtml(clip.id || '');
-    const isSelected = selectedClipId && String(clip.id || '') === String(selectedClipId);
+    const selectedIds = Array.isArray(multiSelectOpts.selectedClipIds) ? multiSelectOpts.selectedClipIds.map(String) : [];
+    const isMulti = selectedIds.indexOf(String(clip.id || '')) >= 0;
+    const isSelected = isMulti || (selectedClipId && String(clip.id || '') === String(selectedClipId));
     const presetVal = (selectedPreset != null && selectedPreset !== '') ? String(selectedPreset) : '';
     const presetLabel = presetVal === 'dynamics_accent' ? t('opt.dynamicsAccent') : presetVal === 'dynamics_level' ? t('opt.dynamicsLevel') : presetVal === 'duration_gentle' ? t('opt.durationGentle') : t('cliplib.default');
     const rawName = String(clip.name || 'Untitled');
-    const name = escapeHtml(rawName);
+    const SG = (win && win.H2SClipSplitGroup) ? win.H2SClipSplitGroup : null;
+    const splitBadge = SG && typeof SG.formatSplitGroupBadge === 'function' ? SG.formatSplitGroupBadge(clip) : '';
+    const name = escapeHtml(rawName + splitBadge);
     const notes = Number(stats.count ?? stats.notes ?? 0) || 0;
     const spanSec = Number(stats.spanSec ?? 0) || 0;
     const isAudio = (clip.kind === 'audio');
@@ -271,7 +276,7 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
         );
 
     return (
-      `<div class="clip-card clipCard${isSelected ? ' clipSelected' : ''}${isAudio ? ' clip-card-audio' : ''}" data-clip-id="${id}" data-clip-kind="${isAudio ? 'audio' : 'note'}">` +
+      `<div class="clip-card clipCard${isSelected ? ' clipSelected' : ''}${isMulti && selectedIds.length > 1 ? ' clipMultiSelected' : ''}${isAudio ? ' clip-card-audio' : ''}" data-clip-id="${id}" data-clip-kind="${isAudio ? 'audio' : 'note'}">` +
         `<div class="clip-title">${isAudio ? ('<span class="clip-badge">' + escapeHtml(t('cliplib.badgeAudio') || 'Original audio') + '</span> ') : ''}` +
           `<input type="text" class="clip-name-input" data-act="clipName" data-id="${id}" data-initial-value="${name}" value="${name}" aria-label="${escapeHtml(t('cliplib.renameClip'))}" />` +
         `</div>` +

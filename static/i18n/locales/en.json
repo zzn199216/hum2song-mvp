@@ -407,6 +407,11 @@
   "cliplib.default": "Default",
   "cliplib.lastOptimized": "Last optimized",
   "cliplib.last": "Last",
+  "cliplib.autoSplit": "Auto-split",
+  "cliplib.confirmAutoSplit": "Split this clip into {n} shorter clips? This is not audio stem separation.",
+  "cliplib.autoSplitNoNeed": "This clip is already short enough; no split needed.",
+  "cliplib.autoSplitNeedSelection": "Select a note clip in the library first.",
+  "cliplib.autoSplitNeedNoteClip": "Auto-split applies to note clips, not original audio.",
 
   "lastOpt.label": "Last optimize",
   "lastOpt.none": "No run yet",

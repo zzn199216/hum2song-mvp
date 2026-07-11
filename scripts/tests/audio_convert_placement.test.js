@@ -41,8 +41,36 @@ function baseProject(playheadSec){
   assert.strictEqual(r.aligned, true);
   assert.strictEqual(r.reason, 'single_source_instance');
   assert.strictEqual(r.startSec, 4.5);
-  assert.strictEqual(r.trackIndex, 2);
-  console.log('PASS single instance → aligned placement');
+  assert.strictEqual(r.trackIndex, 3, 'note clip goes to empty track below source');
+  assert.strictEqual(r.sourceTrackIndex, 2);
+  console.log('PASS single instance → aligned placement below source');
+})();
+
+(function testSingleInstanceUsesEmptyTrackBelowWhenPresent(){
+  const proj = baseProject(0);
+  proj.clips = [{ id: 'audio_a', name: 'A' }];
+  proj.instances = [
+    { id: 'i1', clipId: 'audio_a', startSec: 1, trackIndex: 0 },
+    { id: 'i2', clipId: 'other', startSec: 2, trackIndex: 2 },
+  ];
+  const r = H2SProject.resolveAudioConvertPlacementV1(proj, 'audio_a', 0, 0);
+  assert.strictEqual(r.trackIndex, 1, 'reuses empty Track 2 below source');
+  assert.strictEqual(r.needsNewTrack, false);
+  console.log('PASS single instance → reuses first empty track below');
+})();
+
+(function testSingleInstanceCreatesTrackIndexWhenAllBelowOccupied(){
+  const proj = baseProject(0);
+  proj.clips = [{ id: 'audio_a', name: 'A' }, { id: 'b', name: 'B' }];
+  proj.instances = [
+    { id: 'i1', clipId: 'audio_a', startSec: 0, trackIndex: 0 },
+    { id: 'i2', clipId: 'b', startSec: 0, trackIndex: 1 },
+    { id: 'i3', clipId: 'b', startSec: 0, trackIndex: 2 },
+  ];
+  const r = H2SProject.resolveAudioConvertPlacementV1(proj, 'audio_a', 0, 0);
+  assert.strictEqual(r.trackIndex, 3, 'needs new track when all below are occupied');
+  assert.strictEqual(r.needsNewTrack, true);
+  console.log('PASS single instance → new track index when no empty track below');
 })();
 
 (function testZeroInstancesFallback(){
@@ -83,8 +111,8 @@ function baseProject(playheadSec){
   assert.strictEqual(r.aligned, true);
   assert.strictEqual(r.reason, 'explicit_source_instance');
   assert.strictEqual(r.startSec, 5);
-  assert.strictEqual(r.trackIndex, 1);
-  console.log('PASS explicit instance id → aligned despite multiple');
+  assert.strictEqual(r.trackIndex, 2, 'explicit instance on track 1 → note on track 2');
+  console.log('PASS explicit instance id → aligned below source despite multiple');
 })();
 
 (function testAppWiringStrings(){
@@ -98,6 +126,7 @@ function baseProject(playheadSec){
     /resolveAudioConvertPlacementV1/.test(appSrc) && /opts\.sourceAudioClipId/.test(appSrc),
     'uploadFileAndGenerate uses resolveAudioConvertPlacementV1 when opts.sourceAudioClipId set'
   );
+  assert(/ensureTimelineTrackIndex/.test(appSrc), 'materialize ensures timeline tracks for audio convert placement');
   assert(/opts\.sourceAudioInstanceId/.test(appSrc), 'upload passes optional sourceAudioInstanceId to placement');
   assert(/clip\.meta\.sourceAudioClipId/.test(appSrc), 'new clip meta gets sourceAudioClipId on conversion');
   assert(/clip\.meta\.sourceAudioInstanceId/.test(appSrc), 'new clip meta gets sourceAudioInstanceId when instance-scoped');

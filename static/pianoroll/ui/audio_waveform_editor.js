@@ -5,7 +5,7 @@
   'use strict';
 
   var MIN_SELECT_SEC = 2;
-  var MAX_SELECT_SEC = 60;
+  var MAX_SELECT_SEC = 3600;
   var DEFAULT_PEAKS = 900;
 
   function _num(x, fb) {
@@ -28,12 +28,13 @@
       end = start + MIN_SELECT_SEC;
       dur = MIN_SELECT_SEC;
     }
-    if (dur > MAX_SELECT_SEC) {
-      end = start + MAX_SELECT_SEC;
-      dur = MAX_SELECT_SEC;
+    var maxSec = total > 0 ? total : MAX_SELECT_SEC;
+    if (dur > maxSec) {
+      end = start + maxSec;
+      dur = maxSec;
       if (total > 0 && end > total) {
         end = total;
-        start = Math.max(0, end - MAX_SELECT_SEC);
+        start = Math.max(0, end - maxSec);
         dur = end - start;
       }
     }

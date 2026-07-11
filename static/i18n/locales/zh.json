@@ -407,6 +407,11 @@
   "cliplib.default": "默认",
   "cliplib.lastOptimized": "上次优化",
   "cliplib.last": "上次",
+  "cliplib.autoSplit": "自动拆轨",
+  "cliplib.confirmAutoSplit": "将此片段拆成 {n} 个较短片段？这不是音频分轨（stem separation）。",
+  "cliplib.autoSplitNoNeed": "此片段已足够短，无需拆分。",
+  "cliplib.autoSplitNeedSelection": "请先在音乐库中选择一个音符片段。",
+  "cliplib.autoSplitNeedNoteClip": "自动拆轨仅适用于音符片段，不适用于原始音频。",
 
   "lastOpt.label": "上次优化",
   "lastOpt.none": "尚无记录",
