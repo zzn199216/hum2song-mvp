@@ -784,6 +784,7 @@
   "instrument.name.drums": "Drums",
   "instrument.name.sampledPiano": "Sampled Piano",
   "instrument.name.sampledStrings": "Sampled Strings",
+  "instrument.name.sampledViolin": "Sampled Violin",
   "instrument.name.sampledBass": "Sampled Bass",
   "instrument.name.sampledGuitarAcoustic": "Sampled Acoustic Guitar",
   "instrument.name.sampledGuitarElectric": "Sampled Electric Guitar",
@@ -795,6 +796,7 @@
   "instrument.description.drums": "Built-in drum kit",
   "instrument.description.sampledPiano": "Built-in sampled piano",
   "instrument.description.sampledStrings": "Built-in sampled strings",
+  "instrument.description.sampledViolin": "Built-in sampled violin",
   "instrument.description.sampledBass": "Built-in sampled bass",
   "instrument.description.sampledGuitarAcoustic": "Built-in sampled acoustic guitar",
   "instrument.description.sampledGuitarElectric": "Built-in sampled electric guitar",
@@ -803,7 +805,12 @@
   "instrument.category.synth": "Synth",
   "instrument.category.pluck": "Pluck",
   "instrument.category.drums": "Drums",
+  "instrument.category.strings": "Strings",
+  "instrument.category.guitar": "Guitar",
   "instrument.category.sampled": "Sampled",
+  "instrument.category.other": "Other",
   "instrument.category.unknown": "Unknown",
+  "instrument.search.placeholder": "Search instruments",
+  "instrument.search.empty": "No matching instruments",
   "instrument.missing": "Missing instrument"
 }

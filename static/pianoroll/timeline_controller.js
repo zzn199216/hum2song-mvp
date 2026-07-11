@@ -531,9 +531,25 @@
           const instWrap = document.createElement('div');
           instWrap.className = 'trackInstWrap';
           instWrap.style.display = 'flex';
-          instWrap.style.alignItems = 'center';
-          instWrap.style.gap = '6px';
+          instWrap.style.flexDirection = 'column';
+          instWrap.style.alignItems = 'stretch';
+          instWrap.style.gap = '4px';
 
+          const search = document.createElement('input');
+          search.type = 'search';
+          search.className = 'trackInstrumentSearch';
+          search.placeholder = _t('instrument.search.placeholder');
+          search.title = _t('instrument.search.placeholder');
+          search.autocomplete = 'off';
+          search.spellcheck = false;
+          search.style.width = '100%';
+          search.style.boxSizing = 'border-box';
+          search.style.fontSize = '11px';
+          search.style.padding = '4px 6px';
+          search.style.border = '1px solid var(--border)';
+          search.style.borderRadius = '6px';
+          search.style.background = 'rgba(0,0,0,.18)';
+          search.style.color = 'var(--text)';
           const sel = document.createElement('select');
           sel.className = 'trackInstrumentSelect';
           var manifestApi = (typeof window !== 'undefined') ? window.H2SInstrumentManifest : null;
@@ -554,6 +570,85 @@
             ];
           var custom = (typeof window !== 'undefined' && window.__h2s_custom_instruments) ? window.__h2s_custom_instruments : [];
           var currentInstrumentValue = (track && typeof track.instrument === 'string' && track.instrument) ? track.instrument : 'default';
+          function optionLabelV1(option){
+            var key = option.labelKey || option.l;
+            var fallback = option.label || option.displayName || option.value || option.v || '';
+            return key ? _t(key) : fallback;
+          }
+          function optionSearchTextV1(option){
+            var parts = [
+              option.value || option.v,
+              option.label || option.displayName,
+              option.category,
+              option.kind,
+              option.source,
+              option.engine,
+              option.samplerPackId,
+            ];
+            if (option.labelKey || option.l) parts.push(_t(option.labelKey || option.l));
+            if (Array.isArray(option.tags)) parts = parts.concat(option.tags);
+            if (Array.isArray(option.aliases)) parts = parts.concat(option.aliases);
+            return parts.filter(Boolean).join(' ').toLowerCase();
+          }
+          function categoryLabelV1(category, key){
+            if (key) return _t(key);
+            if (manifestApi && typeof manifestApi.getCategoryLabelKey === 'function') return _t(manifestApi.getCategoryLabelKey(category || 'other'));
+            return category || _t('instrument.category.unknown');
+          }
+          function customOptionLabelV1(c){
+            var raw = (c.displayName || c.packId || '');
+            var stripped = raw.replace(/^Custom:\s*/i, '').trim() || raw;
+            return _t('inst.customPrefix') + stripped;
+          }
+          function renderInstrumentOptionsV1(query){
+            var q = String(query || '').trim().toLowerCase();
+            var hasCurrent = false;
+            var html = '';
+            var byCategory = {};
+            var categoryOrder = [];
+            for (var bi = 0; bi < builtin.length; bi++){
+              var x = builtin[bi];
+              var value = x.value || x.v;
+              if (!value) continue;
+              var matches = !q || optionSearchTextV1(x).indexOf(q) >= 0;
+              if (!matches && value !== currentInstrumentValue) continue;
+              if (value === currentInstrumentValue) hasCurrent = true;
+              var cat = x.category || 'other';
+              if (!byCategory[cat]){
+                byCategory[cat] = { label: categoryLabelV1(cat, x.categoryLabelKey), options: [] };
+                categoryOrder.push(cat);
+              }
+              byCategory[cat].options.push('<option value="' + ctrl._escapeHtml(value) + '">' + ctrl._escapeHtml(optionLabelV1(x)) + '</option>');
+            }
+            for (var ci = 0; ci < categoryOrder.length; ci++){
+              var catKey = categoryOrder[ci];
+              var group = byCategory[catKey];
+              if (!group || !group.options.length) continue;
+              html += '<optgroup label="' + ctrl._escapeHtml(group.label) + '">' + group.options.join('') + '</optgroup>';
+            }
+            if (custom.length){
+              var customHtml = '';
+              for (var i = 0; i < custom.length; i++){
+                var c = custom[i];
+                var val = (c.kind === 'oneshot') ? ('oneshot:' + c.packId) : ('sampler:' + c.packId);
+                var displayLabel = customOptionLabelV1(c);
+                var hay = [val, displayLabel, c.kind, c.packId].filter(Boolean).join(' ').toLowerCase();
+                if (q && hay.indexOf(q) < 0 && val !== currentInstrumentValue) continue;
+                if (val === currentInstrumentValue) hasCurrent = true;
+                customHtml += '<option value="' + ctrl._escapeHtml(val) + '">' + ctrl._escapeHtml(displayLabel) + '</option>';
+              }
+              if (customHtml) html += '<optgroup label="' + ctrl._escapeHtml(_t('inst.myInstruments')) + '">' + customHtml + '</optgroup>';
+            }
+            if (currentInstrumentValue && !hasCurrent){
+              var missingLabel = _t('instrument.missing') + ': ' + currentInstrumentValue;
+              html += '<option value="' + ctrl._escapeHtml(currentInstrumentValue) + '">' + ctrl._escapeHtml(missingLabel) + '</option>';
+            }
+            if (!html){
+              html = '<option value="' + ctrl._escapeHtml(currentInstrumentValue) + '">' + ctrl._escapeHtml(_t('instrument.search.empty')) + '</option>';
+            }
+            sel.innerHTML = html;
+            sel.value = currentInstrumentValue;
+          }
           var hasCurrentInstrumentOption = false;
           var opts = builtin.map(x=>{
             var value = x.value || x.v;
@@ -580,8 +675,15 @@
           }
           sel.innerHTML = opts;
           sel.value = currentInstrumentValue;
+          renderInstrumentOptionsV1('');
           sel.title = _t('trackpanel.instrument');
           sel.style.width = '100%';
+          search.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
+          search.addEventListener('click', (e)=>{ e.stopPropagation(); });
+          search.addEventListener('input', (e)=>{
+            e.stopPropagation();
+            renderInstrumentOptionsV1(search.value);
+          });
           sel.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
           sel.addEventListener('click', (e)=>{ e.stopPropagation(); });
           sel.addEventListener('change', (e)=>{
@@ -591,6 +693,7 @@
               window.H2SApp.setTrackInstrument(tid, sel.value);
             }
           });
+          instWrap.appendChild(search);
           instWrap.appendChild(sel);
           label.appendChild(instWrap);
 

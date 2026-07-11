@@ -81,6 +81,23 @@
   function normalizeInstrument(instr){
     if (typeof instr === 'string' && instr.trim()){
       const s = instr.trim();
+      const registry = (typeof window !== 'undefined' && window.H2SInstrumentManifest)
+        ? window.H2SInstrumentManifest
+        : ((typeof globalThis !== 'undefined' && globalThis.H2SInstrumentManifest) ? globalThis.H2SInstrumentManifest : null);
+      if (registry && typeof registry.resolveInstrument === 'function'){
+        const resolved = registry.resolveInstrument(s);
+        if (resolved && !resolved.missing){
+          if (resolved.kind === 'sampler' && resolved.samplerPackId){
+            return { kind: 'sampler', packId: resolved.samplerPackId, params: {} };
+          }
+          if (resolved.kind === 'oneshot' && resolved.samplerPackId){
+            return { kind: 'oneshot', packId: resolved.samplerPackId, params: {} };
+          }
+          if ((resolved.kind === 'tone_synth' || resolved.kind === 'drum') && resolved.presetId){
+            return { kind: 'tone_synth', presetId: resolved.presetId, params: {} };
+          }
+        }
+      }
       if (s.indexOf('sampler:') === 0){
         const packId = s.slice(8).trim() || 'tonejs:piano';
         return { kind: 'sampler', packId: packId, params: {} };
@@ -121,6 +138,14 @@
       subdirAliases: ['strings'],
       requiredKeys: ['C4', 'E4', 'G3', 'G4', 'A3', 'A4'],
       urls: { C4: 'C4.mp3', E4: 'E4.mp3', G3: 'G3.mp3', G4: 'G4.mp3', A3: 'A3.mp3', A4: 'A4.mp3' },
+    },
+    'tonejs:violin': {
+      label: 'Violin (tonejs-instruments)',
+      baseUrlDefault: '/static/pianoroll/vendor/tonejs-instruments/samples/violin/',
+      instrumentSubdir: 'violin/',
+      subdirAliases: ['violin'],
+      requiredKeys: ['G3', 'A3', 'C4', 'E4', 'G4', 'A4'],
+      urls: { G3: 'G3.mp3', A3: 'A3.mp3', C4: 'C4.mp3', E4: 'E4.mp3', G4: 'G4.mp3', A4: 'A4.mp3' },
     },
     'tonejs:bass': {
       label: 'Bass (tonejs-instruments)',

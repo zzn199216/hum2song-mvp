@@ -762,6 +762,7 @@
   "instrument.name.drums": "ドラム",
   "instrument.name.sampledPiano": "サンプルピアノ",
   "instrument.name.sampledStrings": "サンプルストリングス",
+  "instrument.name.sampledViolin": "サンプルバイオリン",
   "instrument.name.sampledBass": "サンプルベース",
   "instrument.name.sampledGuitarAcoustic": "サンプルアコースティックギター",
   "instrument.name.sampledGuitarElectric": "サンプルエレキギター",
@@ -773,6 +774,7 @@
   "instrument.description.drums": "内蔵ドラムキット",
   "instrument.description.sampledPiano": "内蔵サンプルピアノ",
   "instrument.description.sampledStrings": "内蔵サンプルストリングス",
+  "instrument.description.sampledViolin": "Tone.js サンプルバイオリン",
   "instrument.description.sampledBass": "内蔵サンプルベース",
   "instrument.description.sampledGuitarAcoustic": "内蔵サンプルアコースティックギター",
   "instrument.description.sampledGuitarElectric": "内蔵サンプルエレキギター",
@@ -781,7 +783,12 @@
   "instrument.category.synth": "シンセ",
   "instrument.category.pluck": "プラック",
   "instrument.category.drums": "ドラム",
+  "instrument.category.strings": "ストリングス",
+  "instrument.category.guitar": "ギター",
   "instrument.category.sampled": "サンプル",
+  "instrument.category.other": "その他",
   "instrument.category.unknown": "不明",
+  "instrument.search.placeholder": "楽器を検索",
+  "instrument.search.empty": "一致する楽器がありません",
   "instrument.missing": "楽器が見つかりません"
 }
