@@ -92,13 +92,22 @@ assert(timelineController.includes('getSelectableInstrumentOptions'), 'timeline 
 assert(timelineController.includes('instrument.missing'), 'timeline dropdown should show unknown stored instruments safely');
 assert(timelineController.includes('trackInstrumentSearch'), 'timeline instrument picker should include search input');
 assert(timelineController.includes('<optgroup'), 'timeline instrument picker should render category groups');
+assert(timelineController.includes('trackInstrumentTrigger'), 'timeline track header should render a compact instrument trigger');
+assert(timelineController.includes('trackInstrumentPopover'), 'timeline instrument picker should render in a body-level popover');
+assert(timelineController.includes("zIndex = '11500'"), 'timeline instrument popover should sit above timeline clips');
+assert(timelineController.includes("textOverflow = 'ellipsis'"), 'compact instrument trigger should ellipsize long instrument names');
 
 const indexHtml = fs.readFileSync(path.join(root, 'static/pianoroll/index.html'), 'utf8');
 const manifestScriptIndex = indexHtml.indexOf('core/instrument_manifest.js');
 const timelineScriptIndex = indexHtml.indexOf('timeline_controller.js');
+const instrumentCacheBust = 'instrument-library-phase-1-1-ui-fix';
 assert(manifestScriptIndex >= 0, 'index should load the instrument manifest');
 assert(timelineScriptIndex >= 0, 'index should load the timeline controller');
 assert(manifestScriptIndex < timelineScriptIndex, 'manifest should load before timeline controller');
+assert(indexHtml.includes(`project.js?v=${instrumentCacheBust}`), 'index should cache-bust project sampler metadata');
+assert(indexHtml.includes(`controllers/instrument_library_store.js?v=${instrumentCacheBust}`), 'index should cache-bust instrument library store');
+assert(indexHtml.includes(`core/instrument_manifest.js?v=${instrumentCacheBust}`), 'index should cache-bust instrument manifest');
+assert(indexHtml.includes(`timeline_controller.js?v=${instrumentCacheBust}`), 'index should cache-bust timeline picker UI');
 assert(indexHtml.includes('id="btnCreditsEntry"'), 'index should include a Studio credits entry');
 assert(indexHtml.includes('id="creditsPanel"'), 'index should include a Studio credits panel');
 assert(indexHtml.includes('tonejs-instruments'), 'credits panel should attribute tonejs-instruments samples');

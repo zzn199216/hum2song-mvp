@@ -527,13 +527,14 @@
           volWrap.appendChild(vol);
           label.appendChild(volWrap);
 
-          // Instrument select
+          // Instrument picker: keep the track header compact; search/list open in a body-level popover.
           const instWrap = document.createElement('div');
           instWrap.className = 'trackInstWrap';
           instWrap.style.display = 'flex';
-          instWrap.style.flexDirection = 'column';
+          instWrap.style.flexDirection = 'row';
           instWrap.style.alignItems = 'stretch';
-          instWrap.style.gap = '4px';
+          instWrap.style.minWidth = '0';
+          instWrap.style.width = '100%';
 
           const search = document.createElement('input');
           search.type = 'search';
@@ -649,6 +650,11 @@
             sel.innerHTML = html;
             sel.value = currentInstrumentValue;
           }
+          function selectedInstrumentLabelV1(){
+            var selected = sel.options && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+            if (selected && selected.textContent) return selected.textContent.trim();
+            return currentInstrumentValue || _t('dropdown.default');
+          }
           var hasCurrentInstrumentOption = false;
           var opts = builtin.map(x=>{
             var value = x.value || x.v;
@@ -678,6 +684,95 @@
           renderInstrumentOptionsV1('');
           sel.title = _t('trackpanel.instrument');
           sel.style.width = '100%';
+          sel.style.minHeight = '190px';
+          sel.style.boxSizing = 'border-box';
+          sel.size = 12;
+          function closeInstrumentPopoverV1(){
+            var existing = document.querySelector('.trackInstrumentPopover');
+            if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+            if (window.__h2sTrackInstrumentPopoverCleanup){
+              try{ window.__h2sTrackInstrumentPopoverCleanup(); }catch(_e){}
+              window.__h2sTrackInstrumentPopoverCleanup = null;
+            }
+          }
+          function openInstrumentPopoverV1(){
+            closeInstrumentPopoverV1();
+            var pop = document.createElement('div');
+            pop.className = 'trackInstrumentPopover';
+            pop.style.position = 'fixed';
+            pop.style.zIndex = '11500';
+            pop.style.width = 'min(340px, calc(100vw - 16px))';
+            pop.style.maxHeight = 'min(440px, calc(100vh - 24px))';
+            pop.style.overflow = 'hidden';
+            pop.style.display = 'flex';
+            pop.style.flexDirection = 'column';
+            pop.style.gap = '8px';
+            pop.style.padding = '10px';
+            pop.style.boxSizing = 'border-box';
+            pop.style.border = '1px solid rgba(255,255,255,.16)';
+            pop.style.borderRadius = '8px';
+            pop.style.background = 'var(--panel, #1a1d24)';
+            pop.style.color = 'var(--text, #f7f7f8)';
+            pop.style.boxShadow = '0 18px 44px rgba(0,0,0,.48)';
+            pop.addEventListener('pointerdown', function(e){ e.stopPropagation(); });
+            pop.addEventListener('click', function(e){ e.stopPropagation(); });
+            pop.appendChild(search);
+            pop.appendChild(sel);
+            document.body.appendChild(pop);
+            var rect = trigger.getBoundingClientRect();
+            var width = Math.min(340, Math.max(260, window.innerWidth - 16));
+            var left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+            var top = rect.bottom + 6;
+            if (top + 320 > window.innerHeight) top = Math.max(8, rect.top - 326);
+            pop.style.left = left + 'px';
+            pop.style.top = top + 'px';
+            setTimeout(function(){ try{ search.focus(); search.select(); }catch(_e){} }, 0);
+            function onDocPointer(e){
+              if (!pop.contains(e.target) && e.target !== trigger) closeInstrumentPopoverV1();
+            }
+            function onKey(e){
+              if (e.key === 'Escape') closeInstrumentPopoverV1();
+            }
+            function cleanup(){
+              document.removeEventListener('pointerdown', onDocPointer, true);
+              document.removeEventListener('keydown', onKey, true);
+            }
+            window.__h2sTrackInstrumentPopoverCleanup = cleanup;
+            document.addEventListener('pointerdown', onDocPointer, true);
+            document.addEventListener('keydown', onKey, true);
+          }
+          const trigger = document.createElement('button');
+          trigger.type = 'button';
+          trigger.className = 'trackInstrumentTrigger';
+          trigger.title = selectedInstrumentLabelV1();
+          trigger.style.width = '100%';
+          trigger.style.minWidth = '0';
+          trigger.style.boxSizing = 'border-box';
+          trigger.style.display = 'flex';
+          trigger.style.alignItems = 'center';
+          trigger.style.justifyContent = 'space-between';
+          trigger.style.gap = '6px';
+          trigger.style.padding = '4px 6px';
+          trigger.style.border = '1px solid var(--border, rgba(255,255,255,.18))';
+          trigger.style.borderRadius = '6px';
+          trigger.style.background = 'rgba(0,0,0,.18)';
+          trigger.style.color = 'var(--text, #f7f7f8)';
+          trigger.style.cursor = 'pointer';
+          trigger.style.fontSize = '11px';
+          trigger.style.lineHeight = '1.2';
+          const triggerLabel = document.createElement('span');
+          triggerLabel.className = 'trackInstrumentTriggerLabel';
+          triggerLabel.textContent = selectedInstrumentLabelV1();
+          triggerLabel.style.minWidth = '0';
+          triggerLabel.style.overflow = 'hidden';
+          triggerLabel.style.textOverflow = 'ellipsis';
+          triggerLabel.style.whiteSpace = 'nowrap';
+          const triggerArrow = document.createElement('span');
+          triggerArrow.textContent = 'v';
+          triggerArrow.setAttribute('aria-hidden', 'true');
+          triggerArrow.style.flex = '0 0 auto';
+          trigger.appendChild(triggerLabel);
+          trigger.appendChild(triggerArrow);
           search.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
           search.addEventListener('click', (e)=>{ e.stopPropagation(); });
           search.addEventListener('input', (e)=>{
@@ -688,13 +783,21 @@
           sel.addEventListener('click', (e)=>{ e.stopPropagation(); });
           sel.addEventListener('change', (e)=>{
             e.stopPropagation();
+            currentInstrumentValue = sel.value;
+            triggerLabel.textContent = selectedInstrumentLabelV1();
+            trigger.title = selectedInstrumentLabelV1();
             const tid = track.trackId || track.id;
             if (window.H2SApp && typeof window.H2SApp.setTrackInstrument === 'function' && tid){
               window.H2SApp.setTrackInstrument(tid, sel.value);
             }
+            closeInstrumentPopoverV1();
           });
-          instWrap.appendChild(search);
-          instWrap.appendChild(sel);
+          trigger.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
+          trigger.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            openInstrumentPopoverV1();
+          });
+          instWrap.appendChild(trigger);
           label.appendChild(instWrap);
 
           // Click empty header area to set Active Track (target for Add-to-Song)

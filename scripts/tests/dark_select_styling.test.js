@@ -42,7 +42,9 @@ assert(app.includes('data-cloud-ai-preset-item'), 'Cloud AI preset selector shou
 
 assert(app.includes('data-act="inspOptimizePreset"'), 'inspector optimize preset select should remain present');
 assert(libraryView.includes('data-act="inspRevSelect"'), 'inspector revision select should remain present');
-assert(timelineController.includes('trackInstrumentSelect'), 'track instrument select should remain present');
+assert(timelineController.includes('trackInstrumentTrigger'), 'track header should use a compact instrument trigger');
+assert(timelineController.includes('trackInstrumentSelect'), 'instrument popover should keep a native select for grouped options');
+assert(timelineController.includes("textOverflow = 'ellipsis'"), 'compact instrument trigger should ellipsize long names');
 assert(timelineView.includes('selTimelineSnap') || timelineController.includes('selTimelineSnap'), 'timeline snap select should remain present');
 
 console.log('dark_select_styling.test.js ok');
