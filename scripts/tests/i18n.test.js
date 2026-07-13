@@ -72,7 +72,7 @@ if (fs.existsSync(enPath) && fs.existsSync(zhPath)){
   assert(en['cloudAi.tier.quality'] === 'Quality', 'en quality tier should be localized');
   assert(en['cloudAi.tier.internal'] === 'Internal', 'en internal tier should be localized');
   assert(en['studio.mobileWarning'] === 'Studio works best on desktop or tablet. On narrow phone screens, some timeline and editing controls may be difficult to use.', 'en mobile warning should be product-facing');
-  assert(zh['studio.mobileWarning'] === 'Studio 在电脑或平板上体验更好。手机屏幕较小时，部分时间线和编辑控件可能不易操作。', 'zh mobile warning should be product-facing');
+  assert(zh['studio.mobileWarning'] === '编曲在电脑或平板上体验更好。手机屏幕较小时，部分时间线和编辑控件可能不易操作。', 'zh mobile warning should be product-facing');
   assert(en['confirm.clearLocalProject'] && en['confirm.clearLocalProject'].toLowerCase().indexOf('local') !== -1 && en['confirm.clearLocalProject'].toLowerCase().indexOf('cloud') !== -1, 'clear project confirmation should explain local/cloud scope');
   assert(zh['confirm.clearLocalProject'] && zh['confirm.clearLocalProject'].indexOf('本地') !== -1 && zh['confirm.clearLocalProject'].indexOf('云端') !== -1, 'zh clear project confirmation should explain local/cloud scope');
   assert(zh['lastOpt.fail.truncated_generation'] === 'AI 输出被截断，未应用到工程。你可以重试，或选择更短片段。', 'zh truncated generation copy should be product-facing');

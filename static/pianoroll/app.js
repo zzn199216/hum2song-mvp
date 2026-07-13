@@ -7406,7 +7406,7 @@ renderTimeline(){
         this._updateHummingMusicPromptTraceStatus({ status: 'failed', failureReason: msg });
         if (/auth_required/.test(msg)) this._setHummingMusicStatus('请先在 Cloud 登录后再生成完整音乐。');
         else if (/quota|access_denied/.test(msg)) this._setHummingMusicStatus('当前额度或权限不足，无法创建完整音乐生成任务。');
-        else if (/cloud_bridge_unavailable/.test(msg)) this._setHummingMusicStatus('请从 Hum2Song Cloud 打开 Studio 后再生成完整音乐。');
+        else if (/cloud_bridge_unavailable/.test(msg)) this._setHummingMusicStatus('请从 Hum2Song Cloud 打开编曲后再生成完整音乐。');
         else this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
         return { ok: false, reason: msg };
       }finally{
