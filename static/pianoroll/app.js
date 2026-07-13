@@ -4335,6 +4335,7 @@ if (typeof localStorage !== 'undefined') {
       // Bind UI
       const btnImportAudio = $('#btnImportAudio');
       if (btnImportAudio) btnImportAudio.addEventListener('click', () => { this.runTopBarImportAudio(); });
+      this._initTopBarImportTranscriptionControls();
       $('#btnClear').addEventListener('click', () => this.clearProject());
       $('#btnClearLog').addEventListener('click', () => { $('#log').textContent = ''; _lastLogLine = ''; if (typeof this.updateLogStatusBar === 'function') this.updateLogStatusBar(); });
       // PR-UX3a: Log panel — restore open state from localStorage, bind status bar click to toggle
@@ -4722,7 +4723,6 @@ $('#rngPitchCenter').addEventListener('input', () => {
               const P = window.H2SProject;
               if (!c || !P || typeof P.clipKind !== 'function' || P.clipKind(c) !== 'audio') return null;
               const seg = this.getAudioConvertSegment(inst.clipId, { sourceAudioInstanceId: inst.id });
-              const controls = this.getAudioTranscriptionControls(inst.clipId);
               const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
               const convActive = this._isAudioConvertActive(inst.clipId);
               return {
@@ -4740,35 +4740,12 @@ $('#rngPitchCenter').addEventListener('input', () => {
                 preset30Label: _t('convert.preset30', '30s'),
                 preset60Label: _t('convert.preset60', '60s'),
                 advancedSegmentTitle: _t('convert.advancedSegmentSettings', 'Advanced segment settings'),
-                transcriptionTarget: controls.transcriptionTarget,
-                cleanupStrength: controls.cleanupStrength,
-                preserveRawCandidates: controls.preserveRawCandidates,
-                transcriptionTargetLabel: _t('transcription.target', 'Transcription target'),
-                cleanupStrengthLabel: _t('transcription.cleanupStrength', 'Cleanup strength'),
-                cleanupPreserveLabel: _t('transcription.cleanup.preserve', 'Preserve more notes'),
-                cleanupBalancedLabel: _t('transcription.cleanup.balanced', 'Balanced'),
-                cleanupCleanerLabel: _t('transcription.cleanup.cleaner', 'Cleaner result'),
-                preserveRawCandidatesLabel: _t('transcription.preserveRawCandidates', 'Preserve raw recognition candidates'),
-                transcriptionTargetHelp: controls.transcriptionTarget === 'chords'
-                  ? _t('transcription.target.chordsHelp', 'Best for accompaniment and pads. May keep more notes; use cleanup strength to control density.')
-                  : '',
-                transcriptionTargetOptions: [
-                  { value: 'auto', label: _t('transcription.target.auto', 'Auto') },
-                  { value: 'ai_full_mix', label: _t('transcription.target.aiFullMix', 'AI music / full song') },
-                  { value: 'melody', label: _t('transcription.target.melody', 'Extract melody') },
-                  { value: 'chords', label: _t('transcription.target.chords', 'Chord / polyphonic outline') },
-                  { value: 'vocal_humming', label: _t('transcription.target.vocalHumming', 'Vocal / humming') },
-                  { value: 'piano_guitar', label: _t('transcription.target.pianoGuitar', 'Piano / guitar') },
-                  { value: 'electronic_melody', label: _t('transcription.target.electronicMelody', 'Electronic melody') },
-                  { value: 'pad_chords', label: _t('transcription.target.padChords', 'Pad / sustained chords') },
-                ],
+                transcriptionSettingsLabel: _t('transcription.settings', 'Transcription settings'),
               };
             },
             onSegmentAtPlayhead: (clipId, instId) => this.setAudioConvertSegmentAtPlayhead(clipId, instId),
             onSegmentLength: (clipId, len) => this.setAudioConvertSegmentLength(clipId, len),
-            onTranscriptionTarget: (clipId, target) => this.setAudioTranscriptionTarget(clipId, target),
-            onCleanupStrength: (clipId, strength) => this.setAudioTranscriptionControls(clipId, { cleanupStrength: strength }),
-            onPreserveRawCandidates: (clipId, preserve) => this.setAudioTranscriptionControls(clipId, { preserveRawCandidates: preserve }),
+            onOpenTranscriptionSettings: (clipId, trigger) => this.openTranscriptionSettings({ clipId: clipId, trigger: trigger }),
             getAddBassLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addBass') : 'Add Bass'),
             getAddAccompanimentLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addAccompaniment') : 'Add accompaniment'),
             getAddAccompanimentMoreInstructionsLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addAccompanimentMoreInstructions') : 'More instructions (optional)'),
@@ -6803,24 +6780,180 @@ renderTimeline(){
       // handled in pointerup on window
     },
 
+    _normalizeTranscriptionControls(controls){
+      controls = controls || {};
+      const allowed = ['auto', 'ai_full_mix', 'melody', 'chords', 'vocal_humming', 'piano_guitar', 'electronic_melody', 'pad_chords'];
+      const target = allowed.indexOf(String(controls.transcriptionTarget || '')) >= 0
+        ? String(controls.transcriptionTarget)
+        : 'auto';
+      const strengthRaw = Number(controls.cleanupStrength);
+      return {
+        transcriptionTarget: target,
+        cleanupStrength: Number.isFinite(strengthRaw) ? Math.max(0, Math.min(100, Math.round(strengthRaw))) : this._defaultCleanupStrengthForTarget(target),
+        preserveRawCandidates: controls.preserveRawCandidates === true,
+      };
+    },
+
+    getTopBarImportTranscriptionControls(){
+      return this._normalizeTranscriptionControls(this._topBarImportTranscriptionControls);
+    },
+
+    setTopBarImportTranscriptionControls(patch){
+      this._topBarImportTranscriptionControls = this._normalizeTranscriptionControls(Object.assign(
+        {},
+        this.getTopBarImportTranscriptionControls(),
+        patch || {}
+      ));
+      return this._topBarImportTranscriptionControls;
+    },
+
+    _syncTopBarImportTranscriptionControls(){
+      if (typeof document === 'undefined') return;
+      const checkbox = document.getElementById('chkImportAudioToNotes');
+      const trigger = document.getElementById('btnTopImportTranscriptionSettings');
+      const group = document.getElementById('topbarTranscriptionGroup');
+      const enabled = !checkbox || !!checkbox.checked;
+      if (trigger) trigger.hidden = !enabled;
+      if (group) group.setAttribute('data-enabled', enabled ? 'true' : 'false');
+      if (!enabled && this._transcriptionSettingsContext && !this._transcriptionSettingsContext.clipId){
+        this.closeTranscriptionSettings();
+      }
+    },
+
+    _transcriptionSettingsElements(){
+      if (typeof document === 'undefined') return {};
+      return {
+        modal: document.getElementById('transcriptionSettingsModal'),
+        target: document.getElementById('transcriptionSettingsTarget'),
+        strength: document.getElementById('transcriptionSettingsCleanup'),
+        output: document.getElementById('transcriptionSettingsCleanupValue'),
+        preserve: document.getElementById('transcriptionSettingsPreserveRaw'),
+        help: document.getElementById('transcriptionSettingsTargetHelp'),
+      };
+    },
+
+    _readTranscriptionSettingsModal(){
+      const els = this._transcriptionSettingsElements();
+      return this._normalizeTranscriptionControls({
+        transcriptionTarget: els.target ? els.target.value : 'auto',
+        cleanupStrength: els.strength ? els.strength.value : 50,
+        preserveRawCandidates: !!(els.preserve && els.preserve.checked),
+      });
+    },
+
+    _syncTranscriptionSettingsModal(){
+      const els = this._transcriptionSettingsElements();
+      const controls = this._readTranscriptionSettingsModal();
+      if (els.output){
+        els.output.value = String(controls.cleanupStrength);
+        els.output.textContent = String(controls.cleanupStrength);
+      }
+      if (els.help) els.help.hidden = controls.transcriptionTarget !== 'chords';
+    },
+
+    _applyTranscriptionSettingsModal(){
+      const controls = this._readTranscriptionSettingsModal();
+      const context = this._transcriptionSettingsContext || {};
+      if (context.clipId) this.setAudioTranscriptionControls(context.clipId, controls);
+      else this.setTopBarImportTranscriptionControls(controls);
+      this._syncTranscriptionSettingsModal();
+      return controls;
+    },
+
+    openTranscriptionSettings(opts){
+      opts = opts || {};
+      const els = this._transcriptionSettingsElements();
+      if (!els.modal || !els.target || !els.strength || !els.preserve) return false;
+      const clipId = String(opts.clipId || '').trim();
+      const controls = clipId ? this.getAudioTranscriptionControls(clipId) : this.getTopBarImportTranscriptionControls();
+      this._transcriptionSettingsContext = {
+        clipId: clipId,
+        trigger: opts.trigger || ((typeof document !== 'undefined') ? document.activeElement : null),
+      };
+      els.target.value = controls.transcriptionTarget;
+      els.strength.value = String(controls.cleanupStrength);
+      els.preserve.checked = controls.preserveRawCandidates === true;
+      this._syncTranscriptionSettingsModal();
+      els.modal.classList.remove('hidden');
+      els.modal.setAttribute('aria-hidden', 'false');
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { try{ els.target.focus(); }catch(_e){} });
+      return true;
+    },
+
+    closeTranscriptionSettings(){
+      const els = this._transcriptionSettingsElements();
+      if (!els.modal) return;
+      els.modal.classList.add('hidden');
+      els.modal.setAttribute('aria-hidden', 'true');
+      const context = this._transcriptionSettingsContext || {};
+      this._transcriptionSettingsContext = null;
+      if (context.trigger && context.trigger.isConnected && typeof context.trigger.focus === 'function'){
+        try{ context.trigger.focus(); }catch(_e){}
+      }
+    },
+
+    _initTopBarImportTranscriptionControls(){
+      if (typeof document === 'undefined') return;
+      const checkbox = document.getElementById('chkImportAudioToNotes');
+      const trigger = document.getElementById('btnTopImportTranscriptionSettings');
+      const els = this._transcriptionSettingsElements();
+      if (!els.modal || els.modal.__h2sTranscriptionControlsBound){
+        this._syncTopBarImportTranscriptionControls();
+        return;
+      }
+      els.modal.__h2sTranscriptionControlsBound = true;
+      if (checkbox) checkbox.addEventListener('change', () => this._syncTopBarImportTranscriptionControls());
+      if (trigger) trigger.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.openTranscriptionSettings({ trigger: trigger });
+      });
+      if (els.target) els.target.addEventListener('change', () => {
+        if (els.strength) els.strength.value = String(this._defaultCleanupStrengthForTarget(String(els.target.value || 'auto')));
+        this._applyTranscriptionSettingsModal();
+      });
+      if (els.strength) els.strength.addEventListener('input', () => this._applyTranscriptionSettingsModal());
+      if (els.preserve) els.preserve.addEventListener('change', () => this._applyTranscriptionSettingsModal());
+      const stopEvent = (event) => event.stopPropagation();
+      ['pointerdown', 'mousedown', 'click', 'dblclick'].forEach((eventName) => {
+        els.modal.addEventListener(eventName, stopEvent);
+      });
+      els.modal.querySelectorAll('[data-transcription-settings-close]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.closeTranscriptionSettings();
+        });
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !els.modal.classList.contains('hidden')) this.closeTranscriptionSettings();
+      });
+      this._syncTopBarImportTranscriptionControls();
+    },
+
     /** Top bar: one Import audio control + “Make editable notes” checkbox (default on). */
     async runTopBarImportAudio(){
       const chk = (typeof document !== 'undefined') ? document.getElementById('chkImportAudioToNotes') : null;
       const toNotes = !chk || !!chk.checked;
-      if (toNotes) await this.pickWavAndGenerate();
+      if (toNotes) await this.pickWavAndGenerate(this.getTopBarImportTranscriptionControls());
       else await this.importAudioFileAsNativeClip();
     },
 
-    async pickWavAndGenerate(){
+    async pickWavAndGenerate(transcriptionControls){
       const f = await this.pickFile('.wav,.mp3,.m4a,.flac,.ogg');
       if (!f) return;
-      const workerTry = await this._tryWorkerConvertFileToEditable(f, { kind: 'import' });
+      const controls = Object.assign({
+        transcriptionTarget: 'auto',
+        cleanupStrength: 50,
+        preserveRawCandidates: false,
+      }, transcriptionControls || {});
+      const workerTry = await this._tryWorkerConvertFileToEditable(f, Object.assign({ kind: 'import' }, controls));
       if (workerTry && workerTry.ok) return;
       if (workerTry && workerTry.reason){
         const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
         this.setImportStatus(_t('convert.phase.workerFallback', 'Background conversion unavailable. Using fallback conversion…'), true);
       }
-      await this.uploadFileAndGenerate(f);
+      await this.uploadFileAndGenerate(f, controls);
     },
 
     /**

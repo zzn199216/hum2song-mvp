@@ -117,7 +117,7 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
     fmtSec = (typeof fmtSec === 'function') ? fmtSec : _defaultFmtSec;
     escapeHtml = (typeof escapeHtml === 'function') ? escapeHtml : _defaultEscapeHtml;
 
-    const _tDefaults = { 'cliplib.play':'Play', 'cliplib.addToSong':'Add to Song', 'cliplib.convertSegment':'Convert selected segment', 'cliplib.convertSegmentTitle':'Transcribe the selected time range into editable notes (server)', 'cliplib.edit':'Edit', 'cliplib.remove':'Remove', 'cliplib.optimize':'Optimize', 'cliplib.details':'Details', 'cliplib.preset':'Preset', 'cliplib.default':'Default', 'cliplib.notes':'notes', 'cliplib.badgeAudio':'Original audio', 'cliplib.lastOptimized':'Last optimized', 'cliplib.last':'Last', 'cliplib.renameClip':'Clip name', 'opt.dynamicsAccent':'Dynamics Accent', 'opt.dynamicsLevel':'Dynamics Level', 'opt.durationGentle':'Duration Gentle' };
+    const _tDefaults = { 'cliplib.play':'Play', 'cliplib.addToSong':'Add to Song', 'cliplib.convertSegment':'Convert selected segment', 'cliplib.convertSegmentTitle':'Transcribe the selected time range into editable notes (server)', 'cliplib.edit':'Edit', 'cliplib.remove':'Remove', 'cliplib.optimize':'Optimize', 'cliplib.details':'Details', 'cliplib.preset':'Preset', 'cliplib.default':'Default', 'cliplib.notes':'notes', 'cliplib.badgeAudio':'Original audio', 'cliplib.lastOptimized':'Last optimized', 'cliplib.last':'Last', 'cliplib.renameClip':'Clip name', 'transcription.settings':'Transcription settings', 'opt.dynamicsAccent':'Dynamics Accent', 'opt.dynamicsLevel':'Dynamics Level', 'opt.durationGentle':'Duration Gentle' };
     const win = (typeof window !== 'undefined') ? window : null;
     const t = (win && win.I18N && typeof win.I18N.t === 'function') ? (k) => win.I18N.t(k) : (k) => (_tDefaults[k] !== undefined ? _tDefaults[k] : k);
 
@@ -265,7 +265,8 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
       ? (
           `<button class="btn" data-act="play" data-id="${id}">${escapeHtml(t('cliplib.play'))}</button>` +
           `<button class="btn" data-act="add" data-id="${id}">${escapeHtml(t('cliplib.addToSong'))}</button>` +
-          `<button class="btn primary" data-act="convertToEditable" data-id="${id}" title="${escapeHtml(t('cliplib.convertSegmentTitle'))}"${convActive ? ' disabled' : ''}>${escapeHtml(t('cliplib.convertSegment'))}</button>`
+          `<button class="btn primary" data-act="convertToEditable" data-id="${id}" title="${escapeHtml(t('cliplib.convertSegmentTitle'))}"${convActive ? ' disabled' : ''}>${escapeHtml(t('cliplib.convertSegment'))}</button>` +
+          `<button class="btn transcriptionSettingsIconBtn" type="button" data-act="transcriptionSettings" data-id="${id}" title="${escapeHtml(t('transcription.settings'))}" aria-label="${escapeHtml(t('transcription.settings'))}"${convActive ? ' disabled' : ''}>&#9881;</button>`
         )
       : (
           `<button class="btn" data-act="play" data-id="${id}">${escapeHtml(t('cliplib.play'))}</button>` +

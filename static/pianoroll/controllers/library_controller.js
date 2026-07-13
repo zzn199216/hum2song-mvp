@@ -204,6 +204,14 @@
       const app = opts.app || (typeof window !== 'undefined' ? window.H2SApp : null);
       const projectV2 = getProjectV2();
 
+      if (act === 'transcriptionSettings'){
+        try{ e.preventDefault(); e.stopPropagation(); }catch(_){ /* ignore */ }
+        if (app && typeof app.openTranscriptionSettings === 'function'){
+          app.openTranscriptionSettings({ clipId: clipId, trigger: btn });
+        }
+        return;
+      }
+
       if (typeof opts.onSelectClip === 'function') opts.onSelectClip(clipId);
 
       if (act === 'play'){

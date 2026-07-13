@@ -24,22 +24,7 @@
     const convertActive = !!opts.convertActive;
     const convertLabel = (opts.convertLabel != null) ? String(opts.convertLabel) : 'Convert selected segment';
     const advancedTitle = (opts.advancedSegmentTitle != null) ? String(opts.advancedSegmentTitle) : 'Advanced segment settings';
-    const target = String(opts.transcriptionTarget || 'auto');
-    const cleanupStrength = Math.max(0, Math.min(100, Math.round(Number(opts.cleanupStrength == null ? 50 : opts.cleanupStrength))));
-    const preserveRawCandidates = !!opts.preserveRawCandidates;
-    const targetLabel = String(opts.transcriptionTargetLabel || 'Transcription target');
-    const cleanupLabel = String(opts.cleanupStrengthLabel || 'Cleanup strength');
-    const cleanupMoreNotes = String(opts.cleanupPreserveLabel || 'Preserve more notes');
-    const cleanupBalanced = String(opts.cleanupBalancedLabel || 'Balanced');
-    const cleanupCleaner = String(opts.cleanupCleanerLabel || 'Cleaner result');
-    const preserveRawLabel = String(opts.preserveRawCandidatesLabel || 'Preserve raw recognition candidates');
-    const targetHelp = String(opts.transcriptionTargetHelp || '');
-    const targetOptions = Array.isArray(opts.transcriptionTargetOptions) ? opts.transcriptionTargetOptions : [];
-    const targetOptionsHtml = targetOptions.map((item) => {
-      const value = String(item && item.value || '');
-      const label = String(item && item.label || value);
-      return `<option value="${escapeHtml(value)}"${value === target ? ' selected' : ''}>${escapeHtml(label)}</option>`;
-    }).join('');
+    const transcriptionSettingsLabel = String(opts.transcriptionSettingsLabel || 'Transcription settings');
     const inner =
         `<div class="kv"><b>${escapeHtml((opts.audioDurationTitle != null) ? opts.audioDurationTitle : 'Audio')}</b><span>${escapeHtml(audioDurLabel)}</span></div>` +
         `<div class="kv"><b>${escapeHtml(startLabel)}</b><span data-role="segStart">${escapeHtml(fmtSec(startSec))}</span></div>` +
@@ -51,28 +36,9 @@
           `<button type="button" class="btn mini" data-act="segLen30" data-len="30"${convertActive ? ' disabled' : ''}>${escapeHtml(preset30)}</button>` +
           `<button type="button" class="btn mini" data-act="segLen60" data-len="60"${convertActive ? ' disabled' : ''}>${escapeHtml(preset60)}</button>` +
         `</div>` +
-        `<div class="h2s-transcription-controls" style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);">` +
-          `<label style="display:block;">` +
-            `<span style="display:block;margin-bottom:4px;color:var(--muted);">${escapeHtml(targetLabel)}</span>` +
-            `<select data-field="transcriptionTarget" style="width:100%;"${convertActive ? ' disabled' : ''}>${targetOptionsHtml}</select>` +
-          `</label>` +
-          (targetHelp ? `<p data-role="transcriptionTargetHelp" style="margin:5px 0 0;color:var(--muted);line-height:1.4;">${escapeHtml(targetHelp)}</p>` : '') +
-          `<label style="display:block;margin-top:9px;">` +
-            `<span style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;color:var(--muted);">` +
-              `<span>${escapeHtml(cleanupLabel)}</span><output data-role="cleanupStrengthValue">${cleanupStrength}</output>` +
-            `</span>` +
-            `<input type="range" min="0" max="100" step="5" value="${cleanupStrength}" data-field="cleanupStrength" style="width:100%;"${convertActive ? ' disabled' : ''}>` +
-            `<span style="display:flex;justify-content:space-between;gap:6px;font-size:10px;color:var(--muted);">` +
-              `<span>${escapeHtml(cleanupMoreNotes)}</span><span>${escapeHtml(cleanupBalanced)}</span><span style="text-align:right;">${escapeHtml(cleanupCleaner)}</span>` +
-            `</span>` +
-          `</label>` +
-          `<label style="display:flex;align-items:flex-start;gap:6px;margin-top:9px;cursor:pointer;">` +
-            `<input type="checkbox" data-field="preserveRawCandidates"${preserveRawCandidates ? ' checked' : ''}${convertActive ? ' disabled' : ''}>` +
-            `<span>${escapeHtml(preserveRawLabel)}</span>` +
-          `</label>` +
-        `</div>` +
         `<div class="row" style="margin-top:8px;">` +
           `<button id="btnSelConvertAudio" class="btn mini" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}"${convertActive ? ' disabled' : ''}>${escapeHtml(convertLabel)}</button>` +
+          `<button class="btn mini" type="button" data-act="transcriptionSettings"${convertActive ? ' disabled' : ''}>${escapeHtml(transcriptionSettingsLabel)}</button>` +
         `</div>`;
     return (
       `<details class="h2s-audio-segment-advanced" style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;">` +
@@ -119,17 +85,7 @@
           convertLabel,
           convertActive: opts.convertActive,
           advancedSegmentTitle: opts.advancedSegmentTitle,
-          transcriptionTarget: opts.transcriptionTarget,
-          cleanupStrength: opts.cleanupStrength,
-          preserveRawCandidates: opts.preserveRawCandidates,
-          transcriptionTargetLabel: opts.transcriptionTargetLabel,
-          cleanupStrengthLabel: opts.cleanupStrengthLabel,
-          cleanupPreserveLabel: opts.cleanupPreserveLabel,
-          cleanupBalancedLabel: opts.cleanupBalancedLabel,
-          cleanupCleanerLabel: opts.cleanupCleanerLabel,
-          preserveRawCandidatesLabel: opts.preserveRawCandidatesLabel,
-          transcriptionTargetHelp: opts.transcriptionTargetHelp,
-          transcriptionTargetOptions: opts.transcriptionTargetOptions,
+          transcriptionSettingsLabel: opts.transcriptionSettingsLabel,
         })
       : '';
     const addBassBtn = isAudio

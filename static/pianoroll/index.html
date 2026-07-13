@@ -58,6 +58,146 @@
       flex:1 1 16px;
       min-width:0;
     }
+    .topbarImportWorkflow{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      min-width:0;
+      flex-wrap:wrap;
+    }
+    .transcriptionImportOptions{
+      display:inline-grid;
+      grid-template-columns:minmax(0, auto) auto;
+      align-items:center;
+      gap:3px 8px;
+      min-width:0;
+      padding:5px 7px;
+      border:1px solid var(--border);
+      border-radius:6px;
+      background:#151a21;
+    }
+    .transcriptionImportOptions[data-enabled="false"]{
+      grid-template-columns:minmax(0, auto);
+      background:#12161c;
+    }
+    .transcriptionImportToggle{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      min-width:0;
+      margin:0;
+      font-size:11px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .transcriptionImportToggle span{
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .transcriptionImportHint{
+      grid-column:1 / -1;
+      color:var(--muted);
+      font-size:10px;
+      line-height:1.3;
+    }
+    .transcriptionImportOptions[data-enabled="true"] [data-transcription-mode-off],
+    .transcriptionImportOptions[data-enabled="false"] [data-transcription-mode-on]{ display:none; }
+    .transcriptionSettingsTrigger[hidden]{ display:none; }
+    .transcriptionSettingsIconBtn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:30px;
+      min-width:30px;
+      height:30px;
+      padding:0;
+      font-size:15px;
+      line-height:1;
+    }
+    #transcriptionSettingsModal{ z-index:14000; }
+    .transcriptionSettingsCenter{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      pointer-events:none;
+    }
+    .transcriptionSettingsDialog{
+      pointer-events:auto;
+      width:min(420px, 100%);
+      max-height:calc(100vh - 32px);
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius:8px;
+      background:#171c24;
+      box-shadow:var(--shadow);
+    }
+    .transcriptionSettingsHeader{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px 14px;
+      border-bottom:1px solid var(--border);
+    }
+    .transcriptionSettingsTitle{
+      margin:0;
+      font-size:15px;
+      font-weight:700;
+    }
+    .transcriptionSettingsBody{ padding:14px; }
+    .transcriptionSettingsField{
+      display:grid;
+      gap:6px;
+      margin:0 0 12px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .transcriptionSettingsField select,
+    .transcriptionSettingsField input[type="range"]{
+      width:100%;
+      min-width:0;
+    }
+    .transcriptionSettingsField select{
+      padding:7px 9px;
+      border:1px solid var(--border);
+      border-radius:6px;
+      background:#10151c;
+      color:var(--text);
+    }
+    .transcriptionSettingsStrengthHeader,
+    .transcriptionSettingsStrengthLabels{
+      display:flex;
+      justify-content:space-between;
+      gap:8px;
+    }
+    .transcriptionSettingsStrengthLabels{
+      color:var(--muted);
+      font-size:10px;
+    }
+    .transcriptionSettingsTargetHelp{
+      margin:-5px 0 12px;
+      color:var(--muted);
+      font-size:11px;
+      line-height:1.4;
+    }
+    .transcriptionSettingsPreserveRaw{
+      display:flex;
+      align-items:flex-start;
+      gap:7px;
+      color:var(--text);
+      font-size:12px;
+      line-height:1.4;
+      cursor:pointer;
+    }
+    .transcriptionSettingsActions{
+      display:flex;
+      justify-content:flex-end;
+      padding:0 14px 14px;
+    }
     @media (max-width: 900px){
       .topbar{
         padding:6px 10px;
@@ -1237,13 +1377,17 @@
       <span id="studioRecordStatus" class="smallmuted" style="min-width:60px;"></span>
       <button id="btnPlayProject" class="btn icon primary" title="Play Project">P</button>
       <button id="btnStop" class="btn icon" title="Stop + Reset (S)" style="visibility:hidden;pointer-events:none;">S</button>
-      <span style="display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <span class="topbarImportWorkflow">
         <button type="button" id="btnImportAudio" class="btn" data-i18n="top.importAudio" data-i18n-title="top.importAudioTitle">Import audio</button>
-        <label class="row" style="align-items:center; gap:6px; margin:0; font-size:11px; cursor:pointer; user-select:none;">
-          <input type="checkbox" id="chkImportAudioToNotes" checked />
-          <span data-i18n="top.importAudioMakeNotesLabel" data-i18n-title="top.importAudioMakeNotesTitle">Make editable notes (server)</span>
-        </label>
-        <span class="smallmuted" style="font-size:11px;" data-i18n="top.importAudioModeHint">On = editable notes · Off = audio-only clip</span>
+        <span id="topbarTranscriptionGroup" class="transcriptionImportOptions" data-enabled="true">
+          <label class="transcriptionImportToggle">
+            <input type="checkbox" id="chkImportAudioToNotes" checked />
+            <span data-i18n="top.importAudioMakeNotesLabel" data-i18n-title="top.importAudioMakeNotesTitle">Make editable notes (server)</span>
+          </label>
+          <button type="button" id="btnTopImportTranscriptionSettings" class="btn transcriptionSettingsTrigger" data-i18n="transcription.settings" data-i18n-title="transcription.settings">Transcription settings</button>
+          <span class="transcriptionImportHint" data-transcription-mode-on data-i18n="top.importAudioModeHint">When enabled, Transcription settings apply to imported audio.</span>
+          <span class="transcriptionImportHint" data-transcription-mode-off data-i18n="top.importAudioModeOffHint">Off: import an audio-only clip.</span>
+        </span>
       </span>
     </div>
     <div class="spacer"></div>
@@ -1257,6 +1401,53 @@
     <div id="studioImportStatus" class="smallmuted" style="min-width:120px;"></div>
     <button id="btnCancelImport" class="btn ghost" style="display:none;" data-i18n="common.cancel">Cancel</button>
     <div class="smallmuted" data-i18n="top.localClipsHint">Local clips + timeline. Double-click a clip to edit.</div>
+  </div>
+
+  <div id="transcriptionSettingsModal" class="h2sModal hidden" aria-hidden="true">
+    <div class="h2sModalBackdrop" data-transcription-settings-close aria-hidden="true"></div>
+    <div class="transcriptionSettingsCenter">
+      <section class="transcriptionSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="transcriptionSettingsTitle">
+        <header class="transcriptionSettingsHeader">
+          <h2 id="transcriptionSettingsTitle" class="transcriptionSettingsTitle" data-i18n="transcription.settings">Transcription settings</h2>
+          <button type="button" class="btn icon" data-transcription-settings-close data-i18n-aria-label="common.close" aria-label="Close">&times;</button>
+        </header>
+        <div class="transcriptionSettingsBody">
+          <label class="transcriptionSettingsField">
+            <span data-i18n="transcription.target">Transcription target</span>
+            <select id="transcriptionSettingsTarget">
+              <option value="auto" data-i18n="transcription.target.auto">Auto</option>
+              <option value="ai_full_mix" data-i18n="transcription.target.aiFullMix">AI music / full song</option>
+              <option value="melody" data-i18n="transcription.target.melody">Extract melody</option>
+              <option value="chords" data-i18n="transcription.target.chords">Chord / polyphonic outline</option>
+              <option value="vocal_humming" data-i18n="transcription.target.vocalHumming">Vocal / humming</option>
+              <option value="piano_guitar" data-i18n="transcription.target.pianoGuitar">Piano / guitar</option>
+              <option value="electronic_melody" data-i18n="transcription.target.electronicMelody">Electronic melody</option>
+              <option value="pad_chords" data-i18n="transcription.target.padChords">Pad / sustained chords</option>
+            </select>
+          </label>
+          <p id="transcriptionSettingsTargetHelp" class="transcriptionSettingsTargetHelp" data-i18n="transcription.target.chordsHelp" hidden>Best for accompaniment and pads. May keep more notes; use cleanup strength to control density.</p>
+          <label class="transcriptionSettingsField">
+            <span class="transcriptionSettingsStrengthHeader">
+              <span data-i18n="transcription.cleanupStrength">Cleanup strength</span>
+              <output id="transcriptionSettingsCleanupValue" for="transcriptionSettingsCleanup">50</output>
+            </span>
+            <input id="transcriptionSettingsCleanup" type="range" min="0" max="100" step="5" value="50" />
+            <span class="transcriptionSettingsStrengthLabels">
+              <span data-i18n="transcription.cleanup.preserve">Keep more notes</span>
+              <span data-i18n="transcription.cleanup.balanced">Balanced</span>
+              <span data-i18n="transcription.cleanup.cleaner">Cleaner result</span>
+            </span>
+          </label>
+          <label class="transcriptionSettingsPreserveRaw">
+            <input id="transcriptionSettingsPreserveRaw" type="checkbox" />
+            <span data-i18n="transcription.preserveRawCandidates">Preserve raw recognition candidates</span>
+          </label>
+        </div>
+        <div class="transcriptionSettingsActions">
+          <button type="button" class="btn primary" data-transcription-settings-close data-i18n="common.done">Done</button>
+        </div>
+      </section>
+    </div>
   </div>
 
   <div id="studioMobileWarning" class="studioMobileWarning" role="note" data-i18n="studio.mobileWarning">
@@ -1908,9 +2099,9 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=audio-transcription-controls-v0"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=audio-transcription-controls-v0"></script>
-  <script src="/static/i18n/i18n.js?v=audio-transcription-controls-v0"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/i18n/i18n.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
@@ -1937,10 +2128,10 @@
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js?v=instrument-library-phase-1-1-ui-fix"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=audio-transcription-controls-v0"></script>
-  <script src="/static/pianoroll/controllers/library_controller.js"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=audio-transcription-controls-v0"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=audio-transcription-controls-v0"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/controllers/library_controller.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
   <script src="/static/pianoroll/controllers/audio_controller.js"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
@@ -1960,7 +2151,7 @@
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_wav_controller.js"></script>
   <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v16"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=audio-transcription-controls-v0"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -2155,9 +2346,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=audio-transcription-controls-v0"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=audio-transcription-controls-v0"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=audio-transcription-controls-v0"></script>
+  <script src="/static/pianoroll/app.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
   <script>
   (function () {
     try {

@@ -30,6 +30,7 @@ const requiredVersionedScripts = [
   'cloud_project_bridge.js',
   'cloud_materials_panel.js',
   'ui/library_view.js',
+  'controllers/library_controller.js',
   'ui/selection_view.js',
   'controllers/selection_controller.js',
 ];
@@ -40,13 +41,14 @@ for (const src of requiredVersionedScripts) {
   assert(!/[\\/?#]/.test(assetVersion), src + ' cache-bust version should be a plain marker');
 }
 
-assert(ver === 'audio-transcription-controls-v0', 'studio_asset_version.js should use the transcription controls release marker');
+assert(ver === 'audio-transcription-controls-v0-settings-entry-fix', 'studio_asset_version.js should use the transcription settings entry fix marker');
 assert(scriptVersion('studio_asset_version.js') === ver, 'index.html should load studio_asset_version.js with the studio asset version marker');
 assert(scriptVersion('h2s_startup_perf.js') === ver, 'index.html should load startup perf with the studio asset version marker');
 assert(scriptVersion('app.js') === ver, 'index.html should load app.js with the studio asset version marker');
 assert(scriptVersion('cloud_project_bridge.js') === ver, 'index.html should load cloud_project_bridge.js with the studio asset version marker');
 assert(scriptVersion('cloud_materials_panel.js') === ver, 'index.html should load cloud materials panel with the studio asset version marker');
 assert(scriptVersion('ui/library_view.js') === ver, 'index.html should load library view with the studio asset version marker');
+assert(scriptVersion('controllers/library_controller.js') === ver, 'index.html should load library controller with the studio asset version marker');
 assert(scriptVersion('ui/selection_view.js') === ver, 'index.html should load selection view with the studio asset version marker');
 assert(scriptVersion('controllers/selection_controller.js') === ver, 'index.html should load selection controller with the studio asset version marker');
 

@@ -41,9 +41,7 @@
     const getAudioSegmentPanelOpts = opts.getAudioSegmentPanelOpts || function(){ return null; };
     const onSegmentAtPlayhead = opts.onSegmentAtPlayhead || function(){};
     const onSegmentLength = opts.onSegmentLength || opts.onSegmentSetLength || function(){};
-    const onTranscriptionTarget = opts.onTranscriptionTarget || function(){};
-    const onCleanupStrength = opts.onCleanupStrength || function(){};
-    const onPreserveRawCandidates = opts.onPreserveRawCandidates || function(){};
+    const onOpenTranscriptionSettings = opts.onOpenTranscriptionSettings || function(){};
     const onLog = opts.onLog || null;
 
     const view = (window.H2SSelectionView && window.H2SSelectionView.selectionBoxInnerHTML)
@@ -73,6 +71,7 @@
       const btnDup = rootEl.querySelector('[data-act="duplicate"]');
       const btnDel = rootEl.querySelector('[data-act="remove"]');
       const btnArrDet = rootEl.querySelector('[data-act="arrangementDetails"]');
+      const btnTranscriptionSettings = rootEl.querySelector('[data-act="transcriptionSettings"]');
 
       const sel = currentSelectedInstance();
       const inst = sel ? sel.inst : null;
@@ -90,6 +89,13 @@
           onConvertAudioToEditable(inst.clipId, inst.id);
         });
       }
+      if (btnTranscriptionSettings){
+        btnTranscriptionSettings.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenTranscriptionSettings(inst.clipId, btnTranscriptionSettings);
+        });
+      }
       const btnSegPlayhead = rootEl.querySelector('[data-act="segAtPlayhead"]');
       if (btnSegPlayhead){
         btnSegPlayhead.addEventListener('click', (e) => {
@@ -104,28 +110,6 @@
           if (Number.isFinite(len) && len > 0) onSegmentLength(inst.clipId, len);
         });
       });
-      const transcriptionTarget = rootEl.querySelector('[data-field="transcriptionTarget"]');
-      if (transcriptionTarget){
-        transcriptionTarget.addEventListener('change', () => {
-          onTranscriptionTarget(inst.clipId, transcriptionTarget.value);
-        });
-      }
-      const cleanupStrength = rootEl.querySelector('[data-field="cleanupStrength"]');
-      if (cleanupStrength){
-        cleanupStrength.addEventListener('input', () => {
-          const output = rootEl.querySelector('[data-role="cleanupStrengthValue"]');
-          if (output) output.textContent = String(cleanupStrength.value);
-        });
-        cleanupStrength.addEventListener('change', () => {
-          onCleanupStrength(inst.clipId, Number(cleanupStrength.value));
-        });
-      }
-      const preserveRawCandidates = rootEl.querySelector('[data-field="preserveRawCandidates"]');
-      if (preserveRawCandidates){
-        preserveRawCandidates.addEventListener('change', () => {
-          onPreserveRawCandidates(inst.clipId, preserveRawCandidates.checked === true);
-        });
-      }
       if (btnAddBass){
         btnAddBass.addEventListener('click', (e) => {
           e.preventDefault();
