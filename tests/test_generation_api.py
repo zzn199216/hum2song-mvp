@@ -53,6 +53,30 @@ def test_generate_without_vocal_separation_query_default_false(client):
     assert gen_module.task_manager.get_request_two_stem_separation(tid) is False
 
 
+def test_generate_transcription_controls_are_stored(client):
+    r = client.post(
+        "/generate?output_format=mp3"
+        "&transcription_target=ai_full_mix"
+        "&cleanup_strength=25"
+        "&preserve_raw_candidates=true",
+        files={"file": ("mix.wav", b"fake-wav", "audio/wav")},
+    )
+    assert r.status_code == 202
+    tid = r.json()["task_id"]
+    controls = gen_module.task_manager.get_transcription_controls(tid)
+    assert controls.transcription_target == "ai_full_mix"
+    assert controls.cleanup_strength == 25
+    assert controls.preserve_raw_candidates is True
+
+
+def test_generate_rejects_invalid_transcription_target(client):
+    r = client.post(
+        "/generate?output_format=mp3&transcription_target=not-a-target",
+        files={"file": ("mix.wav", b"fake-wav", "audio/wav")},
+    )
+    assert r.status_code == 422
+
+
 def test_generate_returns_task_id_and_finishes(client):
     r = client.post(
         "/generate?output_format=mp3",

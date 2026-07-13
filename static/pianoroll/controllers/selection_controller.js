@@ -41,6 +41,9 @@
     const getAudioSegmentPanelOpts = opts.getAudioSegmentPanelOpts || function(){ return null; };
     const onSegmentAtPlayhead = opts.onSegmentAtPlayhead || function(){};
     const onSegmentLength = opts.onSegmentLength || opts.onSegmentSetLength || function(){};
+    const onTranscriptionTarget = opts.onTranscriptionTarget || function(){};
+    const onCleanupStrength = opts.onCleanupStrength || function(){};
+    const onPreserveRawCandidates = opts.onPreserveRawCandidates || function(){};
     const onLog = opts.onLog || null;
 
     const view = (window.H2SSelectionView && window.H2SSelectionView.selectionBoxInnerHTML)
@@ -101,6 +104,28 @@
           if (Number.isFinite(len) && len > 0) onSegmentLength(inst.clipId, len);
         });
       });
+      const transcriptionTarget = rootEl.querySelector('[data-field="transcriptionTarget"]');
+      if (transcriptionTarget){
+        transcriptionTarget.addEventListener('change', () => {
+          onTranscriptionTarget(inst.clipId, transcriptionTarget.value);
+        });
+      }
+      const cleanupStrength = rootEl.querySelector('[data-field="cleanupStrength"]');
+      if (cleanupStrength){
+        cleanupStrength.addEventListener('input', () => {
+          const output = rootEl.querySelector('[data-role="cleanupStrengthValue"]');
+          if (output) output.textContent = String(cleanupStrength.value);
+        });
+        cleanupStrength.addEventListener('change', () => {
+          onCleanupStrength(inst.clipId, Number(cleanupStrength.value));
+        });
+      }
+      const preserveRawCandidates = rootEl.querySelector('[data-field="preserveRawCandidates"]');
+      if (preserveRawCandidates){
+        preserveRawCandidates.addEventListener('change', () => {
+          onPreserveRawCandidates(inst.clipId, preserveRawCandidates.checked === true);
+        });
+      }
       if (btnAddBass){
         btnAddBass.addEventListener('click', (e) => {
           e.preventDefault();

@@ -16,6 +16,7 @@ from core.models import (
     TaskResult,
     TaskStatus,
 )
+from core.transcription_controls import TranscriptionControls, normalize_transcription_controls
 
 
 def _utcnow() -> datetime:
@@ -71,6 +72,10 @@ class _TaskRecord:
     # Per-upload: transcribe only this window (seconds); preprocess loads full extracted segment.
     transcription_segment_start_sec: Optional[float] = None
     transcription_segment_duration_sec: Optional[float] = None
+
+    transcription_target: str = "auto"
+    cleanup_strength: int = 50
+    preserve_raw_candidates: bool = False
 
 
 class TaskManager:
@@ -155,6 +160,21 @@ class TaskManager:
                 float(rec.transcription_segment_duration_sec),
             )
 
+    def get_transcription_controls(self, task_id: Union[str, UUID]) -> TranscriptionControls:
+        try:
+            tid = _ensure_uuid(task_id)
+        except Exception:
+            return TranscriptionControls()
+        with self._lock:
+            rec = self._tasks.get(tid)
+            if rec is None:
+                return TranscriptionControls()
+            return TranscriptionControls(
+                transcription_target=rec.transcription_target,
+                cleanup_strength=rec.cleanup_strength,
+                preserve_raw_candidates=rec.preserve_raw_candidates,
+            )
+
     def get_task_info(self, task_id: Union[str, UUID]) -> TaskInfoResponse:
         """
         Public API: Returns the Contract Model (TaskInfoResponse).
@@ -210,9 +230,19 @@ class TaskManager:
         *,
         stage: Stage = Stage.preprocessing,
         request_two_stem_separation: bool = False,
+        transcription_target: str = "auto",
+        cleanup_strength: int = 50,
+        preserve_raw_candidates: bool = False,
     ) -> UUID:
         now = _utcnow()
         tid = uuid4()
+        controls = normalize_transcription_controls(
+            {
+                "transcription_target": transcription_target,
+                "cleanup_strength": cleanup_strength,
+                "preserve_raw_candidates": preserve_raw_candidates,
+            }
+        )
 
         rec = _TaskRecord(
             task_id=tid,
@@ -224,6 +254,9 @@ class TaskManager:
             result=None,
             error=None,
             request_two_stem_separation=bool(request_two_stem_separation),
+            transcription_target=controls.transcription_target,
+            cleanup_strength=controls.cleanup_strength,
+            preserve_raw_candidates=controls.preserve_raw_candidates,
         )
 
         with self._lock:

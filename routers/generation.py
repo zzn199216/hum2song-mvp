@@ -22,6 +22,7 @@ from core.audio_segment import (
 from core.generation_service import generation_service
 from core.models import FileType, Stage, TaskCreateResponse, TaskInfoResponse, TaskStatus
 from core.task_manager import task_manager
+from core.transcription_controls import TRANSCRIPTION_TARGETS, normalize_transcription_target
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,20 @@ async def generate_music(
         gt=0,
         description="Alternative to segment_duration_sec: end time in seconds.",
     ),
+    transcription_target: str = Query(
+        "auto",
+        description="Audio transcription target. Defaults to the historical automatic behavior.",
+    ),
+    cleanup_strength: int = Query(
+        50,
+        ge=0,
+        le=100,
+        description="Candidate cleanup strength from 0 (preserve more) to 100 (cleaner result).",
+    ),
+    preserve_raw_candidates: bool = Query(
+        False,
+        description="Skip target-specific aggressive cleanup and preserve Basic Pitch candidates.",
+    ),
 ) -> TaskCreateResponse:
     """
     Contract: 202 Accepted -> TaskCreateResponse
@@ -199,9 +214,17 @@ async def generate_music(
 
     original_ext = (Path(file.filename).suffix or ".wav").lower()
 
+    normalized_target = normalize_transcription_target(transcription_target)
+    accepted_target_values = set(TRANSCRIPTION_TARGETS) | {"default", "synth_lead", "synth_pad"}
+    if str(transcription_target).strip().lower() not in accepted_target_values:
+        raise HTTPException(status_code=422, detail="Unsupported transcription_target")
+
     task_id = task_manager.create_task(
         stage=Stage.preprocessing,
         request_two_stem_separation=bool(vocal_separation),
+        transcription_target=normalized_target,
+        cleanup_strength=cleanup_strength,
+        preserve_raw_candidates=preserve_raw_candidates,
     )
 
     upload_dir = _resolve_upload_dir()
@@ -224,11 +247,14 @@ async def generate_music(
             raise HTTPException(status_code=400, detail="File is empty")
 
         logger.info(
-            "Task[%s] uploaded (%d bytes) -> %s vocal_separation=%s",
+            "Task[%s] uploaded (%d bytes) -> %s vocal_separation=%s transcription_target=%s cleanup_strength=%s preserve_raw_candidates=%s",
             task_id,
             written,
             input_path.name,
             bool(vocal_separation),
+            normalized_target,
+            cleanup_strength,
+            preserve_raw_candidates,
         )
         seg_log_start = None
         seg_log_dur = None

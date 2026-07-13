@@ -167,6 +167,30 @@
     try { options.onStatus(status || {}); } catch (_e) {}
   }
 
+  function normalizeTranscriptionControls(options) {
+    options = options || {};
+    var allowed = {
+      auto: true,
+      ai_full_mix: true,
+      melody: true,
+      chords: true,
+      vocal_humming: true,
+      piano_guitar: true,
+      electronic_melody: true,
+      pad_chords: true,
+    };
+    var target = String(options.transcriptionTarget || 'auto').trim().toLowerCase();
+    if (!allowed[target]) target = 'auto';
+    var strength = Number(options.cleanupStrength);
+    if (!isFinite(strength)) strength = 50;
+    strength = Math.max(0, Math.min(100, Math.round(strength)));
+    return {
+      transcriptionTarget: target,
+      cleanupStrength: strength,
+      preserveRawCandidates: options.preserveRawCandidates === true,
+    };
+  }
+
   async function fetchResult(jobId, finalAttempt) {
     var t0 = nowMs();
     diag(finalAttempt ? 'result_final_start' : 'result_start', { jobId: jobId, timeoutMs: RESULT_RPC_TIMEOUT_MS });
@@ -206,6 +230,7 @@
     if (!isEnabled() || !isCloudMode()) return { ok: false, reason: 'worker_unavailable' };
     var file = options.file;
     var segment = options.segment;
+    var controls = normalizeTranscriptionControls(options);
     if (!file || !segment) return { ok: false, reason: 'bad_args' };
     var encodeStart = nowMs();
     diag('encode_start', {
@@ -220,6 +245,9 @@
       mimeType: 'audio/wav',
       segmentStartSec: Number(segment.startSec || 0),
       segmentDurationSec: Number(segment.durationSec || 0),
+      transcriptionTarget: controls.transcriptionTarget,
+      cleanupStrength: controls.cleanupStrength,
+      preserveRawCandidates: controls.preserveRawCandidates,
       audioBuffer: audioBuffer,
     }, [audioBuffer], { timeoutMs: CREATE_UPLOAD_RPC_TIMEOUT_MS, stage: 'job_create_upload' });
     var job = created.job || {};
@@ -292,6 +320,7 @@
     isCloudMode: isCloudMode,
     convert: convert,
     _encodeWav: encodeWav,
+    _normalizeTranscriptionControls: normalizeTranscriptionControls,
     _timeouts: {
       createUploadMs: CREATE_UPLOAD_RPC_TIMEOUT_MS,
       statusMs: STATUS_RPC_TIMEOUT_MS,

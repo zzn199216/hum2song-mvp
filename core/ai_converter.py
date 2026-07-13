@@ -27,6 +27,11 @@ from time import perf_counter
 from typing import Any, Callable, NamedTuple, Optional, Union, Literal
 
 from core.config import get_settings
+from core.transcription_controls import (
+    TranscriptionControls,
+    postprocess_score,
+    resolve_basic_pitch_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +111,7 @@ def _resolve_ai_mode() -> AIMode:
 def audio_to_midi(
     audio_path: Union[str, Path],
     output_dir: Optional[Union[str, Path]] = None,
+    transcription_controls: Optional[TranscriptionControls] = None,
 ) -> Path:
     """
     核心转换函数。
@@ -118,6 +124,7 @@ def audio_to_midi(
     - real / auto：仅 Basic Pitch；导入或推理失败时抛出，由上层将任务标为失败
     """
     settings = get_settings()
+    controls = transcription_controls or TranscriptionControls()
     in_path = Path(audio_path)
 
     if not in_path.exists():
@@ -130,7 +137,14 @@ def audio_to_midi(
     target_midi_path = out_dir / f"{base_name}.mid"
 
     mode = _resolve_ai_mode()
-    logger.info("🎹 [AI Converter] 准备转换: %s (mode=%s)", in_path.name, mode)
+    logger.info(
+        "🎹 [AI Converter] 准备转换: %s (mode=%s target=%s cleanup=%s preserve_raw=%s)",
+        in_path.name,
+        mode,
+        controls.transcription_target,
+        controls.cleanup_strength,
+        controls.preserve_raw_candidates,
+    )
 
     if mode == "stub":
         logger.warning("⚠️ 使用 Stub 模式 (生成伪造 MIDI)，不会进行真实 AI 推理。")
@@ -144,7 +158,7 @@ def audio_to_midi(
         return target_midi_path
 
     # real / auto: Basic Pitch only (no dummy MIDI on failure — surfaced to caller / task failure)
-    midi_path = _audio_to_midi_basic_pitch(in_path, target_midi_path, out_dir)
+    midi_path = _audio_to_midi_basic_pitch(in_path, target_midi_path, out_dir, controls)
     logger.info("✅ [AI Converter] 转换成功: %s", midi_path.name)
     return midi_path
 
@@ -199,6 +213,7 @@ def _audio_to_midi_basic_pitch(
     in_path: Path,
     target_midi_path: Path,
     out_dir: Path,
+    controls: TranscriptionControls,
 ) -> Path:
     """
     使用 Basic Pitch 模型将音频转换为 MIDI。
@@ -226,6 +241,12 @@ def _audio_to_midi_basic_pitch(
 
     onset = getattr(settings, "onset_threshold", None)
     frame = getattr(settings, "frame_threshold", None)
+    inference = resolve_basic_pitch_params(
+        controls,
+        default_onset_threshold=float(onset if onset is not None else 0.5),
+        default_frame_threshold=float(frame if frame is not None else 0.3),
+        default_minimum_note_length_ms=50.0,
+    )
 
     # 候选参数（会按签名过滤，只传 predict_and_save 真正支持的）
     candidates = {
@@ -241,9 +262,9 @@ def _audio_to_midi_basic_pitch(
         "model_or_model_path": ICASSP_2022_MODEL_PATH,
 
         # 可选阈值/时长（有就传）
-        "onset_threshold": onset,
-        "frame_threshold": frame,
-        "minimum_note_length": 50.0,  # ms（有的版本会是默认 127.7）
+        "onset_threshold": inference.onset_threshold,
+        "frame_threshold": inference.frame_threshold,
+        "minimum_note_length": inference.minimum_note_length_ms,
     }
 
     call_kwargs = {}
@@ -306,6 +327,21 @@ def _audio_to_midi_basic_pitch(
 
     if generated.resolve() != target_midi_path.resolve():
         generated.rename(target_midi_path)
+
+    if controls.transcription_target != "auto" and not controls.preserve_raw_candidates:
+        from core.score_convert import midi_to_score, score_to_midi
+        from core.score_models import normalize_score
+
+        raw_score = normalize_score(midi_to_score(target_midi_path))
+        processed_score = normalize_score(postprocess_score(raw_score, controls))
+        if processed_score.model_dump() != raw_score.model_dump():
+            processed_path = target_midi_path.with_name(f"{target_midi_path.stem}_processed.mid")
+            try:
+                score_to_midi(processed_score, processed_path)
+                processed_path.replace(target_midi_path)
+            finally:
+                if processed_path.exists():
+                    processed_path.unlink()
 
     return target_midi_path
 

@@ -7,13 +7,18 @@
   'use strict';
 
   const API = {
-    /** @param {string} fmt @param {{ startSec?: number, durationSec?: number }} [segment] */
-    generate: (fmt, segment) => {
+    /** @param {string} fmt @param {{ startSec?: number, durationSec?: number }} [segment] @param {{ transcriptionTarget?: string, cleanupStrength?: number, preserveRawCandidates?: boolean }} [controls] */
+    generate: (fmt, segment, controls) => {
       const q = new URLSearchParams();
       q.set('output_format', fmt || 'mp3');
       if (segment && typeof segment.startSec === 'number' && typeof segment.durationSec === 'number'){
         q.set('segment_start_sec', String(segment.startSec));
         q.set('segment_duration_sec', String(segment.durationSec));
+      }
+      if (controls && typeof controls === 'object'){
+        q.set('transcription_target', String(controls.transcriptionTarget || 'auto'));
+        q.set('cleanup_strength', String(Number.isFinite(Number(controls.cleanupStrength)) ? Math.round(Number(controls.cleanupStrength)) : 50));
+        q.set('preserve_raw_candidates', controls.preserveRawCandidates === true ? 'true' : 'false');
       }
       return `/generate?${q.toString()}`;
     },
@@ -4208,6 +4213,7 @@ rollbackClipRevision(clipId){
       /** @type {Record<string, { phase: string, taskId?: string, errorBucket?: string, updatedAt: number }>} */
       audioConvertByClipId: {},
       audioConvertSegmentByClipId: {},
+      audioTranscriptionControlsByClipId: {},
       recordingActive: false,
       lastRecordedFile: null,
       importCancelled: false,
@@ -4716,6 +4722,7 @@ $('#rngPitchCenter').addEventListener('input', () => {
               const P = window.H2SProject;
               if (!c || !P || typeof P.clipKind !== 'function' || P.clipKind(c) !== 'audio') return null;
               const seg = this.getAudioConvertSegment(inst.clipId, { sourceAudioInstanceId: inst.id });
+              const controls = this.getAudioTranscriptionControls(inst.clipId);
               const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
               const convActive = this._isAudioConvertActive(inst.clipId);
               return {
@@ -4733,10 +4740,35 @@ $('#rngPitchCenter').addEventListener('input', () => {
                 preset30Label: _t('convert.preset30', '30s'),
                 preset60Label: _t('convert.preset60', '60s'),
                 advancedSegmentTitle: _t('convert.advancedSegmentSettings', 'Advanced segment settings'),
+                transcriptionTarget: controls.transcriptionTarget,
+                cleanupStrength: controls.cleanupStrength,
+                preserveRawCandidates: controls.preserveRawCandidates,
+                transcriptionTargetLabel: _t('transcription.target', 'Transcription target'),
+                cleanupStrengthLabel: _t('transcription.cleanupStrength', 'Cleanup strength'),
+                cleanupPreserveLabel: _t('transcription.cleanup.preserve', 'Preserve more notes'),
+                cleanupBalancedLabel: _t('transcription.cleanup.balanced', 'Balanced'),
+                cleanupCleanerLabel: _t('transcription.cleanup.cleaner', 'Cleaner result'),
+                preserveRawCandidatesLabel: _t('transcription.preserveRawCandidates', 'Preserve raw recognition candidates'),
+                transcriptionTargetHelp: controls.transcriptionTarget === 'chords'
+                  ? _t('transcription.target.chordsHelp', 'Best for accompaniment and pads. May keep more notes; use cleanup strength to control density.')
+                  : '',
+                transcriptionTargetOptions: [
+                  { value: 'auto', label: _t('transcription.target.auto', 'Auto') },
+                  { value: 'ai_full_mix', label: _t('transcription.target.aiFullMix', 'AI music / full song') },
+                  { value: 'melody', label: _t('transcription.target.melody', 'Extract melody') },
+                  { value: 'chords', label: _t('transcription.target.chords', 'Chord / polyphonic outline') },
+                  { value: 'vocal_humming', label: _t('transcription.target.vocalHumming', 'Vocal / humming') },
+                  { value: 'piano_guitar', label: _t('transcription.target.pianoGuitar', 'Piano / guitar') },
+                  { value: 'electronic_melody', label: _t('transcription.target.electronicMelody', 'Electronic melody') },
+                  { value: 'pad_chords', label: _t('transcription.target.padChords', 'Pad / sustained chords') },
+                ],
               };
             },
             onSegmentAtPlayhead: (clipId, instId) => this.setAudioConvertSegmentAtPlayhead(clipId, instId),
             onSegmentLength: (clipId, len) => this.setAudioConvertSegmentLength(clipId, len),
+            onTranscriptionTarget: (clipId, target) => this.setAudioTranscriptionTarget(clipId, target),
+            onCleanupStrength: (clipId, strength) => this.setAudioTranscriptionControls(clipId, { cleanupStrength: strength }),
+            onPreserveRawCandidates: (clipId, preserve) => this.setAudioTranscriptionControls(clipId, { preserveRawCandidates: preserve }),
             getAddBassLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addBass') : 'Add Bass'),
             getAddAccompanimentLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addAccompaniment') : 'Add accompaniment'),
             getAddAccompanimentMoreInstructionsLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('arrange.addAccompanimentMoreInstructions') : 'More instructions (optional)'),
@@ -7522,6 +7554,59 @@ renderTimeline(){
       return opts.autoOpen ? 2500 : 6000;
     },
 
+    _defaultCleanupStrengthForTarget(target){
+      const defaults = {
+        auto: 50,
+        ai_full_mix: 25,
+        melody: 70,
+        chords: 40,
+        vocal_humming: 55,
+        piano_guitar: 40,
+        electronic_melody: 65,
+        pad_chords: 45,
+      };
+      return Object.prototype.hasOwnProperty.call(defaults, target) ? defaults[target] : 50;
+    },
+
+    getAudioTranscriptionControls(clipId){
+      const id = String(clipId || '').trim();
+      const existing = id && this.state.audioTranscriptionControlsByClipId
+        ? this.state.audioTranscriptionControlsByClipId[id]
+        : null;
+      const allowed = ['auto', 'ai_full_mix', 'melody', 'chords', 'vocal_humming', 'piano_guitar', 'electronic_melody', 'pad_chords'];
+      const target = existing && allowed.indexOf(String(existing.transcriptionTarget || '')) >= 0
+        ? String(existing.transcriptionTarget)
+        : 'auto';
+      const strengthRaw = existing ? Number(existing.cleanupStrength) : 50;
+      return {
+        transcriptionTarget: target,
+        cleanupStrength: Number.isFinite(strengthRaw) ? Math.max(0, Math.min(100, Math.round(strengthRaw))) : 50,
+        preserveRawCandidates: !!(existing && existing.preserveRawCandidates === true),
+      };
+    },
+
+    setAudioTranscriptionControls(clipId, patch){
+      const id = String(clipId || '').trim();
+      if (!id) return null;
+      if (!this.state.audioTranscriptionControlsByClipId) this.state.audioTranscriptionControlsByClipId = {};
+      const previous = this.getAudioTranscriptionControls(id);
+      const next = Object.assign({}, previous, patch || {});
+      next.cleanupStrength = Math.max(0, Math.min(100, Math.round(Number(next.cleanupStrength) || 0)));
+      next.preserveRawCandidates = next.preserveRawCandidates === true;
+      this.state.audioTranscriptionControlsByClipId[id] = next;
+      if (this.selectionCtrl && typeof this.selectionCtrl.render === 'function') this.selectionCtrl.render();
+      return next;
+    },
+
+    setAudioTranscriptionTarget(clipId, target){
+      const allowed = ['auto', 'ai_full_mix', 'melody', 'chords', 'vocal_humming', 'piano_guitar', 'electronic_melody', 'pad_chords'];
+      const normalized = allowed.indexOf(String(target || '')) >= 0 ? String(target) : 'auto';
+      return this.setAudioTranscriptionControls(clipId, {
+        transcriptionTarget: normalized,
+        cleanupStrength: this._defaultCleanupStrengthForTarget(normalized),
+      });
+    },
+
     _segmentApi(){
       return (typeof window !== 'undefined' && window.H2SAudioConvertSegment) ? window.H2SAudioConvertSegment : null;
     },
@@ -7745,7 +7830,11 @@ renderTimeline(){
         const fd = new FormData();
         fd.append('file', file, file.name);
         const tUp0 = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
-        const res = await fetchJson(API.generate('mp3', segForUpload), { method:'POST', body:fd });
+        const res = await fetchJson(API.generate('mp3', segForUpload, {
+          transcriptionTarget: opts.transcriptionTarget,
+          cleanupStrength: opts.cleanupStrength,
+          preserveRawCandidates: opts.preserveRawCandidates,
+        }), { method:'POST', body:fd });
         uploadMs = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) - tUp0;
         const tid = res.task_id || res.id || res.taskId || res.task || null;
         if (!tid){
@@ -8106,10 +8195,18 @@ renderTimeline(){
         }
         if (!isFinite(durationSec) || durationSec <= 0) return { ok: false, reason: 'segment_extract_failed' };
         const seg = { startSec: 0, durationSec };
+        const controls = {
+          transcriptionTarget: opts.transcriptionTarget || 'auto',
+          cleanupStrength: opts.cleanupStrength == null ? 50 : opts.cleanupStrength,
+          preserveRawCandidates: opts.preserveRawCandidates === true,
+        };
         this.setImportStatus(_t(statusKey, statusDefault), true);
         const res = await client.convert({
           file: file,
           segment: seg,
+          transcriptionTarget: controls.transcriptionTarget,
+          cleanupStrength: controls.cleanupStrength,
+          preserveRawCandidates: controls.preserveRawCandidates,
           onStatus: () => {
             this.setImportStatus(_t(statusKey, statusDefault), true);
           },
@@ -8134,6 +8231,7 @@ renderTimeline(){
 
     async _tryWorkerConvertAudioClipToEditable(clipId, file, seg, opts){
       opts = opts || {};
+      const controls = opts.transcriptionControls || this.getAudioTranscriptionControls(clipId);
       const client = (typeof window !== 'undefined') ? window.H2SAudioWorkerConversionClient : null;
       if (!client || typeof client.isEnabled !== 'function' || !client.isEnabled() || typeof client.convert !== 'function'){
         return { ok: false, reason: 'worker_unavailable' };
@@ -8151,6 +8249,9 @@ renderTimeline(){
         const res = await client.convert({
           file: file,
           segment: seg,
+          transcriptionTarget: controls.transcriptionTarget,
+          cleanupStrength: controls.cleanupStrength,
+          preserveRawCandidates: controls.preserveRawCandidates,
           onStatus: (status) => {
             const workerJobId = status && status.jobId ? String(status.jobId) : null;
             this._setAudioConvertState(clipId, {
@@ -8267,8 +8368,17 @@ renderTimeline(){
         segmentStartSec: seg.startSec,
         segmentDurationSec: seg.durationSec,
       };
+      const transcriptionControls = this.getAudioTranscriptionControls(clipId);
+      uploadOpts.transcriptionTarget = transcriptionControls.transcriptionTarget;
+      uploadOpts.cleanupStrength = transcriptionControls.cleanupStrength;
+      uploadOpts.preserveRawCandidates = transcriptionControls.preserveRawCandidates;
       if (opts.sourceAudioInstanceId) uploadOpts.sourceAudioInstanceId = String(opts.sourceAudioInstanceId);
-      const workerTry = await this._tryWorkerConvertAudioClipToEditable(clipId, file, seg, opts);
+      const workerTry = await this._tryWorkerConvertAudioClipToEditable(
+        clipId,
+        file,
+        seg,
+        Object.assign({}, opts, { transcriptionControls }),
+      );
       if (workerTry && workerTry.ok) return { ok: true, workerJobId: workerTry.workerJobId || null };
       if (workerTry && workerTry.reason && workerTry.reason !== 'worker_unavailable'){
         const txt = this._audioConvertStatusText(clipId);

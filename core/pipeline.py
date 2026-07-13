@@ -110,6 +110,7 @@ def run_pipeline_for_task(
         logger.info("[H2S timing] task_id=%s pipeline_preprocess_ms=%.1f", task_id, pre_ms)
 
         stem_requested = contract_task_manager.get_request_two_stem_separation(task_id)
+        transcription_controls = contract_task_manager.get_transcription_controls(task_id)
 
         t_ai0 = perf_counter()
         try:
@@ -153,9 +154,17 @@ def run_pipeline_for_task(
                 )
 
                 TaskManager.update_task(task_id, status="processing", progress=40, message="AI 正在听音记谱 (vocal)...")
-                midi_v = audio_to_midi(vocal_path, output_dir=settings.output_dir)
+                midi_v = audio_to_midi(
+                    vocal_path,
+                    output_dir=settings.output_dir,
+                    transcription_controls=transcription_controls,
+                )
                 TaskManager.update_task(task_id, status="processing", progress=50, message="AI 正在听音记谱 (music)...")
-                midi_m = audio_to_midi(acc_path, output_dir=settings.output_dir)
+                midi_m = audio_to_midi(
+                    acc_path,
+                    output_dir=settings.output_dir,
+                    transcription_controls=transcription_controls,
+                )
 
                 sv = normalize_score(midi_to_score(Path(midi_v)))
                 sm = normalize_score(midi_to_score(Path(midi_m)))
@@ -185,7 +194,11 @@ def run_pipeline_for_task(
 
                 from core.ai_converter import audio_to_midi
 
-                midi_path = audio_to_midi(clean_wav_path, output_dir=settings.output_dir)
+                midi_path = audio_to_midi(
+                    clean_wav_path,
+                    output_dir=settings.output_dir,
+                    transcription_controls=transcription_controls,
+                )
 
                 # ✅ 强制 MIDI 产物命名/落盘一致性：outputs/{task_id}.mid
                 midi_path = _ensure_taskid_midi(task_id, midi_path, settings.output_dir)

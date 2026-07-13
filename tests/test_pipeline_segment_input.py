@@ -54,7 +54,8 @@ def test_run_pipeline_for_task_uses_segment_sidecar_and_duration(pipeline_dirs):
         out.write_bytes(b"CLEAN")
         return out
 
-    def fake_audio_to_midi(clean_wav, output_dir=None):
+    def fake_audio_to_midi(clean_wav, output_dir=None, *, transcription_controls=None):
+        seen["transcription_controls"] = transcription_controls
         out = Path(output_dir or output_dir) / f"{contract_id}.mid"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"MID")
@@ -78,3 +79,7 @@ def test_run_pipeline_for_task_uses_segment_sidecar_and_duration(pipeline_dirs):
 
     assert seen["input"] == segment_wav.resolve()
     assert seen["load_max_sec"] == pytest.approx(180.3958125)
+    controls = seen["transcription_controls"]
+    assert controls.transcription_target == "auto"
+    assert controls.cleanup_strength == 50
+    assert controls.preserve_raw_candidates is False

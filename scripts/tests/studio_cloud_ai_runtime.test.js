@@ -40,7 +40,7 @@ for (const src of requiredVersionedScripts) {
   assert(!/[\\/?#]/.test(assetVersion), src + ' cache-bust version should be a plain marker');
 }
 
-assert(ver === 'clip-edit-v16', 'studio_asset_version.js should preserve current production marker');
+assert(ver === 'audio-transcription-controls-v0', 'studio_asset_version.js should use the transcription controls release marker');
 assert(scriptVersion('studio_asset_version.js') === ver, 'index.html should load studio_asset_version.js with the studio asset version marker');
 assert(scriptVersion('h2s_startup_perf.js') === ver, 'index.html should load startup perf with the studio asset version marker');
 assert(scriptVersion('app.js') === ver, 'index.html should load app.js with the studio asset version marker');
