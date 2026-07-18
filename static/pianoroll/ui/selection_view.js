@@ -25,6 +25,7 @@
     const convertLabel = (opts.convertLabel != null) ? String(opts.convertLabel) : 'Convert selected segment';
     const advancedTitle = (opts.advancedSegmentTitle != null) ? String(opts.advancedSegmentTitle) : 'Advanced segment settings';
     const transcriptionSettingsLabel = String(opts.transcriptionSettingsLabel || 'Transcription settings');
+    const autoSeparationLabel = String(opts.autoSeparationLabel || 'AI 自动分轨');
     const inner =
         `<div class="kv"><b>${escapeHtml((opts.audioDurationTitle != null) ? opts.audioDurationTitle : 'Audio')}</b><span>${escapeHtml(audioDurLabel)}</span></div>` +
         `<div class="kv"><b>${escapeHtml(startLabel)}</b><span data-role="segStart">${escapeHtml(fmtSec(startSec))}</span></div>` +
@@ -38,6 +39,7 @@
         `</div>` +
         `<div class="row" style="margin-top:8px;">` +
           `<button id="btnSelConvertAudio" class="btn mini" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}"${convertActive ? ' disabled' : ''}>${escapeHtml(convertLabel)}</button>` +
+          `<button class="btn mini primary" type="button" data-act="audioSeparation"${convertActive ? ' disabled' : ''}>${escapeHtml(autoSeparationLabel)}</button>` +
           `<button class="btn mini" type="button" data-act="transcriptionSettings"${convertActive ? ' disabled' : ''}>${escapeHtml(transcriptionSettingsLabel)}</button>` +
         `</div>`;
     return (
@@ -66,6 +68,9 @@
     const audioConvertBtn = (isAudio && !showAudioSegment)
       ? `<button id="btnSelConvertAudio" class="btn mini" type="button" data-act="convertAudioEditable" title="${escapeHtml(convertLabel)}">${escapeHtml(convertLabel)}</button>`
       : '';
+    const audioSeparationBtn = (isAudio && !showAudioSegment)
+      ? `<button class="btn mini primary" type="button" data-act="audioSeparation">${escapeHtml(String(opts.autoSeparationLabel || 'AI 自动分轨'))}</button>`
+      : '';
     const audioSegmentBlock = (isAudio && showAudioSegment && typeof audioSegmentPanelHTML === 'function')
       ? audioSegmentPanelHTML({
           escapeHtml,
@@ -86,6 +91,7 @@
           convertActive: opts.convertActive,
           advancedSegmentTitle: opts.advancedSegmentTitle,
           transcriptionSettingsLabel: opts.transcriptionSettingsLabel,
+          autoSeparationLabel: opts.autoSeparationLabel,
         })
       : '';
     const addBassBtn = isAudio
@@ -116,6 +122,7 @@
       <div class="row" style="margin-top:10px;">
         ${editBtn}
         ${audioConvertBtn}
+        ${audioSeparationBtn}
         ${addBassBtn}
         ${addAccompBtn}
         <button id="btnSelDup" class="btn mini" data-act="duplicate">Duplicate</button>

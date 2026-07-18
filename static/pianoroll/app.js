@@ -4716,6 +4716,8 @@ $('#rngPitchCenter').addEventListener('input', () => {
     onRemoveInstance: (instId) => this.deleteInstance(instId),
     onUndoTimeline: () => this.undoLastTimelineEdit(),
             getConvertLabel: () => ((window.I18N && window.I18N.t) ? window.I18N.t('cliplib.convertSegment') : 'Convert selected segment'),
+            getAutoSeparationLabel: () => 'AI 自动分轨',
+            onOpenAudioSeparation: (clipId, instId, trigger) => this.openAudioSeparation({ clipId: clipId, sourceAudioInstanceId: instId, trigger: trigger }),
             getAudioSegmentPanelOpts: (inst) => {
               if (!inst) return null;
               const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
@@ -6892,9 +6894,209 @@ renderTimeline(){
       }
     },
 
+    _audioSeparationElements(){
+      if (typeof document === 'undefined') return {};
+      return {
+        modal: document.getElementById('audioSeparationModal'),
+        preset: document.getElementById('audioSeparationPreset'),
+        mode: document.getElementById('audioSeparationMode'),
+        cost: document.getElementById('audioSeparationCost'),
+        status: document.getElementById('audioSeparationStatus'),
+        run: document.getElementById('btnAudioSeparationRun'),
+      };
+    },
+
+    _syncAudioSeparationCost(){
+      const els = this._audioSeparationElements();
+      const units = els.mode && els.mode.value === 'separate_and_transcribe' ? 2 : 1;
+      if (els.cost) els.cost.textContent = '将扣除 ' + units + ' 次 AI 转写次数';
+      return units;
+    },
+
+    _setAudioSeparationStatus(text){
+      const els = this._audioSeparationElements();
+      if (els.status) els.status.textContent = text || '';
+      if (text) this.setImportStatus(text, true);
+    },
+
+    openAudioSeparation(opts){
+      opts = opts || {};
+      const clipId = String(opts.clipId || '').trim();
+      const instanceId = String(opts.sourceAudioInstanceId || '').trim();
+      if (!clipId || !instanceId || !this._clipIsAudioForEditor(clipId)) return false;
+      const els = this._audioSeparationElements();
+      if (!els.modal || !els.preset || !els.mode) return false;
+      this._audioSeparationContext = { clipId: clipId, sourceAudioInstanceId: instanceId, trigger: opts.trigger || null };
+      els.preset.value = 'four_stem';
+      els.mode.value = 'separate_only';
+      if (els.status) els.status.textContent = '';
+      this._syncAudioSeparationCost();
+      els.modal.classList.remove('hidden');
+      els.modal.setAttribute('aria-hidden', 'false');
+      return true;
+    },
+
+    closeAudioSeparation(force){
+      if (this._audioSeparationBusy && force !== true) return;
+      const els = this._audioSeparationElements();
+      if (!els.modal) return;
+      els.modal.classList.add('hidden');
+      els.modal.setAttribute('aria-hidden', 'true');
+      const context = this._audioSeparationContext || {};
+      this._audioSeparationContext = null;
+      if (context.trigger && context.trigger.isConnected && typeof context.trigger.focus === 'function'){
+        try { context.trigger.focus(); } catch (_e) {}
+      }
+    },
+
+    _initAudioSeparationModal(){
+      const els = this._audioSeparationElements();
+      if (!els.modal || els.modal.__h2sAudioSeparationBound) return;
+      els.modal.__h2sAudioSeparationBound = true;
+      if (els.mode) els.mode.addEventListener('change', () => this._syncAudioSeparationCost());
+      if (els.run) els.run.addEventListener('click', (event) => {
+        event.preventDefault();
+        const context = this._audioSeparationContext || {};
+        Promise.resolve(this._runAudioSeparationForClip(context.clipId, {
+          sourceAudioInstanceId: context.sourceAudioInstanceId,
+          separationPreset: els.preset ? els.preset.value : 'four_stem',
+          mode: els.mode ? els.mode.value : 'separate_only',
+        })).catch((err) => {
+          console.warn('[H2S separation] failed', err);
+          this._setAudioSeparationStatus('AI 自动分轨失败：' + ((err && err.message) ? err.message : 'worker_failed'));
+        });
+      });
+      els.modal.querySelectorAll('[data-audio-separation-close]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          this.closeAudioSeparation();
+        });
+      });
+    },
+
+    async _runAudioSeparationForClip(clipId, opts){
+      opts = opts || {};
+      if (this._audioSeparationBusy) return { ok: false, reason: 'already_active' };
+      const client = (typeof window !== 'undefined') ? window.H2SAudioWorkerSeparationClient : null;
+      const timeline = (typeof window !== 'undefined') ? window.H2SAudioSeparationTimeline : null;
+      const P = (typeof window !== 'undefined') ? window.H2SProject : null;
+      if (!client || !client.isEnabled || !client.isEnabled() || !timeline || !P) {
+        throw new Error('worker_unavailable');
+      }
+      const p2 = this.getProjectV2();
+      const clip = p2 && p2.clips && p2.clips[clipId];
+      const sourceInstanceId = String(opts.sourceAudioInstanceId || '').trim();
+      const sourceInstanceV2 = p2 && Array.isArray(p2.instances)
+        ? p2.instances.find(function (inst) { return inst && String(inst.id) === sourceInstanceId && String(inst.clipId) === String(clipId); })
+        : null;
+      if (!clip || P.clipKind(clip) !== 'audio' || !sourceInstanceV2) throw new Error('source_audio_not_found');
+      let file = opts.fileOverride || null;
+      if (!file) {
+        const ref = clip.audio && typeof clip.audio.assetRef === 'string' ? clip.audio.assetRef : '';
+        const LAS = window.H2SLocalAudioAssets;
+        file = LAS && LAS.getFileForLocalAssetRef ? await LAS.getFileForLocalAssetRef(ref) : null;
+      }
+      if (!file) throw new Error('missing_audio');
+      let durationSec = Number(clip.audio && clip.audio.durationSec);
+      if (!isFinite(durationSec) || durationSec <= 0) durationSec = await this._decodeAudioFileDurationSec(file);
+      if (durationSec > 600.001) throw new Error('audio_too_long');
+      const mode = opts.mode === 'separate_and_transcribe' ? 'separate_and_transcribe' : 'separate_only';
+      const allowedPresets = ['vocals_instrumental', 'four_stem', 'instruments_only', 'vocals_bass_drums'];
+      const separationPreset = allowedPresets.indexOf(String(opts.separationPreset)) >= 0 ? String(opts.separationPreset) : 'four_stem';
+      const controls = this.getAudioTranscriptionControls(clipId);
+      this._audioSeparationBusy = true;
+      const els = this._audioSeparationElements();
+      if (els.run) els.run.disabled = true;
+      try {
+        const result = await client.separate({
+          file: file,
+          durationSec: durationSec,
+          mode: mode,
+          separationPreset: separationPreset,
+          metadata: {
+            originalAudioClipId: clipId,
+            originalAudioAssetId: clip.audio && clip.audio.assetRef ? String(clip.audio.assetRef) : null,
+            sourceStartTime: Number(sourceInstanceV2.startBeat || 0) * 60 / Number(p2.bpm || 120),
+            alignment: { sourceAudioInstanceId: sourceInstanceId, sourceStartBeat: Number(sourceInstanceV2.startBeat || 0) },
+          },
+          transcriptionTarget: controls.transcriptionTarget,
+          cleanupStrength: controls.cleanupStrength,
+          preserveRawCandidates: controls.preserveRawCandidates,
+          onStatus: (status) => {
+            const phase = status && status.phase ? String(status.phase) : 'processing';
+            const labels = { encoding: '正在准备音频…', uploading: '正在上传音频…', processing: 'AI 正在分轨和处理 stem…' };
+            this._setAudioSeparationStatus(labels[phase] || 'AI 正在处理…');
+          },
+        });
+        if (!result || !result.ok) throw new Error((result && result.reason) || 'worker_failed');
+        const items = timeline.timelineItems(result.manifest);
+        const plan = timeline.planTrackIndices(this.project, sourceInstanceId, items.length);
+        if (!plan.ok) throw new Error(plan.reason || 'timeline_placement_failed');
+        if (plan.trackIndices.length) this.ensureTimelineTrackIndex(Math.max.apply(Math, plan.trackIndices));
+        const sourceStartBeat = Number(sourceInstanceV2.startBeat || 0);
+        const failures = [];
+        for (let index = 0; index < items.length; index += 1) {
+          const item = items[index];
+          const artifact = timeline.findArtifact(result.artifacts, item.artifactRole);
+          if (!artifact) {
+            failures.push(item.stem + ': artifact missing');
+            continue;
+          }
+          this._setAudioSeparationStatus('正在导入 ' + item.stem + '…');
+          try {
+            const downloaded = await client.downloadArtifact(result.workerJobId, artifact.artifactId);
+            const trackIndex = plan.trackIndices[index];
+            if (item.kind === 'audio') {
+              const stemFile = new File([downloaded.buffer], downloaded.filename || (item.stem + '.wav'), { type: downloaded.mimeType || 'audio/wav' });
+              const committed = await this._commitNativeAudioFile(stemFile, {
+                baseName: item.stem,
+                trackIndex: trackIndex,
+                startBeat: sourceStartBeat,
+                statusDoneKey: 'io.importAudioStoredLocal',
+              });
+              if (!committed || !committed.ok) throw new Error((committed && committed.reason) || 'audio_materialize_failed');
+            } else {
+              const text = new TextDecoder('utf-8').decode(new Uint8Array(downloaded.buffer));
+              const scoreDoc = JSON.parse(text);
+              const materialized = this._materializeScoreDocToTimeline(scoreDoc, {
+                baseName: item.stem,
+                sourceTaskId: result.workerJobId,
+                workerJobId: result.workerJobId,
+                workerConversionSource: 'audio_separation_demucs',
+                placeStartSec: plan.sourceStartSec,
+                placeTrackIndex: trackIndex,
+                forceSingleClip: true,
+              });
+              if (!materialized || !materialized.ok) throw new Error('midi_materialize_failed');
+            }
+          } catch (err) {
+            failures.push(item.stem + ': ' + ((err && err.message) ? err.message : 'import_failed'));
+          }
+        }
+        const workerFailures = result.manifest && Array.isArray(result.manifest.transcriptionFailures)
+          ? result.manifest.transcriptionFailures.map(function (failure) { return String(failure.stem || '') + ': ' + String(failure.message || 'transcription_failed'); })
+          : [];
+        const allFailures = failures.concat(workerFailures);
+        const done = allFailures.length
+          ? ('AI 自动分轨完成，但部分 stem 失败：' + allFailures.join('；'))
+          : 'AI 自动分轨完成。原始音频已保留。';
+        this._setAudioSeparationStatus(done);
+        this.setImportStatus(done, false);
+        if (!allFailures.length) this.closeAudioSeparation(true);
+        return { ok: true, workerJobId: result.workerJobId, failures: allFailures };
+      } finally {
+        this._audioSeparationBusy = false;
+        if (els.run) els.run.disabled = false;
+      }
+    },
+
     _initTopBarImportTranscriptionControls(){
       if (typeof document === 'undefined') return;
+      this._initAudioSeparationModal();
       const checkbox = document.getElementById('chkImportAudioToNotes');
+      const separateFirst = document.getElementById('chkImportAudioSeparateFirst');
+      const separationPreset = document.getElementById('selImportAudioSeparationPreset');
+      const separationCost = document.getElementById('importAudioSeparationCost');
       const trigger = document.getElementById('btnTopImportTranscriptionSettings');
       const els = this._transcriptionSettingsElements();
       if (!els.modal || els.modal.__h2sTranscriptionControlsBound){
@@ -6902,7 +7104,20 @@ renderTimeline(){
         return;
       }
       els.modal.__h2sTranscriptionControlsBound = true;
-      if (checkbox) checkbox.addEventListener('change', () => this._syncTopBarImportTranscriptionControls());
+      const syncSeparationImport = () => {
+        const notesEnabled = !checkbox || !!checkbox.checked;
+        if (separateFirst) {
+          separateFirst.disabled = !notesEnabled;
+          if (!notesEnabled) separateFirst.checked = false;
+        }
+        const enabled = notesEnabled && !!(separateFirst && separateFirst.checked);
+        if (separationPreset) separationPreset.disabled = !enabled;
+        if (separationCost) separationCost.textContent = enabled
+          ? '先分轨后转写将扣除 2 次 AI 转写次数'
+          : '普通转写将扣除 1 次 AI 转写次数';
+      };
+      if (checkbox) checkbox.addEventListener('change', () => { this._syncTopBarImportTranscriptionControls(); syncSeparationImport(); });
+      if (separateFirst) separateFirst.addEventListener('change', syncSeparationImport);
       if (trigger) trigger.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -6929,13 +7144,28 @@ renderTimeline(){
         if (event.key === 'Escape' && !els.modal.classList.contains('hidden')) this.closeTranscriptionSettings();
       });
       this._syncTopBarImportTranscriptionControls();
+      syncSeparationImport();
     },
 
     /** Top bar: one Import audio control + “Make editable notes” checkbox (default on). */
     async runTopBarImportAudio(){
       const chk = (typeof document !== 'undefined') ? document.getElementById('chkImportAudioToNotes') : null;
       const toNotes = !chk || !!chk.checked;
-      if (toNotes) await this.pickWavAndGenerate(this.getTopBarImportTranscriptionControls());
+      const separateFirst = (typeof document !== 'undefined') ? document.getElementById('chkImportAudioSeparateFirst') : null;
+      if (toNotes && separateFirst && separateFirst.checked) {
+        const preset = document.getElementById('selImportAudioSeparationPreset');
+        const file = await this.pickFile('.wav,.mp3,.m4a,.flac,.ogg');
+        if (!file) return;
+        const committed = await this._commitNativeAudioFile(file, {});
+        if (!committed || !committed.ok) return;
+        await this._runAudioSeparationForClip(committed.clipId, {
+          sourceAudioInstanceId: committed.instanceId,
+          separationPreset: preset ? preset.value : 'four_stem',
+          mode: 'separate_and_transcribe',
+          fileOverride: file,
+        });
+      }
+      else if (toNotes) await this.pickWavAndGenerate(this.getTopBarImportTranscriptionControls());
       else await this.importAudioFileAsNativeClip();
     },
 

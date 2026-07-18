@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+const read = (...parts) => fs.readFileSync(path.join(repoRoot, ...parts), 'utf8');
+const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'audio_separation_timeline.js'));
+
+(function testModalAndImportControls(){
+  const html = read('static', 'pianoroll', 'index.html');
+  assert(html.includes('id="audioSeparationModal"'));
+  assert(html.includes('id="audioSeparationPreset"'));
+  assert(html.includes('<option value="four_stem" selected>四轨分离</option>'));
+  assert(html.includes('id="audioSeparationMode"'));
+  assert(html.includes('id="chkImportAudioSeparateFirst"'));
+  assert(html.includes('id="selImportAudioSeparationPreset" disabled'));
+  assert(html.includes('鼓声 v0 会作为音频 stem 保留，不会转成音高 MIDI'));
+  assert(html.includes('原始音频不会被删除或覆盖'));
+  console.log('PASS audio separation modal and import controls');
+})();
+
+(function testAudioOnlySelectionEntry(){
+  const view = require(path.join(repoRoot, 'static', 'pianoroll', 'ui', 'selection_view.js'));
+  const common = { fmtSec: String, escapeHtml: String, clipName: 'clip', startSec: 0 };
+  const audioHtml = view.selectionBoxInnerHTML({ ...common, isAudio: true, showAudioSegment: false });
+  const midiHtml = view.selectionBoxInnerHTML({ ...common, isAudio: false, showAudioSegment: false });
+  assert(audioHtml.includes('data-act="audioSeparation"'));
+  assert(!midiHtml.includes('data-act="audioSeparation"'));
+  console.log('PASS separation entry is audio-only');
+})();
+
+(function testPresetTimelineMaterialization(){
+  assert.deepStrictEqual(
+    timeline.timelineItems({ timelineAudioStems: ['vocals', 'instrumental'], transcribedStems: [] }),
+    [
+      { stem: 'vocals', kind: 'audio', artifactRole: 'stem_vocals_audio' },
+      { stem: 'instrumental', kind: 'audio', artifactRole: 'stem_instrumental_audio' },
+    ]
+  );
+  assert.deepStrictEqual(
+    timeline.timelineItems({
+      timelineAudioStems: ['vocals', 'drums', 'bass', 'other'],
+      transcribedStems: ['vocals', 'bass', 'other'],
+    }),
+    [
+      { stem: 'vocals', kind: 'midi', artifactRole: 'stem_vocals_score' },
+      { stem: 'drums', kind: 'audio', artifactRole: 'stem_drums_audio' },
+      { stem: 'bass', kind: 'midi', artifactRole: 'stem_bass_score' },
+      { stem: 'other', kind: 'midi', artifactRole: 'stem_other_score' },
+    ]
+  );
+  assert.deepStrictEqual(
+    timeline.timelineItems({ timelineAudioStems: ['drums', 'bass', 'other'], transcribedStems: ['bass'] }),
+    [
+      { stem: 'drums', kind: 'audio', artifactRole: 'stem_drums_audio' },
+      { stem: 'bass', kind: 'midi', artifactRole: 'stem_bass_score' },
+      { stem: 'other', kind: 'audio', artifactRole: 'stem_other_audio' },
+    ],
+    'a failed other transcription must fall back to its audio stem'
+  );
+  assert.deepStrictEqual(
+    timeline.timelineItems({ timelineAudioStems: ['vocals', 'bass', 'drums'], transcribedStems: ['vocals', 'bass'] }),
+    [
+      { stem: 'vocals', kind: 'midi', artifactRole: 'stem_vocals_score' },
+      { stem: 'bass', kind: 'midi', artifactRole: 'stem_bass_score' },
+      { stem: 'drums', kind: 'audio', artifactRole: 'stem_drums_audio' },
+    ]
+  );
+  console.log('PASS manifest-driven preset materialization');
+})();
+
+(function testEmptyTracksThenAppend(){
+  const project = {
+    tracks: [{}, {}, {}, {}],
+    instances: [
+      { id: 'source', trackIndex: 0, startSec: 4.25 },
+      { id: 'occupied', trackIndex: 2, startSec: 0 },
+    ],
+  };
+  const plan = timeline.planTrackIndices(project, 'source', 4);
+  assert.strictEqual(plan.ok, true);
+  assert.deepStrictEqual(plan.trackIndices, [1, 3, 4, 5]);
+  assert.strictEqual(plan.sourceStartSec, 4.25);
+  assert.strictEqual(plan.requiredTrackCount, 6);
+  console.log('PASS empty tracks below source are reused before append');
+})();
+
+(async function testPayloadIncludesPresetAndTenMinuteClientLimit(){
+  const previousWindow = global.window;
+  let createPayload = null;
+  global.window = {
+    H2SAudioWorkerConversionClient: {
+      isEnabled: () => true,
+      isCloudMode: () => true,
+      _segmentToWavArrayBuffer: async () => new ArrayBuffer(8),
+      _requestHost: async (type, payload) => {
+        if (type === 'H2S_CLOUD_AUDIO_SEPARATION_JOB_CREATE') {
+          createPayload = payload;
+          return { job: { id: 'job-1', status: 'queued' }, costUnits: 2 };
+        }
+        if (type === 'H2S_CLOUD_AUDIO_SEPARATION_JOB_STATUS') return { job: { id: 'job-1', status: 'succeeded' } };
+        if (type === 'H2S_CLOUD_AUDIO_SEPARATION_JOB_RESULT') return { manifest: {}, artifacts: [] };
+        throw new Error(`unexpected bridge request: ${type}`);
+      },
+    },
+  };
+  const clientPath = path.join(repoRoot, 'static', 'pianoroll', 'core', 'audio_worker_separation_client.js');
+  delete require.cache[require.resolve(clientPath)];
+  const client = require(clientPath);
+  const result = await client.separate({
+    file: { name: 'mix.wav' },
+    durationSec: 600,
+    mode: 'separate_and_transcribe',
+    separationPreset: 'vocals_bass_drums',
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(client.maxDurationSec, 600);
+  assert.strictEqual(createPayload.separationPreset, 'vocals_bass_drums');
+  assert.strictEqual(createPayload.mode, 'separate_and_transcribe');
+  const tooLong = await client.separate({
+    file: { name: 'mix.wav' },
+    durationSec: 600.01,
+    mode: 'separate_only',
+    separationPreset: 'four_stem',
+  });
+  assert.deepStrictEqual(tooLong, { ok: false, reason: 'audio_too_long' });
+  delete require.cache[require.resolve(clientPath)];
+  if (previousWindow === undefined) delete global.window;
+  else global.window = previousWindow;
+  console.log('PASS separation payload and 10 minute bound');
+})().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});
+
+(function testOldImportPathRemains(){
+  const app = read('static', 'pianoroll', 'app.js');
+  assert(app.includes("if (toNotes && separateFirst && separateFirst.checked)"));
+  assert(app.includes("else if (toNotes) await this.pickWavAndGenerate(this.getTopBarImportTranscriptionControls())"));
+  assert(app.includes("else await this.importAudioFileAsNativeClip()"));
+  assert(app.includes("separationCost.textContent = enabled"));
+  assert(app.includes("separateFirst.addEventListener('change', syncSeparationImport)"));
+  console.log('PASS legacy import/transcription branches remain');
+})();

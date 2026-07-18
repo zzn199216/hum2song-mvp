@@ -320,6 +320,8 @@
     isCloudMode: isCloudMode,
     convert: convert,
     _encodeWav: encodeWav,
+    _segmentToWavArrayBuffer: segmentToWavArrayBuffer,
+    _requestHost: requestHost,
     _normalizeTranscriptionControls: normalizeTranscriptionControls,
     _timeouts: {
       createUploadMs: CREATE_UPLOAD_RPC_TIMEOUT_MS,

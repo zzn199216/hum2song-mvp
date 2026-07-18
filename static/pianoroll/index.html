@@ -1385,6 +1385,20 @@
             <span data-i18n="top.importAudioMakeNotesLabel" data-i18n-title="top.importAudioMakeNotesTitle">Make editable notes (server)</span>
           </label>
           <button type="button" id="btnTopImportTranscriptionSettings" class="btn transcriptionSettingsTrigger" data-i18n="transcription.settings" data-i18n-title="transcription.settings">Transcription settings</button>
+          <label class="transcriptionImportToggle">
+            <input type="checkbox" id="chkImportAudioSeparateFirst" />
+            <span>先 AI 分轨后转写</span>
+          </label>
+          <label class="transcriptionImportToggle">
+            <span>分轨目标</span>
+            <select id="selImportAudioSeparationPreset" disabled>
+              <option value="vocals_instrumental">人声 / 伴奏</option>
+              <option value="four_stem" selected>四轨分离</option>
+              <option value="instruments_only">乐器分轨</option>
+              <option value="vocals_bass_drums">人声 + 贝斯 + 鼓</option>
+            </select>
+          </label>
+          <span id="importAudioSeparationCost" class="transcriptionImportHint">普通转写将扣除 1 次 AI 转写次数</span>
           <span class="transcriptionImportHint" data-transcription-mode-on data-i18n="top.importAudioModeHint">When enabled, Transcription settings apply to imported audio.</span>
           <span class="transcriptionImportHint" data-transcription-mode-off data-i18n="top.importAudioModeOffHint">Off: import an audio-only clip.</span>
         </span>
@@ -1401,6 +1415,43 @@
     <div id="studioImportStatus" class="smallmuted" style="min-width:120px;"></div>
     <button id="btnCancelImport" class="btn ghost" style="display:none;" data-i18n="common.cancel">Cancel</button>
     <div class="smallmuted" data-i18n="top.localClipsHint">Local clips + timeline. Double-click a clip to edit.</div>
+  </div>
+
+  <div id="audioSeparationModal" class="h2sModal hidden" aria-hidden="true">
+    <div class="h2sModalBackdrop" data-audio-separation-close aria-hidden="true"></div>
+    <div class="transcriptionSettingsCenter">
+      <section class="transcriptionSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="audioSeparationTitle">
+        <header class="transcriptionSettingsHeader">
+          <h2 id="audioSeparationTitle" class="transcriptionSettingsTitle">AI 自动分轨</h2>
+          <button type="button" class="btn icon" data-audio-separation-close aria-label="Close">&times;</button>
+        </header>
+        <div class="transcriptionSettingsBody">
+          <label class="transcriptionSettingsField">
+            <span>分轨目标</span>
+            <select id="audioSeparationPreset">
+              <option value="vocals_instrumental">人声 / 伴奏</option>
+              <option value="four_stem" selected>四轨分离</option>
+              <option value="instruments_only">乐器分轨</option>
+              <option value="vocals_bass_drums">人声 + 贝斯 + 鼓</option>
+            </select>
+          </label>
+          <label class="transcriptionSettingsField">
+            <span>处理方式</span>
+            <select id="audioSeparationMode">
+              <option value="separate_only">仅分轨（扣除 1 次 AI 转写次数）</option>
+              <option value="separate_and_transcribe">分轨并转为可编辑音符（扣除 2 次 AI 转写次数）</option>
+            </select>
+          </label>
+          <p id="audioSeparationCost" class="transcriptionSettingsTargetHelp">将扣除 1 次 AI 转写次数</p>
+          <p class="transcriptionSettingsTargetHelp">鼓声 v0 会作为音频 stem 保留，不会转成音高 MIDI。“其它”声部转写为实验结果，可能需要手动调整。原始音频不会被删除或覆盖。</p>
+          <p id="audioSeparationStatus" class="transcriptionSettingsTargetHelp" aria-live="polite"></p>
+        </div>
+        <div class="transcriptionSettingsActions">
+          <button type="button" class="btn" data-audio-separation-close>取消</button>
+          <button type="button" id="btnAudioSeparationRun" class="btn primary">开始处理</button>
+        </div>
+      </section>
+    </div>
   </div>
 
   <div id="transcriptionSettingsModal" class="h2sModal hidden" aria-hidden="true">
@@ -2099,9 +2150,9 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
-  <script src="/static/i18n/i18n.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/i18n/i18n.js?v=ai-audio-separation-v0"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
@@ -2128,10 +2179,10 @@
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js?v=instrument-library-phase-1-1-ui-fix"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
-  <script src="/static/pianoroll/controllers/library_controller.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/controllers/library_controller.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=ai-audio-separation-v0"></script>
   <script src="/static/pianoroll/controllers/audio_controller.js"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
@@ -2151,7 +2202,9 @@
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_wav_controller.js"></script>
   <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v16"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=ai-audio-separation-v0"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -2346,9 +2399,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=audio-transcription-controls-v0-settings-entry-fix"></script>
+  <script src="/static/pianoroll/app.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=ai-audio-separation-v0"></script>
   <script>
   (function () {
     try {

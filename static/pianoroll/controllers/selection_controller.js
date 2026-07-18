@@ -42,6 +42,8 @@
     const onSegmentAtPlayhead = opts.onSegmentAtPlayhead || function(){};
     const onSegmentLength = opts.onSegmentLength || opts.onSegmentSetLength || function(){};
     const onOpenTranscriptionSettings = opts.onOpenTranscriptionSettings || function(){};
+    const onOpenAudioSeparation = opts.onOpenAudioSeparation || function(){};
+    const getAutoSeparationLabel = opts.getAutoSeparationLabel || function(){ return 'AI 自动分轨'; };
     const onLog = opts.onLog || null;
 
     const view = (window.H2SSelectionView && window.H2SSelectionView.selectionBoxInnerHTML)
@@ -72,6 +74,7 @@
       const btnDel = rootEl.querySelector('[data-act="remove"]');
       const btnArrDet = rootEl.querySelector('[data-act="arrangementDetails"]');
       const btnTranscriptionSettings = rootEl.querySelector('[data-act="transcriptionSettings"]');
+      const btnAudioSeparation = rootEl.querySelector('[data-act="audioSeparation"]');
 
       const sel = currentSelectedInstance();
       const inst = sel ? sel.inst : null;
@@ -94,6 +97,13 @@
           e.preventDefault();
           e.stopPropagation();
           onOpenTranscriptionSettings(inst.clipId, btnTranscriptionSettings);
+        });
+      }
+      if (btnAudioSeparation){
+        btnAudioSeparation.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenAudioSeparation(inst.clipId, inst.id, btnAudioSeparation);
         });
       }
       const btnSegPlayhead = rootEl.querySelector('[data-act="segAtPlayhead"]');
@@ -174,6 +184,7 @@
           escapeHtml,
           isAudio,
           convertLabel: getConvertLabel(),
+          autoSeparationLabel: getAutoSeparationLabel(),
           addBassLabel: getAddBassLabel(),
           addAccompanimentLabel: getAddAccompanimentLabel(),
           addAccompanimentMoreInstructionsLabel: getAddAccompanimentMoreInstructionsLabel(),
