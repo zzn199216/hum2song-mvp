@@ -136,6 +136,7 @@
   "audio.waveform.preview": "選択範囲をプレビュー",
   "audio.waveform.previewStop": "プレビュー停止",
   "audio.waveform.separate": "AIステム分離",
+  "audio.waveform.separationSettings": "ステム分離設定",
   "audio.waveform.separationMode": "処理方法",
   "audio.waveform.separationMode.only": "分離のみ（1回消費）",
   "audio.waveform.separationMode.transcribe": "分離して編集可能な音符に変換（2回消費）",

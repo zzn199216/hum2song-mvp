@@ -349,7 +349,21 @@
             '<button type="button" class="btn mini" data-act="waveLen30" data-len="30"></button>' +
             '<button type="button" class="btn mini" data-act="waveLen60" data-len="60"></button>' +
           '</div>' +
-          '<div class="h2s-audio-waveform-separation-controls">' +
+          '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
+            '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
+            '<button type="button" class="btn mini primary" data-act="waveConvert"></button>' +
+            '<button type="button" class="btn mini" data-act="waveRetry" hidden></button>' +
+            '<button type="button" class="btn mini" data-act="waveExtract"></button>' +
+            '<button type="button" class="btn mini ghost" data-act="waveCloseBtn"></button>' +
+          '</div>' +
+          '<div class="row h2s-audio-waveform-separation-actions">' +
+            '<label class="h2s-audio-waveform-separation-toggle">' +
+              '<input type="checkbox" data-role="wfSeparationSettingsToggle">' +
+              '<span data-i18n-role="wfSeparationSettingsLabel"></span>' +
+            '</label>' +
+            '<button type="button" class="btn mini primary" data-act="waveSeparate"></button>' +
+          '</div>' +
+          '<div class="h2s-audio-waveform-separation-controls" data-role="wfSeparationSettings" hidden>' +
             '<label>' +
               '<span data-i18n-role="wfSeparationPresetLabel"></span>' +
               '<select data-role="wfSeparationPreset">' +
@@ -367,14 +381,6 @@
               '</select>' +
             '</label>' +
             '<div class="muted" data-role="wfSeparationCost"></div>' +
-          '</div>' +
-          '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
-            '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
-            '<button type="button" class="btn mini primary" data-act="waveSeparate"></button>' +
-            '<button type="button" class="btn mini primary" data-act="waveConvert"></button>' +
-            '<button type="button" class="btn mini" data-act="waveRetry" hidden></button>' +
-            '<button type="button" class="btn mini" data-act="waveExtract"></button>' +
-            '<button type="button" class="btn mini ghost" data-act="waveCloseBtn"></button>' +
           '</div>' +
           '<div class="muted" data-role="wfStatus" style="margin-top:8px;font-size:11px;min-height:1.2em;"></div>' +
         '</div>';
@@ -422,6 +428,15 @@
       });
       var separationMode = panel.querySelector('[data-role="wfSeparationMode"]');
       if (separationMode) separationMode.addEventListener('change', updateSeparationCost);
+      var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
+      if (separationSettingsToggle) separationSettingsToggle.addEventListener('change', syncSeparationSettingsVisibility);
+    }
+
+    function syncSeparationSettingsVisibility() {
+      if (!panel) return;
+      var toggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
+      var settings = panel.querySelector('[data-role="wfSeparationSettings"]');
+      if (settings) settings.hidden = !(toggle && toggle.checked);
     }
 
     function updateSeparationCost() {
@@ -486,6 +501,8 @@
         var el = panel.querySelector('[data-i18n-role="' + row[0] + '"]');
         if (el) el.textContent = t(row[1], row[2]);
       });
+      var settingsLabel = panel.querySelector('[data-i18n-role="wfSeparationSettingsLabel"]');
+      if (settingsLabel) settingsLabel.textContent = t('audio.waveform.separationSettings', 'Stem separation settings');
       var presetLabel = panel.querySelector('[data-i18n-role="wfSeparationPresetLabel"]');
       if (presetLabel) presetLabel.textContent = t('transcription.separationPreset', 'Stem separation target');
       var modeLabel = panel.querySelector('[data-i18n-role="wfSeparationModeLabel"]');
@@ -540,11 +557,13 @@
       var convertBtn = panel.querySelector('[data-act="waveConvert"]');
       var retryBtn = panel.querySelector('[data-act="waveRetry"]');
       var separateBtn = panel.querySelector('[data-act="waveSeparate"]');
+      var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
       var separationPreset = panel.querySelector('[data-role="wfSeparationPreset"]');
       var separationMode = panel.querySelector('[data-role="wfSeparationMode"]');
       var busy = _isConvertBusy();
       if (convertBtn) convertBtn.disabled = busy || separationBusy;
       if (separateBtn) separateBtn.disabled = busy || separationBusy;
+      if (separationSettingsToggle) separationSettingsToggle.disabled = busy || separationBusy;
       if (separationPreset) separationPreset.disabled = busy || separationBusy;
       if (separationMode) separationMode.disabled = busy || separationBusy;
       if (retryBtn) {
@@ -585,6 +604,9 @@
       ctx = ctx || {};
       ensureDom();
       openCtx = { clipId: String(ctx.clipId || ''), instanceId: ctx.instanceId || null };
+      var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
+      if (separationSettingsToggle) separationSettingsToggle.checked = false;
+      syncSeparationSettingsVisibility();
       applyI18nLabels();
       stopPreview();
       if (objectUrl) {
