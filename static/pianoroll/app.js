@@ -6955,6 +6955,9 @@ renderTimeline(){
       const els = this._audioSeparationElements();
       if (els.status) els.status.textContent = text || '';
       if (text) this.setImportStatus(text, true);
+      if (typeof this._audioSeparationStatusObserver === 'function') {
+        try { this._audioSeparationStatusObserver(text || ''); } catch (_statusErr) {}
+      }
     },
 
     _ensureAudioSeparationSourceInstance(clipId, preferredInstanceId){
@@ -6989,16 +6992,7 @@ renderTimeline(){
       if (!clipId || !this._clipIsAudioForEditor(clipId)) return false;
       const instanceId = this._ensureAudioSeparationSourceInstance(clipId, opts.sourceAudioInstanceId);
       if (!instanceId) return false;
-      const els = this._audioSeparationElements();
-      if (!els.modal || !els.preset || !els.mode) return false;
-      this._audioSeparationContext = { clipId: clipId, sourceAudioInstanceId: instanceId, trigger: opts.trigger || null };
-      els.preset.value = 'four_stem';
-      els.mode.value = 'separate_only';
-      if (els.status) els.status.textContent = '';
-      this._syncAudioSeparationCost();
-      els.modal.classList.remove('hidden');
-      els.modal.setAttribute('aria-hidden', 'false');
-      return true;
+      return this.openAudioWaveformEditor(clipId, { sourceAudioInstanceId: instanceId });
     },
 
     closeAudioSeparation(force){
@@ -7075,6 +7069,7 @@ renderTimeline(){
       const effectiveSourceStartBeat = Number(sourceInstanceV2.startBeat || 0) + placementOffsetSec * bpm / 60;
       const effectiveSourceStartSec = effectiveSourceStartBeat * 60 / bpm;
       this._audioSeparationBusy = true;
+      this._audioSeparationStatusObserver = typeof opts.onStatus === 'function' ? opts.onStatus : null;
       const els = this._audioSeparationElements();
       if (els.run) els.run.disabled = true;
       try {
@@ -7158,6 +7153,7 @@ renderTimeline(){
         return { ok: true, workerJobId: result.workerJobId, failures: allFailures };
       } finally {
         this._audioSeparationBusy = false;
+        this._audioSeparationStatusObserver = null;
         if (els.run) els.run.disabled = false;
       }
     },
@@ -8941,11 +8937,14 @@ renderTimeline(){
         resolveAudioFile(clipId){
           return self._resolveLocalAudioFileForClip(clipId);
         },
-        openSeparation(clipId, instanceId, trigger){
-          return self.openAudioSeparation({
-            clipId: clipId,
-            sourceAudioInstanceId: instanceId,
-            trigger: trigger || null,
+        runSeparation(clipId, instanceId, options){
+          options = options || {};
+          const sourceAudioInstanceId = self._ensureAudioSeparationSourceInstance(clipId, instanceId);
+          return self._runAudioSeparationForClip(clipId, {
+            sourceAudioInstanceId: sourceAudioInstanceId,
+            separationPreset: options.separationPreset,
+            mode: options.mode,
+            onStatus: options.onStatus,
           });
         },
         convertToEditable(clipId, instanceId){
@@ -8983,7 +8982,8 @@ renderTimeline(){
       return this._audioWaveformEditor;
     },
 
-    async openAudioWaveformEditor(clipId){
+    async openAudioWaveformEditor(clipId, opts){
+      opts = opts || {};
       try{
         await this.loadAudioWaveformEditorScript();
       }catch(_wfLoad){
@@ -8997,7 +8997,7 @@ renderTimeline(){
         try { alert(_t('audio.waveform.missingFile', 'This audio material cannot be opened right now. Please re-import it and try again.')); } catch (_e) {}
         return { ok: false, reason: 'no_editor' };
       }
-      const instanceId = this.state && this.state.selectedInstanceId ? this.state.selectedInstanceId : null;
+      const instanceId = opts.sourceAudioInstanceId || (this.state && this.state.selectedInstanceId ? this.state.selectedInstanceId : null);
       return ed.open({ clipId, instanceId });
     },
 
