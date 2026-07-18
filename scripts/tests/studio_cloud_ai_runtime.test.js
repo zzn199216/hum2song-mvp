@@ -41,7 +41,7 @@ for (const src of requiredVersionedScripts) {
   assert(!/[\\/?#]/.test(assetVersion), src + ' cache-bust version should be a plain marker');
 }
 
-assert(ver === 'ai-audio-separation-cors-ui-v3', 'studio_asset_version.js should use the collapsed audio separation controls marker');
+assert(ver === 'studio-startup-loading-v1', 'studio_asset_version.js should use the startup loading cache marker');
 assert(scriptVersion('studio_asset_version.js') === ver, 'index.html should load studio_asset_version.js with the studio asset version marker');
 assert(scriptVersion('h2s_startup_perf.js') === ver, 'index.html should load startup perf with the studio asset version marker');
 assert(scriptVersion('app.js') === ver, 'index.html should load app.js with the studio asset version marker');
