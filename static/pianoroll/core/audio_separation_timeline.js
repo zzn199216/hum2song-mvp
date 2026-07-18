@@ -11,6 +11,7 @@
   };
   var SCORE_ROLES = {
     vocals: 'stem_vocals_score',
+    drums: 'stem_drums_score',
     bass: 'stem_bass_score',
     other: 'stem_other_score',
   };

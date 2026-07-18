@@ -7125,6 +7125,10 @@ renderTimeline(){
             } else {
               const text = new TextDecoder('utf-8').decode(new Uint8Array(downloaded.buffer));
               const scoreDoc = JSON.parse(text);
+              if (item.stem === 'drums' && this.project.tracks && this.project.tracks[trackIndex]) {
+                this.project.tracks[trackIndex].instrument = 'drum';
+                this.project.tracks[trackIndex].name = 'Drums';
+              }
               const materialized = this._materializeScoreDocToTimeline(scoreDoc, {
                 baseName: item.stem,
                 sourceTaskId: result.workerJobId,

@@ -19,7 +19,7 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(html.includes('id="selImportAudioSeparationPreset" disabled'));
   assert(html.includes('id="transcriptionSettingsSeparateFirst"'));
   assert(html.includes('id="transcriptionSettingsSeparationPreset" disabled'));
-  assert(html.includes('鼓声 v0 会作为音频 stem 保留，不会转成音高 MIDI'));
+  assert(html.includes('鼓声会识别为可编辑的底鼓、军鼓和踩镲事件'));
   assert(html.includes('原始音频不会被删除或覆盖'));
   console.log('PASS audio separation modal and import controls');
 })();
@@ -55,6 +55,7 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(app.includes("transcriptionControls.separateFirst = opts.separateFirst === true"));
   assert(app.includes('durationSecOverride: seg.durationSec'));
   assert(app.includes('placementOffsetSec: seg.startSec'));
+  assert(app.includes("this.project.tracks[trackIndex].instrument = 'drum'"));
   console.log('PASS waveform, library, and segment transcription separation entries');
 })();
 
@@ -82,11 +83,11 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert.deepStrictEqual(
     timeline.timelineItems({
       timelineAudioStems: ['vocals', 'drums', 'bass', 'other'],
-      transcribedStems: ['vocals', 'bass', 'other'],
+      transcribedStems: ['vocals', 'drums', 'bass', 'other'],
     }),
     [
       { stem: 'vocals', kind: 'midi', artifactRole: 'stem_vocals_score' },
-      { stem: 'drums', kind: 'audio', artifactRole: 'stem_drums_audio' },
+      { stem: 'drums', kind: 'midi', artifactRole: 'stem_drums_score' },
       { stem: 'bass', kind: 'midi', artifactRole: 'stem_bass_score' },
       { stem: 'other', kind: 'midi', artifactRole: 'stem_other_score' },
     ]
@@ -101,11 +102,11 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
     'a failed other transcription must fall back to its audio stem'
   );
   assert.deepStrictEqual(
-    timeline.timelineItems({ timelineAudioStems: ['vocals', 'bass', 'drums'], transcribedStems: ['vocals', 'bass'] }),
+    timeline.timelineItems({ timelineAudioStems: ['vocals', 'bass', 'drums'], transcribedStems: ['vocals', 'bass', 'drums'] }),
     [
       { stem: 'vocals', kind: 'midi', artifactRole: 'stem_vocals_score' },
       { stem: 'bass', kind: 'midi', artifactRole: 'stem_bass_score' },
-      { stem: 'drums', kind: 'audio', artifactRole: 'stem_drums_audio' },
+      { stem: 'drums', kind: 'midi', artifactRole: 'stem_drums_score' },
     ]
   );
   console.log('PASS manifest-driven preset materialization');
