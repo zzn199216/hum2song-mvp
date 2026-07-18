@@ -22,6 +22,8 @@ assert(index.includes('h2s_startup_perf.js?v=' + ver), 'index should load h2s_st
 assert(index.includes("studio_scripts_loaded"), 'index should mark studio_scripts_loaded');
 assert(!index.includes('audio_waveform_editor.js'), 'index should not eagerly load waveform editor');
 assert(appJs.includes('loadAudioWaveformEditorScript'), 'app should lazy-load waveform editor');
+assert(appJs.includes('bootAppWhenDomReady'), 'app should boot as soon as the DOM is ready');
+assert(!appJs.includes("window.addEventListener('load', () => app.init())"), 'app should not wait for window.load to initialize');
 assert(bridge.includes('H2S_SCHEDULE_CLOUD_AI_STATUS'), 'bridge should defer cloud AI status');
 assert(!/onCloudBoot[\s\S]*requestCloudAiStatus\(\)/.test(bridge), 'cloud boot should not eagerly request AI status');
 

@@ -10486,6 +10486,14 @@ renderTimeline(){
       document.addEventListener('keydown', () => { _unlockAudioFromGesture(); }, { once:true, capture:true });
     }
   }catch(e){}
-// Boot
-  window.addEventListener('load', () => app.init());
+// Boot when the DOM is ready; waiting for window.load keeps Cloud users on the
+// loading overlay until every parser-blocking script and noncritical resource is done.
+  function bootAppWhenDomReady(){
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', () => app.init(), { once: true });
+      return;
+    }
+    setTimeout(() => app.init(), 0);
+  }
+  bootAppWhenDomReady();
 })();

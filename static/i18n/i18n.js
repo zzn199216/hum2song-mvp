@@ -18,6 +18,7 @@
   var _lang = 'en';
   var _dicts = {};
   var _manifest = null;
+  var _loadPromises = {};
 
   function normalizeLang(lang){
     var raw = String(lang || '').trim().toLowerCase().replace(/_/g, '-');
@@ -82,10 +83,17 @@
     opts = opts || {};
     var fetchFn = opts.fetchFn || (typeof G.fetch === 'function' ? G.fetch : null);
     if (!fetchFn) throw new Error('i18n.load: fetch unavailable and opts.fetchFn not provided');
+    var code = normalizeLang(lang);
+    if (_dicts[code]) return Promise.resolve(_dicts[code]);
     var base = (opts.baseUrl != null) ? opts.baseUrl : '/static/i18n/locales';
-    var url = base.replace(/\/+$/, '') + '/' + normalizeLang(lang) + '.json';
+    var url = base.replace(/\/+$/, '') + '/' + code + '.json';
     if (G.H2S_STUDIO_ASSET_VERSION) url += '?v=' + encodeURIComponent(String(G.H2S_STUDIO_ASSET_VERSION));
-    return fetchFn(url).then(function(r){ if (!r.ok) throw new Error('i18n.load: ' + r.status); return r.json(); }).then(function(d){ register(lang, d); return d; });
+    var cacheKey = code + '|' + url;
+    if (_loadPromises[cacheKey]) return _loadPromises[cacheKey];
+    var loadPromise = fetchFn(url).then(function(r){ if (!r.ok) throw new Error('i18n.load: ' + r.status); return r.json(); }).then(function(d){ register(code, d); return d; });
+    _loadPromises[cacheKey] = loadPromise;
+    loadPromise.then(function(){ delete _loadPromises[cacheKey]; }, function(){ delete _loadPromises[cacheKey]; });
+    return loadPromise;
   }
 
   function loadManifest(opts){

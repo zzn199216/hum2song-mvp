@@ -216,11 +216,22 @@ assert(typeof I18N.getLang() === 'string', 'init sets lang');
 if (I18N.loadManifest){
   const mockManifest = [{ code: 'xx', label: 'TestLang' }];
   const mockFetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(mockManifest) });
-  I18N.loadManifest({ fetchFn: mockFetch }).then(function(){
+  let localeFetchCalls = 0;
+  const localeFetch = () => {
+    localeFetchCalls += 1;
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ common: { ok: 'Cached' } }) });
+  };
+  Promise.all([
+    I18N.load('xx-cache', { fetchFn: localeFetch, baseUrl: '/mock/locales' }),
+    I18N.load('xx-cache', { fetchFn: localeFetch, baseUrl: '/mock/locales' })
+  ]).then(function(){
+    assert(localeFetchCalls === 1, 'concurrent locale loads should share one fetch');
+    return I18N.loadManifest({ fetchFn: mockFetch });
+  }).then(function(){
     try {
       const list = I18N.availableLanguages();
       assert(Array.isArray(list) && list.length >= 1 && list[0].code === 'xx', 'loadManifest updates availableLanguages');
-      console.log('PASS i18n register, t, setLang, fallback, persistence, loadManifest');
+      console.log('PASS i18n register, t, setLang, fallback, persistence, load, loadManifest');
     } catch (e) { console.error(e); process.exit(1); }
   }).catch(function(e){ console.error(e); process.exit(1); });
 } else {
