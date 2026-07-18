@@ -23,6 +23,12 @@ for (const key of [
   'pad',
   'pluck',
   'drum',
+  'drum:electronic',
+  'drum:kick',
+  'drum:snare',
+  'drum:hihat',
+  'drum:toms',
+  'drum:cymbals',
   'sampler:tonejs:piano',
   'sampler:tonejs:strings',
   'sampler:tonejs:violin',
@@ -45,6 +51,8 @@ for (const key of [
 assert.strictEqual(manifest.resolveInstrument('default').id, 'builtin.piano');
 assert.strictEqual(manifest.resolveInstrument('bass').engineType, 'builtin_synth');
 assert.strictEqual(manifest.resolveInstrument('drum').engineType, 'drum');
+assert.strictEqual(manifest.resolveInstrument('drum:electronic').presetId, 'drum:electronic');
+assert.strictEqual(manifest.resolveInstrument('drum:kick').engineType, 'drum');
 assert.strictEqual(manifest.resolveInstrument('sampler:tonejs:piano').engineType, 'sampler');
 assert.strictEqual(manifest.resolveInstrument('piano').samplerPackId, 'tonejs:piano', 'old piano alias should resolve to sampled piano metadata');
 assert.strictEqual(manifest.resolveInstrument('violin').samplerPackId, 'tonejs:violin', 'old violin alias should resolve to sampled violin metadata');
@@ -70,6 +78,9 @@ assert(options.some((option) => option.value === 'sampler:tonejs:guitar-nylon'),
 assert(options.some((option) => option.value === 'sampler:tonejs:flute'), 'dropdown options should include flute');
 assert(options.some((option) => option.value === 'sampler:tonejs:trumpet'), 'dropdown options should include trumpet');
 assert(options.some((option) => option.value === 'sampler:tonejs:xylophone'), 'dropdown options should include xylophone');
+for (const drumKey of ['drum', 'drum:electronic', 'drum:kick', 'drum:snare', 'drum:hihat', 'drum:toms', 'drum:cymbals']) {
+  assert(options.some((option) => option.value === drumKey), `dropdown options should include ${drumKey}`);
+}
 assert(!options.some((option) => option.value === 'builtin.piano'), 'tracks should keep storing legacy keys, not manifest ids');
 assert(options.filter((option) => option.engine === 'tone_sampler').every((option) => option.samplerPackId), 'sampler options should expose samplerPackId');
 assert(options.some((option) => option.license === 'CC-BY-3.0'), 'open-source samplers should expose license metadata');
@@ -100,7 +111,7 @@ assert(timelineController.includes("textOverflow = 'ellipsis'"), 'compact instru
 const indexHtml = fs.readFileSync(path.join(root, 'static/pianoroll/index.html'), 'utf8');
 const manifestScriptIndex = indexHtml.indexOf('core/instrument_manifest.js');
 const timelineScriptIndex = indexHtml.indexOf('timeline_controller.js');
-const instrumentCacheBust = 'instrument-library-phase-1-1-ui-fix';
+const instrumentCacheBust = 'gm-drum-kit-v1';
 assert(manifestScriptIndex >= 0, 'index should load the instrument manifest');
 assert(timelineScriptIndex >= 0, 'index should load the timeline controller');
 assert(manifestScriptIndex < timelineScriptIndex, 'manifest should load before timeline controller');
@@ -121,6 +132,12 @@ for (const key of [
   'instrument.name.pad',
   'instrument.name.pluck',
   'instrument.name.drums',
+  'instrument.name.drumsElectronic',
+  'instrument.name.drumKick',
+  'instrument.name.drumSnare',
+  'instrument.name.drumHihat',
+  'instrument.name.drumToms',
+  'instrument.name.drumCymbals',
   'instrument.name.sampledPiano',
   'instrument.name.sampledStrings',
   'instrument.name.sampledViolin',
@@ -176,9 +193,12 @@ for (const [packId, pack] of Object.entries(samplerPacks)) {
 
 const audioController = fs.readFileSync(path.join(root, 'static/pianoroll/controllers/audio_controller.js'), 'utf8');
 const exportController = fs.readFileSync(path.join(root, 'static/pianoroll/controllers/export_wav_controller.js'), 'utf8');
-for (const key of ["case 'bass'", "case 'lead'", "case 'pad'", "case 'pluck'", "case 'drum'"]) {
+for (const key of ["case 'bass'", "case 'lead'", "case 'pad'", "case 'pluck'"]) {
   assert(audioController.includes(key), `audio synth mapping should still include ${key}`);
   assert(exportController.includes(key), `export synth mapping should still include ${key}`);
 }
+assert(audioController.includes('H2SGmDrumKit.createToneDrumKit'), 'live playback should use the GM drum engine');
+assert(exportController.includes('H2SGmDrumKit.createToneDrumKit'), 'WAV export should use the GM drum engine');
+assert(indexHtml.includes('core/gm_drum_kit.js?v=gm-drum-kit-v1'), 'index should load and cache-bust GM drum engine');
 
 console.log('instrument manifest tests passed');

@@ -337,12 +337,14 @@ function _disposeTrackSynths(){
       ? G.H2SProject.normalizeInstrument(instr)
       : { kind: 'tone_synth', presetId: (typeof instr === 'string' && instr) ? instr : 'default', params: {} };
     const presetId = (desc.kind === 'tone_synth' && desc.presetId) ? desc.presetId : 'default';
+    if (G.H2SGmDrumKit && G.H2SGmDrumKit.isDrumPresetId(presetId)){
+      return G.H2SGmDrumKit.createToneDrumKit(G.Tone, presetId);
+    }
     switch (String(presetId)){
       case 'bass': return new G.Tone.MonoSynth();
       case 'lead': return new G.Tone.Synth();
       case 'pad': return new G.Tone.FMSynth();
       case 'pluck': return new G.Tone.PluckSynth();
-      case 'drum': return new G.Tone.MembraneSynth();
       default: return new G.Tone.PolySynth(G.Tone.Synth);
     }
   }

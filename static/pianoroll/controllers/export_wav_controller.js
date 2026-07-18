@@ -68,12 +68,14 @@
       ? window.H2SProject.normalizeInstrument(instr)
       : { kind: 'tone_synth', presetId: (typeof instr === 'string' && instr) ? instr : 'default', params: {} };
     var presetId = (desc.kind === 'tone_synth' && desc.presetId) ? desc.presetId : 'default';
+    if (window.H2SGmDrumKit && window.H2SGmDrumKit.isDrumPresetId(presetId)){
+      return window.H2SGmDrumKit.createToneDrumKit(Tone, presetId);
+    }
     switch (String(presetId)){
       case 'bass': return new Tone.MonoSynth();
       case 'lead': return new Tone.Synth();
       case 'pad': return new Tone.FMSynth();
       case 'pluck': return new Tone.PluckSynth();
-      case 'drum': return new Tone.MembraneSynth();
       default: return new Tone.PolySynth(Tone.Synth);
     }
   }
