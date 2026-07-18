@@ -122,7 +122,7 @@ if (fs.existsSync(indexHtmlPath)) {
   assert(indexHtml.indexOf('id="btnLastOptimizeDetails"') !== -1, 'index.html must include last optimize details button');
   assert(indexHtml.indexOf('id="studioLastOptimizeDetails"') !== -1, 'index.html must include last optimize details panel');
   assert(indexHtml.indexOf('studio-lang-select-active') !== -1, 'language select should temporarily de-emphasize AI dock while open');
-  assert(indexHtml.indexOf('studio-startup-loading-v1') !== -1, 'startup loading changes should bump Studio script cache version');
+  assert(indexHtml.indexOf('audio-waveform-separate-before-midi-v1') !== -1, 'audio waveform separation checkbox should bump Studio script cache version');
 }
 
 // Last optimize: staleness uses revision + project doc key (see app.js)
@@ -149,7 +149,7 @@ if (fs.existsSync(i18nCorePath)) {
 var assetVersionPath = path.join(__dirname, '../../static/pianoroll/studio_asset_version.js');
 if (fs.existsSync(assetVersionPath)) {
   var assetVersionSrc = fs.readFileSync(assetVersionPath, 'utf8');
-  assert(assetVersionSrc.indexOf('studio-startup-loading-v1') !== -1, 'Studio asset version should change for startup loading updates');
+  assert(assetVersionSrc.indexOf('audio-waveform-separate-before-midi-v1') !== -1, 'Studio asset version should change for audio waveform separation checkbox');
 }
 
 var bridgePath = path.join(__dirname, '../../static/pianoroll/cloud_project_bridge.js');

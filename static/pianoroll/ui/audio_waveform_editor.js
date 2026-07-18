@@ -351,6 +351,10 @@
           '</div>' +
           '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
             '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
+            '<label class="h2s-audio-waveform-separation-toggle">' +
+              '<input type="checkbox" data-role="wfSeparateBeforeConvert">' +
+              '<span data-i18n-role="wfSeparateBeforeConvertLabel"></span>' +
+            '</label>' +
             '<button type="button" class="btn mini primary" data-act="waveConvert"></button>' +
             '<button type="button" class="btn mini" data-act="waveRetry" hidden></button>' +
             '<button type="button" class="btn mini" data-act="waveExtract"></button>' +
@@ -410,10 +414,20 @@
         if (act === 'wavePreview') startPreview();
         if (act === 'waveSeparate') startSeparation();
         if (act === 'waveConvert' && typeof hooks.convertToEditable === 'function') {
-          hooks.convertToEditable(openCtx.clipId, openCtx.instanceId);
+          var separateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
+          var separationPreset = panel.querySelector('[data-role="wfSeparationPreset"]');
+          hooks.convertToEditable(openCtx.clipId, openCtx.instanceId, {
+            separateFirst: !!(separateBeforeConvert && separateBeforeConvert.checked),
+            separationPreset: separationPreset ? separationPreset.value : 'four_stem',
+          });
         }
         if (act === 'waveRetry' && typeof hooks.retryConvert === 'function') {
-          hooks.retryConvert(openCtx.clipId, openCtx.instanceId);
+          var retrySeparateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
+          var retrySeparationPreset = panel.querySelector('[data-role="wfSeparationPreset"]');
+          hooks.retryConvert(openCtx.clipId, openCtx.instanceId, {
+            separateFirst: !!(retrySeparateBeforeConvert && retrySeparateBeforeConvert.checked),
+            separationPreset: retrySeparationPreset ? retrySeparationPreset.value : 'four_stem',
+          });
         }
         if (act === 'waveExtract' && typeof hooks.extractSegment === 'function') {
           var seg = clampSelection(audioDur, selStart, selEnd);
@@ -503,6 +517,8 @@
       });
       var settingsLabel = panel.querySelector('[data-i18n-role="wfSeparationSettingsLabel"]');
       if (settingsLabel) settingsLabel.textContent = t('audio.waveform.separationSettings', 'Stem separation settings');
+      var separateBeforeConvertLabel = panel.querySelector('[data-i18n-role="wfSeparateBeforeConvertLabel"]');
+      if (separateBeforeConvertLabel) separateBeforeConvertLabel.textContent = t('audio.waveform.separateBeforeConvert', 'AI stem separation before MIDI conversion (2 credits)');
       var presetLabel = panel.querySelector('[data-i18n-role="wfSeparationPresetLabel"]');
       if (presetLabel) presetLabel.textContent = t('transcription.separationPreset', 'Stem separation target');
       var modeLabel = panel.querySelector('[data-i18n-role="wfSeparationModeLabel"]');
@@ -557,12 +573,14 @@
       var convertBtn = panel.querySelector('[data-act="waveConvert"]');
       var retryBtn = panel.querySelector('[data-act="waveRetry"]');
       var separateBtn = panel.querySelector('[data-act="waveSeparate"]');
+      var separateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
       var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
       var separationPreset = panel.querySelector('[data-role="wfSeparationPreset"]');
       var separationMode = panel.querySelector('[data-role="wfSeparationMode"]');
       var busy = _isConvertBusy();
       if (convertBtn) convertBtn.disabled = busy || separationBusy;
       if (separateBtn) separateBtn.disabled = busy || separationBusy;
+      if (separateBeforeConvert) separateBeforeConvert.disabled = busy || separationBusy;
       if (separationSettingsToggle) separationSettingsToggle.disabled = busy || separationBusy;
       if (separationPreset) separationPreset.disabled = busy || separationBusy;
       if (separationMode) separationMode.disabled = busy || separationBusy;
@@ -604,6 +622,19 @@
       ctx = ctx || {};
       ensureDom();
       openCtx = { clipId: String(ctx.clipId || ''), instanceId: ctx.instanceId || null };
+      var transcriptionControls = (typeof hooks.getTranscriptionControls === 'function')
+        ? hooks.getTranscriptionControls(openCtx.clipId)
+        : null;
+      var separateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
+      if (separateBeforeConvert) separateBeforeConvert.checked = !!(transcriptionControls && transcriptionControls.separateFirst === true);
+      var separationPreset = panel.querySelector('[data-role="wfSeparationPreset"]');
+      if (separationPreset && transcriptionControls && transcriptionControls.separationPreset) {
+        var requestedPreset = String(transcriptionControls.separationPreset);
+        var matchingPreset = Array.prototype.some.call(separationPreset.options, function (option) {
+          return option.value === requestedPreset;
+        });
+        if (matchingPreset) separationPreset.value = requestedPreset;
+      }
       var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
       if (separationSettingsToggle) separationSettingsToggle.checked = false;
       syncSeparationSettingsVisibility();

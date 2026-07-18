@@ -40,6 +40,7 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   const libraryController = read('static', 'pianoroll', 'controllers', 'library_controller.js');
   const app = read('static', 'pianoroll', 'app.js');
   assert(waveform.includes('data-act="waveSeparate"'));
+  assert(waveform.includes('data-role="wfSeparateBeforeConvert"'));
   assert(waveform.includes('data-role="wfSeparationPreset"'));
   assert(waveform.includes('data-role="wfSeparationMode"'));
   assert(waveform.includes('data-role="wfSeparationSettingsToggle"'));
@@ -51,6 +52,7 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(/openAudioSeparation\(opts\)\{[\s\S]*openAudioWaveformEditor\(clipId/.test(app), 'all separation entries route to the waveform editor');
   assert(app.includes('transcriptionControls.separateFirst === true'));
   assert(app.includes("mode: 'separate_and_transcribe'"));
+  assert(app.includes("transcriptionControls.separateFirst = opts.separateFirst === true"));
   assert(app.includes('durationSecOverride: seg.durationSec'));
   assert(app.includes('placementOffsetSec: seg.startSec'));
   console.log('PASS waveform, library, and segment transcription separation entries');

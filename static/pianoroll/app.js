@@ -8782,7 +8782,14 @@ renderTimeline(){
         try { alert(_t('convert.fail.invalidSegment', 'Selected segment is invalid. Adjust start or length.')); } catch (_e) {}
         return { ok: false, reason: 'invalid_segment' };
       }
-      const transcriptionControls = this.getAudioTranscriptionControls(clipId);
+      const transcriptionControls = Object.assign({}, this.getAudioTranscriptionControls(clipId));
+      if (Object.prototype.hasOwnProperty.call(opts, 'separateFirst')) {
+        transcriptionControls.separateFirst = opts.separateFirst === true;
+      }
+      const requestedSeparationPreset = String(opts.separationPreset || '').trim();
+      if (['vocals_instrumental', 'four_stem', 'instruments_only', 'vocals_bass_drums'].indexOf(requestedSeparationPreset) >= 0) {
+        transcriptionControls.separationPreset = requestedSeparationPreset;
+      }
       if (transcriptionControls.separateFirst === true){
         const baseClient = (typeof window !== 'undefined') ? window.H2SAudioWorkerConversionClient : null;
         if (!baseClient || typeof baseClient._segmentToWavArrayBuffer !== 'function'){
@@ -8925,6 +8932,9 @@ renderTimeline(){
         getSegment(clipId, instanceId){
           return self.getAudioConvertSegment(clipId, { sourceAudioInstanceId: instanceId });
         },
+        getTranscriptionControls(clipId){
+          return self.getAudioTranscriptionControls(clipId);
+        },
         setSegment(clipId, patch){
           return self.setAudioConvertSegment(clipId, patch);
         },
@@ -8947,15 +8957,25 @@ renderTimeline(){
             onStatus: options.onStatus,
           });
         },
-        convertToEditable(clipId, instanceId){
+        convertToEditable(clipId, instanceId, options){
+          options = options || {};
           self._syncWaveformConvertStatus(clipId);
-          return Promise.resolve(self.convertAudioClipToEditable(clipId, { sourceAudioInstanceId: instanceId })).catch((err) => {
+          return Promise.resolve(self.convertAudioClipToEditable(clipId, {
+            sourceAudioInstanceId: instanceId,
+            separateFirst: options.separateFirst === true,
+            separationPreset: options.separationPreset,
+          })).catch((err) => {
             console.warn('[App] convertAudioClipToEditable (waveform) failed', err);
             self._syncWaveformConvertStatus(clipId);
           });
         },
-        retryConvert(clipId, instanceId){
-          return Promise.resolve(self.convertAudioClipToEditable(clipId, { sourceAudioInstanceId: instanceId })).catch((err) => {
+        retryConvert(clipId, instanceId, options){
+          options = options || {};
+          return Promise.resolve(self.convertAudioClipToEditable(clipId, {
+            sourceAudioInstanceId: instanceId,
+            separateFirst: options.separateFirst === true,
+            separationPreset: options.separationPreset,
+          })).catch((err) => {
             console.warn('[App] convert retry failed', err);
             self._syncWaveformConvertStatus(clipId);
           });

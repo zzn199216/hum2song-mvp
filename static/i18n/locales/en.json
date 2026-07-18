@@ -136,6 +136,7 @@
   "audio.waveform.preview": "Preview selection",
   "audio.waveform.previewStop": "Stop preview",
   "audio.waveform.separate": "AI stem separation",
+  "audio.waveform.separateBeforeConvert": "AI stem separation before MIDI conversion (2 credits)",
   "audio.waveform.separationSettings": "Stem separation settings",
   "audio.waveform.separationMode": "Processing mode",
   "audio.waveform.separationMode.only": "Separate only (1 credit)",

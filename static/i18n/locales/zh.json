@@ -136,6 +136,7 @@
   "audio.waveform.preview": "试听选区",
   "audio.waveform.previewStop": "停止试听",
   "audio.waveform.separate": "AI 自动分轨",
+  "audio.waveform.separateBeforeConvert": "先 AI 分轨后转 MIDI（扣除 2 次）",
   "audio.waveform.separationSettings": "分轨设置",
   "audio.waveform.separationMode": "处理方式",
   "audio.waveform.separationMode.only": "仅分轨（扣除 1 次）",
