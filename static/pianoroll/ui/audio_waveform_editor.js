@@ -350,6 +350,7 @@
           '</div>' +
           '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
             '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
+            '<button type="button" class="btn mini primary" data-act="waveSeparate"></button>' +
             '<button type="button" class="btn mini primary" data-act="waveConvert"></button>' +
             '<button type="button" class="btn mini" data-act="waveRetry" hidden></button>' +
             '<button type="button" class="btn mini" data-act="waveExtract"></button>' +
@@ -381,6 +382,9 @@
           applySegmentFromHooks();
         }
         if (act === 'wavePreview') startPreview();
+        if (act === 'waveSeparate' && typeof hooks.openSeparation === 'function') {
+          hooks.openSeparation(openCtx.clipId, openCtx.instanceId, ev.target);
+        }
         if (act === 'waveConvert' && typeof hooks.convertToEditable === 'function') {
           hooks.convertToEditable(openCtx.clipId, openCtx.instanceId);
         }
@@ -428,6 +432,7 @@
         ['waveLen30', 'convert.preset30', '30s'],
         ['waveLen60', 'convert.preset60', '60s'],
         ['wavePreview', 'audio.waveform.preview', 'Preview selection'],
+        ['waveSeparate', 'audio.waveform.separate', 'AI stem separation'],
         ['waveConvert', 'audio.waveform.convert', 'Convert to editable notes'],
         ['waveRetry', 'audio.waveform.retry', 'Retry conversion'],
         ['waveExtract', 'audio.waveform.extract', 'Extract as new audio clip'],

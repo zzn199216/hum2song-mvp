@@ -265,6 +265,7 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
       ? (
           `<button class="btn" data-act="play" data-id="${id}">${escapeHtml(t('cliplib.play'))}</button>` +
           `<button class="btn" data-act="add" data-id="${id}">${escapeHtml(t('cliplib.addToSong'))}</button>` +
+          `<button class="btn" data-act="audioSeparation" data-id="${id}">${escapeHtml(t('audio.waveform.separate', 'AI stem separation'))}</button>` +
           `<button class="btn primary" data-act="convertToEditable" data-id="${id}" title="${escapeHtml(t('cliplib.convertSegmentTitle'))}"${convActive ? ' disabled' : ''}>${escapeHtml(t('cliplib.convertSegment'))}</button>` +
           `<button class="btn transcriptionSettingsIconBtn" type="button" data-act="transcriptionSettings" data-id="${id}" title="${escapeHtml(t('transcription.settings'))}" aria-label="${escapeHtml(t('transcription.settings'))}"${convActive ? ' disabled' : ''}>&#9881;</button>`
         )

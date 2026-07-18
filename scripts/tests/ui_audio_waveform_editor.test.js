@@ -72,6 +72,8 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   const wfSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'ui', 'audio_waveform_editor.js'), 'utf8');
   assert(wfSrc.includes('setConvertStatus'), 'waveform editor exposes convert status');
   assert(wfSrc.includes('data-act="waveRetry"'), 'retry button in modal');
+  assert(wfSrc.includes('data-act="waveSeparate"'), 'AI separation button in waveform modal');
+  assert(wfSrc.includes('openSeparation'), 'waveform modal exposes separation hook');
   assert(wfSrc.includes('retryConvert'), 'retry hook');
   const appSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'app.js'), 'utf8');
   assert(appSrc.includes('getConvertState'), 'app provides convert state to waveform');

@@ -212,6 +212,14 @@
         return;
       }
 
+      if (act === 'audioSeparation'){
+        try{ e.preventDefault(); e.stopPropagation(); }catch(_){ /* ignore */ }
+        if (app && typeof app.openAudioSeparation === 'function'){
+          app.openAudioSeparation({ clipId: clipId, trigger: btn });
+        }
+        return;
+      }
+
       if (typeof opts.onSelectClip === 'function') opts.onSelectClip(clipId);
 
       if (act === 'play'){

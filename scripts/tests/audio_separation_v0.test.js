@@ -17,6 +17,8 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(html.includes('id="audioSeparationMode"'));
   assert(html.includes('id="chkImportAudioSeparateFirst"'));
   assert(html.includes('id="selImportAudioSeparationPreset" disabled'));
+  assert(html.includes('id="transcriptionSettingsSeparateFirst"'));
+  assert(html.includes('id="transcriptionSettingsSeparationPreset" disabled'));
   assert(html.includes('鼓声 v0 会作为音频 stem 保留，不会转成音高 MIDI'));
   assert(html.includes('原始音频不会被删除或覆盖'));
   console.log('PASS audio separation modal and import controls');
@@ -32,6 +34,22 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   console.log('PASS separation entry is audio-only');
 })();
 
+(function testWaveformLibraryAndSegmentTranscriptionEntries(){
+  const waveform = read('static', 'pianoroll', 'ui', 'audio_waveform_editor.js');
+  const libraryView = read('static', 'pianoroll', 'ui', 'library_view.js');
+  const libraryController = read('static', 'pianoroll', 'controllers', 'library_controller.js');
+  const app = read('static', 'pianoroll', 'app.js');
+  assert(waveform.includes('data-act="waveSeparate"'));
+  assert(waveform.includes('hooks.openSeparation'));
+  assert(libraryView.includes('data-act="audioSeparation"'));
+  assert(libraryController.includes("act === 'audioSeparation'"));
+  assert(app.includes('transcriptionControls.separateFirst === true'));
+  assert(app.includes("mode: 'separate_and_transcribe'"));
+  assert(app.includes('durationSecOverride: seg.durationSec'));
+  assert(app.includes('placementOffsetSec: seg.startSec'));
+  console.log('PASS waveform, library, and segment transcription separation entries');
+})();
+
 (function testPresetTimelineMaterialization(){
   assert.deepStrictEqual(
     timeline.timelineItems({ timelineAudioStems: ['vocals', 'instrumental'], transcribedStems: [] }),
@@ -39,6 +57,19 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
       { stem: 'vocals', kind: 'audio', artifactRole: 'stem_vocals_audio' },
       { stem: 'instrumental', kind: 'audio', artifactRole: 'stem_instrumental_audio' },
     ]
+  );
+  assert.deepStrictEqual(
+    timeline.timelineItems({
+      timelineAudioStems: ['vocals', 'drums', 'bass', 'other'],
+      transcribedStems: [],
+    }),
+    [
+      { stem: 'vocals', kind: 'audio', artifactRole: 'stem_vocals_audio' },
+      { stem: 'drums', kind: 'audio', artifactRole: 'stem_drums_audio' },
+      { stem: 'bass', kind: 'audio', artifactRole: 'stem_bass_audio' },
+      { stem: 'other', kind: 'audio', artifactRole: 'stem_other_audio' },
+    ],
+    'separate-only must materialize audio stems rather than MIDI'
   );
   assert.deepStrictEqual(
     timeline.timelineItems({
@@ -142,6 +173,7 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(app.includes("else if (toNotes) await this.pickWavAndGenerate(this.getTopBarImportTranscriptionControls())"));
   assert(app.includes("else await this.importAudioFileAsNativeClip()"));
   assert(app.includes("separationCost.textContent = enabled"));
-  assert(app.includes("separateFirst.addEventListener('change', syncSeparationImport)"));
+  assert(app.includes("separateFirst.addEventListener('change', captureTopBarSeparationControls)"));
+  assert(app.includes('this.setTopBarImportTranscriptionControls({'));
   console.log('PASS legacy import/transcription branches remain');
 })();

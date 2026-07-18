@@ -1493,6 +1493,20 @@
             <input id="transcriptionSettingsPreserveRaw" type="checkbox" />
             <span data-i18n="transcription.preserveRawCandidates">Preserve raw recognition candidates</span>
           </label>
+          <label class="transcriptionSettingsPreserveRaw" style="margin-top:12px;">
+            <input id="transcriptionSettingsSeparateFirst" type="checkbox" />
+            <span data-i18n="transcription.separateFirst">Separate stems with AI before transcription</span>
+          </label>
+          <label id="transcriptionSettingsSeparationPresetField" class="transcriptionSettingsField" style="margin-top:12px;">
+            <span data-i18n="transcription.separationPreset">Stem separation target</span>
+            <select id="transcriptionSettingsSeparationPreset" disabled>
+              <option value="vocals_instrumental" data-i18n="transcription.separationPreset.vocalsInstrumental">Vocals / instrumental</option>
+              <option value="four_stem" data-i18n="transcription.separationPreset.fourStem" selected>Four stems</option>
+              <option value="instruments_only" data-i18n="transcription.separationPreset.instrumentsOnly">Instrument stems</option>
+              <option value="vocals_bass_drums" data-i18n="transcription.separationPreset.vocalsBassDrums">Vocals + bass + drums</option>
+            </select>
+          </label>
+          <p id="transcriptionSettingsSeparationCost" class="transcriptionSettingsTargetHelp" data-i18n="transcription.separationCost.normal">Normal transcription uses 1 AI transcription credit.</p>
         </div>
         <div class="transcriptionSettingsActions">
           <button type="button" class="btn primary" data-transcription-settings-close data-i18n="common.done">Done</button>
@@ -2150,9 +2164,9 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/i18n/i18n.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/i18n/i18n.js?v=ai-audio-separation-entry-fix-v1"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
@@ -2179,10 +2193,10 @@
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js?v=instrument-library-phase-1-1-ui-fix"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/controllers/library_controller.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/controllers/library_controller.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=ai-audio-separation-entry-fix-v1"></script>
   <script src="/static/pianoroll/controllers/audio_controller.js"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
@@ -2202,9 +2216,9 @@
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_wav_controller.js"></script>
   <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v16"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=ai-audio-separation-entry-fix-v1"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -2399,9 +2413,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=ai-audio-separation-v0"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=ai-audio-separation-v0"></script>
+  <script src="/static/pianoroll/app.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=ai-audio-separation-entry-fix-v1"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=ai-audio-separation-entry-fix-v1"></script>
   <script>
   (function () {
     try {

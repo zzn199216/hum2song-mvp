@@ -6785,14 +6785,20 @@ renderTimeline(){
     _normalizeTranscriptionControls(controls){
       controls = controls || {};
       const allowed = ['auto', 'ai_full_mix', 'melody', 'chords', 'vocal_humming', 'piano_guitar', 'electronic_melody', 'pad_chords'];
+      const allowedSeparationPresets = ['vocals_instrumental', 'four_stem', 'instruments_only', 'vocals_bass_drums'];
       const target = allowed.indexOf(String(controls.transcriptionTarget || '')) >= 0
         ? String(controls.transcriptionTarget)
         : 'auto';
+      const separationPreset = allowedSeparationPresets.indexOf(String(controls.separationPreset || '')) >= 0
+        ? String(controls.separationPreset)
+        : 'four_stem';
       const strengthRaw = Number(controls.cleanupStrength);
       return {
         transcriptionTarget: target,
         cleanupStrength: Number.isFinite(strengthRaw) ? Math.max(0, Math.min(100, Math.round(strengthRaw))) : this._defaultCleanupStrengthForTarget(target),
         preserveRawCandidates: controls.preserveRawCandidates === true,
+        separateFirst: controls.separateFirst === true,
+        separationPreset: separationPreset,
       };
     },
 
@@ -6812,11 +6818,26 @@ renderTimeline(){
     _syncTopBarImportTranscriptionControls(){
       if (typeof document === 'undefined') return;
       const checkbox = document.getElementById('chkImportAudioToNotes');
+      const separateFirst = document.getElementById('chkImportAudioSeparateFirst');
+      const separationPreset = document.getElementById('selImportAudioSeparationPreset');
+      const separationCost = document.getElementById('importAudioSeparationCost');
       const trigger = document.getElementById('btnTopImportTranscriptionSettings');
       const group = document.getElementById('topbarTranscriptionGroup');
       const enabled = !checkbox || !!checkbox.checked;
+      const controls = this.getTopBarImportTranscriptionControls();
       if (trigger) trigger.hidden = !enabled;
       if (group) group.setAttribute('data-enabled', enabled ? 'true' : 'false');
+      if (separateFirst){
+        separateFirst.disabled = !enabled;
+        separateFirst.checked = enabled && controls.separateFirst === true;
+      }
+      if (separationPreset){
+        separationPreset.value = controls.separationPreset;
+        separationPreset.disabled = !(enabled && controls.separateFirst === true);
+      }
+      if (separationCost) separationCost.textContent = enabled && controls.separateFirst === true
+        ? '先分轨后转写将扣除 2 次 AI 转写次数'
+        : '普通转写将扣除 1 次 AI 转写次数';
       if (!enabled && this._transcriptionSettingsContext && !this._transcriptionSettingsContext.clipId){
         this.closeTranscriptionSettings();
       }
@@ -6830,6 +6851,9 @@ renderTimeline(){
         strength: document.getElementById('transcriptionSettingsCleanup'),
         output: document.getElementById('transcriptionSettingsCleanupValue'),
         preserve: document.getElementById('transcriptionSettingsPreserveRaw'),
+        separateFirst: document.getElementById('transcriptionSettingsSeparateFirst'),
+        separationPreset: document.getElementById('transcriptionSettingsSeparationPreset'),
+        separationCost: document.getElementById('transcriptionSettingsSeparationCost'),
         help: document.getElementById('transcriptionSettingsTargetHelp'),
       };
     },
@@ -6840,6 +6864,8 @@ renderTimeline(){
         transcriptionTarget: els.target ? els.target.value : 'auto',
         cleanupStrength: els.strength ? els.strength.value : 50,
         preserveRawCandidates: !!(els.preserve && els.preserve.checked),
+        separateFirst: !!(els.separateFirst && els.separateFirst.checked),
+        separationPreset: els.separationPreset ? els.separationPreset.value : 'four_stem',
       });
     },
 
@@ -6851,13 +6877,23 @@ renderTimeline(){
         els.output.textContent = String(controls.cleanupStrength);
       }
       if (els.help) els.help.hidden = controls.transcriptionTarget !== 'chords';
+      if (els.separationPreset) els.separationPreset.disabled = controls.separateFirst !== true;
+      if (els.separationCost){
+        const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (key, fallback) => fallback || key;
+        els.separationCost.textContent = controls.separateFirst
+          ? _t('transcription.separationCost.enabled', 'Stem separation + transcription uses 2 AI transcription credits.')
+          : _t('transcription.separationCost.normal', 'Normal transcription uses 1 AI transcription credit.');
+      }
     },
 
     _applyTranscriptionSettingsModal(){
       const controls = this._readTranscriptionSettingsModal();
       const context = this._transcriptionSettingsContext || {};
       if (context.clipId) this.setAudioTranscriptionControls(context.clipId, controls);
-      else this.setTopBarImportTranscriptionControls(controls);
+      else {
+        this.setTopBarImportTranscriptionControls(controls);
+        this._syncTopBarImportTranscriptionControls();
+      }
       this._syncTranscriptionSettingsModal();
       return controls;
     },
@@ -6865,7 +6901,7 @@ renderTimeline(){
     openTranscriptionSettings(opts){
       opts = opts || {};
       const els = this._transcriptionSettingsElements();
-      if (!els.modal || !els.target || !els.strength || !els.preserve) return false;
+      if (!els.modal || !els.target || !els.strength || !els.preserve || !els.separateFirst || !els.separationPreset) return false;
       const clipId = String(opts.clipId || '').trim();
       const controls = clipId ? this.getAudioTranscriptionControls(clipId) : this.getTopBarImportTranscriptionControls();
       this._transcriptionSettingsContext = {
@@ -6875,6 +6911,8 @@ renderTimeline(){
       els.target.value = controls.transcriptionTarget;
       els.strength.value = String(controls.cleanupStrength);
       els.preserve.checked = controls.preserveRawCandidates === true;
+      els.separateFirst.checked = controls.separateFirst === true;
+      els.separationPreset.value = controls.separationPreset;
       this._syncTranscriptionSettingsModal();
       els.modal.classList.remove('hidden');
       els.modal.setAttribute('aria-hidden', 'false');
@@ -6919,11 +6957,38 @@ renderTimeline(){
       if (text) this.setImportStatus(text, true);
     },
 
+    _ensureAudioSeparationSourceInstance(clipId, preferredInstanceId){
+      const id = String(clipId || '').trim();
+      if (!id || !this._clipIsAudioForEditor(id)) return '';
+      const findInstance = () => {
+        const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+        const instances = p2 && Array.isArray(p2.instances) ? p2.instances : [];
+        const preferred = String(preferredInstanceId || '').trim();
+        if (preferred){
+          const match = instances.find((inst) => inst && String(inst.id) === preferred && String(inst.clipId) === id);
+          if (match) return String(match.id);
+        }
+        const selected = String((this.state && this.state.selectedInstanceId) || '').trim();
+        if (selected){
+          const match = instances.find((inst) => inst && String(inst.id) === selected && String(inst.clipId) === id);
+          if (match) return String(match.id);
+        }
+        const existing = instances.find((inst) => inst && String(inst.clipId) === id);
+        return existing ? String(existing.id) : '';
+      };
+      let instanceId = findInstance();
+      if (instanceId) return instanceId;
+      this.addClipToTimeline(id);
+      instanceId = findInstance();
+      return instanceId || String((this.state && this.state.selectedInstanceId) || '');
+    },
+
     openAudioSeparation(opts){
       opts = opts || {};
       const clipId = String(opts.clipId || '').trim();
-      const instanceId = String(opts.sourceAudioInstanceId || '').trim();
-      if (!clipId || !instanceId || !this._clipIsAudioForEditor(clipId)) return false;
+      if (!clipId || !this._clipIsAudioForEditor(clipId)) return false;
+      const instanceId = this._ensureAudioSeparationSourceInstance(clipId, opts.sourceAudioInstanceId);
+      if (!instanceId) return false;
       const els = this._audioSeparationElements();
       if (!els.modal || !els.preset || !els.mode) return false;
       this._audioSeparationContext = { clipId: clipId, sourceAudioInstanceId: instanceId, trigger: opts.trigger || null };
@@ -6997,13 +7062,18 @@ renderTimeline(){
         file = LAS && LAS.getFileForLocalAssetRef ? await LAS.getFileForLocalAssetRef(ref) : null;
       }
       if (!file) throw new Error('missing_audio');
-      let durationSec = Number(clip.audio && clip.audio.durationSec);
+      let durationSec = Number(opts.durationSecOverride);
+      if (!isFinite(durationSec) || durationSec <= 0) durationSec = Number(clip.audio && clip.audio.durationSec);
       if (!isFinite(durationSec) || durationSec <= 0) durationSec = await this._decodeAudioFileDurationSec(file);
       if (durationSec > 600.001) throw new Error('audio_too_long');
       const mode = opts.mode === 'separate_and_transcribe' ? 'separate_and_transcribe' : 'separate_only';
       const allowedPresets = ['vocals_instrumental', 'four_stem', 'instruments_only', 'vocals_bass_drums'];
       const separationPreset = allowedPresets.indexOf(String(opts.separationPreset)) >= 0 ? String(opts.separationPreset) : 'four_stem';
       const controls = this.getAudioTranscriptionControls(clipId);
+      const placementOffsetSec = Math.max(0, Number(opts.placementOffsetSec) || 0);
+      const bpm = Number(p2.bpm || 120);
+      const effectiveSourceStartBeat = Number(sourceInstanceV2.startBeat || 0) + placementOffsetSec * bpm / 60;
+      const effectiveSourceStartSec = effectiveSourceStartBeat * 60 / bpm;
       this._audioSeparationBusy = true;
       const els = this._audioSeparationElements();
       if (els.run) els.run.disabled = true;
@@ -7016,8 +7086,10 @@ renderTimeline(){
           metadata: {
             originalAudioClipId: clipId,
             originalAudioAssetId: clip.audio && clip.audio.assetRef ? String(clip.audio.assetRef) : null,
-            sourceStartTime: Number(sourceInstanceV2.startBeat || 0) * 60 / Number(p2.bpm || 120),
-            alignment: { sourceAudioInstanceId: sourceInstanceId, sourceStartBeat: Number(sourceInstanceV2.startBeat || 0) },
+            sourceStartTime: effectiveSourceStartSec,
+            sourceSegmentStartSec: placementOffsetSec,
+            sourceSegmentDurationSec: durationSec,
+            alignment: { sourceAudioInstanceId: sourceInstanceId, sourceStartBeat: effectiveSourceStartBeat },
           },
           transcriptionTarget: controls.transcriptionTarget,
           cleanupStrength: controls.cleanupStrength,
@@ -7033,7 +7105,7 @@ renderTimeline(){
         const plan = timeline.planTrackIndices(this.project, sourceInstanceId, items.length);
         if (!plan.ok) throw new Error(plan.reason || 'timeline_placement_failed');
         if (plan.trackIndices.length) this.ensureTimelineTrackIndex(Math.max.apply(Math, plan.trackIndices));
-        const sourceStartBeat = Number(sourceInstanceV2.startBeat || 0);
+        const sourceStartBeat = effectiveSourceStartBeat;
         const failures = [];
         for (let index = 0; index < items.length; index += 1) {
           const item = items[index];
@@ -7063,7 +7135,7 @@ renderTimeline(){
                 sourceTaskId: result.workerJobId,
                 workerJobId: result.workerJobId,
                 workerConversionSource: 'audio_separation_demucs',
-                placeStartSec: plan.sourceStartSec,
+                placeStartSec: effectiveSourceStartSec,
                 placeTrackIndex: trackIndex,
                 forceSingleClip: true,
               });
@@ -7096,7 +7168,6 @@ renderTimeline(){
       const checkbox = document.getElementById('chkImportAudioToNotes');
       const separateFirst = document.getElementById('chkImportAudioSeparateFirst');
       const separationPreset = document.getElementById('selImportAudioSeparationPreset');
-      const separationCost = document.getElementById('importAudioSeparationCost');
       const trigger = document.getElementById('btnTopImportTranscriptionSettings');
       const els = this._transcriptionSettingsElements();
       if (!els.modal || els.modal.__h2sTranscriptionControlsBound){
@@ -7104,20 +7175,20 @@ renderTimeline(){
         return;
       }
       els.modal.__h2sTranscriptionControlsBound = true;
-      const syncSeparationImport = () => {
+      const captureTopBarSeparationControls = () => {
         const notesEnabled = !checkbox || !!checkbox.checked;
-        if (separateFirst) {
-          separateFirst.disabled = !notesEnabled;
-          if (!notesEnabled) separateFirst.checked = false;
-        }
-        const enabled = notesEnabled && !!(separateFirst && separateFirst.checked);
-        if (separationPreset) separationPreset.disabled = !enabled;
-        if (separationCost) separationCost.textContent = enabled
-          ? '先分轨后转写将扣除 2 次 AI 转写次数'
-          : '普通转写将扣除 1 次 AI 转写次数';
+        this.setTopBarImportTranscriptionControls({
+          separateFirst: notesEnabled && !!(separateFirst && separateFirst.checked),
+          separationPreset: separationPreset ? separationPreset.value : 'four_stem',
+        });
+        this._syncTopBarImportTranscriptionControls();
       };
-      if (checkbox) checkbox.addEventListener('change', () => { this._syncTopBarImportTranscriptionControls(); syncSeparationImport(); });
-      if (separateFirst) separateFirst.addEventListener('change', syncSeparationImport);
+      if (checkbox) checkbox.addEventListener('change', () => {
+        if (!checkbox.checked && separateFirst) separateFirst.checked = false;
+        captureTopBarSeparationControls();
+      });
+      if (separateFirst) separateFirst.addEventListener('change', captureTopBarSeparationControls);
+      if (separationPreset) separationPreset.addEventListener('change', captureTopBarSeparationControls);
       if (trigger) trigger.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -7129,6 +7200,8 @@ renderTimeline(){
       });
       if (els.strength) els.strength.addEventListener('input', () => this._applyTranscriptionSettingsModal());
       if (els.preserve) els.preserve.addEventListener('change', () => this._applyTranscriptionSettingsModal());
+      if (els.separateFirst) els.separateFirst.addEventListener('change', () => this._applyTranscriptionSettingsModal());
+      if (els.separationPreset) els.separationPreset.addEventListener('change', () => this._applyTranscriptionSettingsModal());
       const stopEvent = (event) => event.stopPropagation();
       ['pointerdown', 'mousedown', 'click', 'dblclick'].forEach((eventName) => {
         els.modal.addEventListener(eventName, stopEvent);
@@ -7144,7 +7217,6 @@ renderTimeline(){
         if (event.key === 'Escape' && !els.modal.classList.contains('hidden')) this.closeTranscriptionSettings();
       });
       this._syncTopBarImportTranscriptionControls();
-      syncSeparationImport();
     },
 
     /** Top bar: one Import audio control + “Make editable notes” checkbox (default on). */
@@ -7936,16 +8008,7 @@ renderTimeline(){
       const existing = id && this.state.audioTranscriptionControlsByClipId
         ? this.state.audioTranscriptionControlsByClipId[id]
         : null;
-      const allowed = ['auto', 'ai_full_mix', 'melody', 'chords', 'vocal_humming', 'piano_guitar', 'electronic_melody', 'pad_chords'];
-      const target = existing && allowed.indexOf(String(existing.transcriptionTarget || '')) >= 0
-        ? String(existing.transcriptionTarget)
-        : 'auto';
-      const strengthRaw = existing ? Number(existing.cleanupStrength) : 50;
-      return {
-        transcriptionTarget: target,
-        cleanupStrength: Number.isFinite(strengthRaw) ? Math.max(0, Math.min(100, Math.round(strengthRaw))) : 50,
-        preserveRawCandidates: !!(existing && existing.preserveRawCandidates === true),
-      };
+      return this._normalizeTranscriptionControls(existing || {});
     },
 
     setAudioTranscriptionControls(clipId, patch){
@@ -7953,9 +8016,7 @@ renderTimeline(){
       if (!id) return null;
       if (!this.state.audioTranscriptionControlsByClipId) this.state.audioTranscriptionControlsByClipId = {};
       const previous = this.getAudioTranscriptionControls(id);
-      const next = Object.assign({}, previous, patch || {});
-      next.cleanupStrength = Math.max(0, Math.min(100, Math.round(Number(next.cleanupStrength) || 0)));
-      next.preserveRawCandidates = next.preserveRawCandidates === true;
+      const next = this._normalizeTranscriptionControls(Object.assign({}, previous, patch || {}));
       this.state.audioTranscriptionControlsByClipId[id] = next;
       if (this.selectionCtrl && typeof this.selectionCtrl.render === 'function') this.selectionCtrl.render();
       return next;
@@ -8725,13 +8786,56 @@ renderTimeline(){
         try { alert(_t('convert.fail.invalidSegment', 'Selected segment is invalid. Adjust start or length.')); } catch (_e) {}
         return { ok: false, reason: 'invalid_segment' };
       }
+      const transcriptionControls = this.getAudioTranscriptionControls(clipId);
+      if (transcriptionControls.separateFirst === true){
+        const baseClient = (typeof window !== 'undefined') ? window.H2SAudioWorkerConversionClient : null;
+        if (!baseClient || typeof baseClient._segmentToWavArrayBuffer !== 'function'){
+          throw new Error('worker_unavailable');
+        }
+        const sourceInstanceId = this._ensureAudioSeparationSourceInstance(clipId, opts.sourceAudioInstanceId);
+        if (!sourceInstanceId) throw new Error('source_audio_not_found');
+        this._setAudioConvertState(clipId, {
+          phase: 'uploading',
+          workerRoute: true,
+          segmentStartSec: seg.startSec,
+          segmentDurationSec: seg.durationSec,
+        });
+        try{
+          const segmentBuffer = await baseClient._segmentToWavArrayBuffer(file, seg);
+          const segmentFile = new File([segmentBuffer], 'studio-selected-segment.wav', { type: 'audio/wav' });
+          const separated = await this._runAudioSeparationForClip(clipId, {
+            sourceAudioInstanceId: sourceInstanceId,
+            separationPreset: transcriptionControls.separationPreset,
+            mode: 'separate_and_transcribe',
+            fileOverride: segmentFile,
+            durationSecOverride: seg.durationSec,
+            placementOffsetSec: seg.startSec,
+          });
+          this._setAudioConvertState(clipId, {
+            phase: 'completed',
+            workerRoute: true,
+            workerJobId: separated && separated.workerJobId ? separated.workerJobId : null,
+            segmentStartSec: seg.startSec,
+            segmentDurationSec: seg.durationSec,
+          });
+          return separated;
+        }catch(err){
+          this._setAudioConvertState(clipId, {
+            phase: 'failed',
+            workerRoute: true,
+            errorBucket: (err && err.message) ? String(err.message) : 'worker_failed',
+            segmentStartSec: seg.startSec,
+            segmentDurationSec: seg.durationSec,
+          });
+          throw err;
+        }
+      }
       const uploadOpts = {
         sourceAudioClipId: clipId,
         conversionClipId: clipId,
         segmentStartSec: seg.startSec,
         segmentDurationSec: seg.durationSec,
       };
-      const transcriptionControls = this.getAudioTranscriptionControls(clipId);
       uploadOpts.transcriptionTarget = transcriptionControls.transcriptionTarget;
       uploadOpts.cleanupStrength = transcriptionControls.cleanupStrength;
       uploadOpts.preserveRawCandidates = transcriptionControls.preserveRawCandidates;
@@ -8836,6 +8940,13 @@ renderTimeline(){
         },
         resolveAudioFile(clipId){
           return self._resolveLocalAudioFileForClip(clipId);
+        },
+        openSeparation(clipId, instanceId, trigger){
+          return self.openAudioSeparation({
+            clipId: clipId,
+            sourceAudioInstanceId: instanceId,
+            trigger: trigger || null,
+          });
         },
         convertToEditable(clipId, instanceId){
           self._syncWaveformConvertStatus(clipId);
