@@ -5664,6 +5664,7 @@ ensureTrackButtons(){
         const normalized = err.toLowerCase();
         if (status === 401 || normalized === 'auth_required' || normalized.indexOf('login') >= 0 || normalized.indexOf('session') >= 0) return _t('cloudAi.loginRequired');
         if (status === 403 || normalized === 'internal_only' || normalized.indexOf('internal') >= 0) return _t('cloudAi.internalOnly');
+        if (status === 429 || normalized.indexOf('quota_exceeded') >= 0 || normalized.indexOf('insufficient_credit') >= 0) return _t('cloudAi.quotaExceeded');
         if (status === 408 || status === 504 || normalized.indexOf('timeout') >= 0 || normalized.indexOf('timed_out') >= 0) return _t('cloudAi.requestTimedOut');
         if (normalized.indexOf('bridge') >= 0 || normalized.indexOf('parent') >= 0 || normalized.indexOf('postmessage') >= 0) return _t('cloudAi.bridgeUnavailable');
         return _t('cloudAi.requestFailedRetry');
@@ -7251,6 +7252,11 @@ renderTimeline(){
       }, transcriptionControls || {});
       const workerTry = await this._tryWorkerConvertFileToEditable(f, Object.assign({ kind: 'import' }, controls));
       if (workerTry && workerTry.ok) return;
+      if (workerTry && /quota_exceeded|insufficient_credits/.test(String(workerTry.reason || ''))) {
+        const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+        this.setImportStatus(_t('convert.fail.quotaExceeded', 'Not enough creation credits. Use the Hum2Song Cloud prompt to open the purchase page.'), false);
+        return;
+      }
       if (workerTry && workerTry.reason){
         const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
         this.setImportStatus(_t('convert.phase.workerFallback', 'Background conversion unavailable. Using fallback conversion…'), true);
@@ -7840,7 +7846,7 @@ renderTimeline(){
         const msg = e && e.message ? String(e.message) : 'humming_music_failed';
         this._updateHummingMusicPromptTraceStatus({ status: 'failed', failureReason: msg });
         if (/auth_required/.test(msg)) this._setHummingMusicStatus('请先在 Cloud 登录后再生成完整音乐。');
-        else if (/quota|access_denied/.test(msg)) this._setHummingMusicStatus('当前额度或权限不足，无法创建完整音乐生成任务。');
+        else if (/quota|access_denied/.test(msg)) this._setHummingMusicStatus('当前创作次数不足。请在 Hum2Song Cloud 弹窗中打开付费页面，购买后回到这里重试。');
         else if (/cloud_bridge_unavailable/.test(msg)) this._setHummingMusicStatus('请从 Hum2Song Cloud 打开编曲后再生成完整音乐。');
         else this._setHummingMusicStatus('完整音乐生成失败，请稍后重试。');
         return { ok: false, reason: msg };
@@ -8203,6 +8209,7 @@ renderTimeline(){
         if (e.errorBucket === 'segment_extract_failed') return _t('convert.fail.segmentExtract', 'Conversion failed: audio segment extraction failed.');
         if (e.errorBucket === 'basic_pitch_failed') return _t('convert.fail.basicPitch', 'Conversion failed: transcription model failed.');
         if (e.errorBucket === 'score_fetch_failed') return _t('convert.fail.scoreFetch', 'Conversion failed: could not read transcription result.');
+        if (e.errorBucket === 'quota_exceeded') return _t('convert.fail.quotaExceeded', 'Not enough creation credits. Use the Hum2Song Cloud prompt to open the purchase page.');
         if (e.errorBucket === 'worker_unavailable') return _t('convert.fail.workerUnavailable', 'Background conversion is unavailable. Switched to fallback conversion.');
         if (e.errorBucket === 'worker_job_failed') return _t('convert.fail.workerJobFailed', 'Background conversion failed. You can retry or use fallback conversion.');
         if (e.errorBucket === 'timed_out') return _t('convert.phase.timedOut', 'Conversion timed out. Try again.');
@@ -8720,10 +8727,11 @@ renderTimeline(){
         return { ok: true, workerJobId: workerJobId };
       }catch(e){
         const reason = (e && e.message) ? String(e.message) : 'worker_unavailable';
+        const quotaFailure = reason === 'quota_exceeded' || reason === 'insufficient_credits';
         const postAcceptFailure = reason === 'task_failed' || reason === 'score_fetch_failed' || reason === 'worker_timeout';
         const errorBucket = postAcceptFailure
           ? (reason === 'worker_timeout' ? 'timed_out' : 'worker_job_failed')
-          : 'worker_unavailable';
+          : (quotaFailure ? 'quota_exceeded' : 'worker_unavailable');
         this._setAudioConvertState(clipId, {
           phase: 'failed',
           taskId: null,
@@ -8734,7 +8742,7 @@ renderTimeline(){
           segmentDurationSec: seg.durationSec,
         });
         console.warn('[H2S convert] worker phase=failed bucket=' + errorBucket + ' clip_id=' + clipId);
-        return { ok: false, reason: postAcceptFailure ? reason : 'worker_unavailable' };
+        return { ok: false, reason: (postAcceptFailure || quotaFailure) ? reason : 'worker_unavailable' };
       }
     },
 
@@ -9304,6 +9312,11 @@ renderTimeline(){
       try{
         const workerTry = await this._tryWorkerConvertFileToEditable(this.state.lastRecordedFile, { kind: 'recording', baseName: 'Recording' });
         if (workerTry && workerTry.ok) return;
+        if (workerTry && /quota_exceeded|insufficient_credits/.test(String(workerTry.reason || ''))) {
+          const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
+          this.setImportStatus(_t('convert.fail.quotaExceeded', 'Not enough creation credits. Use the Hum2Song Cloud prompt to open the purchase page.'), false);
+          return;
+        }
         if (workerTry && workerTry.reason){
           const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
           this.setImportStatus(_t('convert.phase.workerFallback', 'Background conversion unavailable. Using fallback conversion…'), true);
