@@ -49,13 +49,16 @@ function makeFakeTone(options){
   const startedPlayers = [];
   const pendingPlayerLoads = [];
   const pendingSamplerLoads = [];
+  const createdSynths = [];
+  const createdSamplers = [];
+  const decodedLoads = [];
 
   class FakeVolume {
     constructor(){ this.value = 0; }
   }
 
   class FakeSynth {
-    constructor(){ this.volume = new FakeVolume(); this.disposed = false; }
+    constructor(){ this.volume = new FakeVolume(); this.disposed = false; createdSynths.push(this); }
     toDestination(){ return this; }
     triggerAttackRelease(freq, dur, time, vel){
       triggered.push({ kind: 'note', freq, dur, time, vel, volume: this.volume.value, synth: this });
@@ -83,6 +86,7 @@ function makeFakeTone(options){
     constructor(cfg){
       super();
       this.urls = cfg && cfg.urls;
+      createdSamplers.push(this);
       pendingSamplerLoads.push(() => {
         if (cfg && typeof cfg.onload === 'function') cfg.onload();
       });
@@ -116,7 +120,26 @@ function makeFakeTone(options){
     Player: FakePlayer,
   };
 
-  return { Tone, scheduled, triggered, startedPlayers, pendingPlayerLoads, pendingSamplerLoads };
+  if (options.decodedLoader){
+    Tone.ToneAudioBuffer = {
+      load(url){
+        decodedLoads.push(url);
+        return Promise.resolve({ decodedUrl: url });
+      },
+    };
+  }
+
+  return {
+    Tone,
+    scheduled,
+    triggered,
+    startedPlayers,
+    pendingPlayerLoads,
+    pendingSamplerLoads,
+    createdSynths,
+    createdSamplers,
+    decodedLoads,
+  };
 }
 
 function noteClip(P, id, startBeat){
@@ -295,6 +318,105 @@ async function testMuteDuringAsyncSamplerLoadBlocksLaterSound(){
   assert.strictEqual(fake.triggered.length, 0, 'mute during async sampler load must prevent later sound');
 }
 
+async function testSamplerIsReusedAcrossStopAndReplay(){
+  const P = loadH2SProject();
+  P.SAMPLER_PACKS.test = {
+    label: 'Test',
+    baseUrlDefault: '/samples/',
+    urls: { C4: 'C4.wav', D4: 'D4.wav' },
+    requiredKeys: ['C4', 'D4'],
+  };
+  P.resolveSamplerUrlsForPack = function(){
+    return Promise.resolve({ urls: { C4: 'blob:c4', D4: 'blob:d4' }, objectUrls: [] });
+  };
+  const fake = makeFakeTone();
+  const p2 = makeProject(P, { instrument: 'sampler:test' });
+  const ctrl = await makeController(p2, fake, P);
+
+  const firstPlay = ctrl.playProject();
+  await waitForPendingSamplerLoad(fake);
+  fake.pendingSamplerLoads.shift()();
+  await firstPlay;
+  assert.strictEqual(fake.createdSamplers.length, 1, 'first playback should create one sampler');
+
+  ctrl.stop();
+  await ctrl.playProject();
+  assert.strictEqual(fake.createdSamplers.length, 1, 'replay should reuse the prepared sampler');
+  assert.strictEqual(fake.pendingSamplerLoads.length, 0, 'replay should not start another sampler load');
+  ctrl.dispose();
+}
+
+async function testConcurrentPrepareDeduplicatesDecodedPack(){
+  const P = loadH2SProject();
+  P.SAMPLER_PACKS.test = {
+    label: 'Test',
+    baseUrlDefault: '/samples/',
+    urls: { C4: 'C4.wav', D4: 'D4.wav' },
+    requiredKeys: ['C4', 'D4'],
+  };
+  P.resolveSamplerUrlsForPack = function(){
+    return Promise.resolve({ urls: { C4: '/samples/C4.wav', D4: '/samples/D4.wav' }, objectUrls: [] });
+  };
+  const fake = makeFakeTone({ decodedLoader: true });
+  const p2 = makeProject(P, { instrument: 'sampler:test' });
+  const ctrl = await makeController(p2, fake, P);
+
+  await Promise.all([
+    ctrl.prepareTrackInstrument('t1', 'sampler:test'),
+    ctrl.prepareTrackInstrument('t2', 'sampler:test'),
+  ]);
+  assert.strictEqual(fake.createdSamplers.length, 2, 'tracks should keep independent sampler nodes');
+  assert.strictEqual(fake.decodedLoads.length, 2, 'the two-note pack should be decoded once across tracks');
+  ctrl.dispose();
+}
+
+async function testRapidInstrumentChangesDiscardStaleLoads(){
+  const P = loadH2SProject();
+  P.SAMPLER_PACKS.a = { urls: { C4: 'C4.wav', D4: 'D4.wav' }, requiredKeys: ['C4', 'D4'] };
+  P.SAMPLER_PACKS.b = { urls: { C4: 'C4.wav', D4: 'D4.wav' }, requiredKeys: ['C4', 'D4'] };
+  P.resolveSamplerUrlsForPack = function(pack, packId){
+    return Promise.resolve({ urls: { C4: 'blob:' + packId + ':c4', D4: 'blob:' + packId + ':d4' }, objectUrls: [] });
+  };
+  const fake = makeFakeTone();
+  const p2 = makeProject(P, { instrument: 'sampler:a' });
+  const ctrl = await makeController(p2, fake, P);
+
+  const firstA = ctrl.prepareTrackInstrument('t1', 'sampler:a');
+  const loadB = ctrl.prepareTrackInstrument('t1', 'sampler:b');
+  const finalA = ctrl.prepareTrackInstrument('t1', 'sampler:a');
+  await waitForPendingSamplerLoad(fake);
+  while (fake.pendingSamplerLoads.length < 3) await tick(2);
+  fake.pendingSamplerLoads[2]();
+  fake.pendingSamplerLoads[1]();
+  fake.pendingSamplerLoads[0]();
+  fake.pendingSamplerLoads.length = 0;
+  await Promise.all([firstA, loadB, finalA]);
+
+  assert.strictEqual(fake.createdSamplers.length, 3, 'each distinct in-flight generation may construct once');
+  assert.strictEqual(fake.createdSamplers[0].disposed, true, 'stale first A load should be disposed');
+  assert.strictEqual(fake.createdSamplers[1].disposed, true, 'stale B load should be disposed');
+  assert.strictEqual(fake.createdSamplers[2].disposed, false, 'latest A load should remain active');
+  await ctrl.prepareTrackInstrument('t1', 'sampler:a');
+  assert.strictEqual(fake.createdSamplers.length, 3, 'latest resolved instrument should be reused');
+  ctrl.dispose();
+}
+
+async function testTrackInstrumentCacheIsBounded(){
+  const P = loadH2SProject();
+  const fake = makeFakeTone();
+  const p2 = makeProject(P, {});
+  const ctrl = await makeController(p2, fake, P);
+  for (let i = 0; i < 10; i++){
+    await ctrl.prepareTrackInstrument('cache-track-' + i, i % 2 ? 'lead' : 'pad');
+  }
+  assert.strictEqual(
+    fake.createdSynths.filter(synth => synth.disposed).length,
+    2,
+    'only the eight most recently used track instruments should remain cached',
+  );
+  ctrl.dispose();
+}
+
 function testAppSetTrackMutedNotifiesRuntime(){
   const appSrc = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'app.js'), 'utf8');
   assert.ok(
@@ -310,6 +432,10 @@ async function main(){
     await testMuteDuringPlaybackBlocksFutureAudioClip();
     await testMuteDuringAsyncAudioLoadBlocksLaterSound();
     await testMuteDuringAsyncSamplerLoadBlocksLaterSound();
+    await testSamplerIsReusedAcrossStopAndReplay();
+    await testConcurrentPrepareDeduplicatesDecodedPack();
+    await testRapidInstrumentChangesDiscardStaleLoads();
+    await testTrackInstrumentCacheIsBounded();
     testAppSetTrackMutedNotifiesRuntime();
   } finally {
     delete globalThis.Tone;

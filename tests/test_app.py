@@ -40,6 +40,24 @@ def test_health_endpoint(client):
     assert data["ok"] is True
 
 
+def test_bundled_sampler_assets_have_explicit_browser_cache_policy(client):
+    response = client.get(
+        "/static/pianoroll/vendor/tonejs-instruments/samples/piano/A4.mp3"
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == (
+        "public, max-age=86400, stale-while-revalidate=604800"
+    )
+
+
+def test_unversioned_studio_scripts_do_not_inherit_sampler_cache_policy(client):
+    response = client.get("/static/pianoroll/app.js")
+    assert response.status_code == 200
+    assert response.headers.get("cache-control") != (
+        "public, max-age=86400, stale-while-revalidate=604800"
+    )
+
+
 def test_production_cors_uses_explicit_config(monkeypatch, tmp_path):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))

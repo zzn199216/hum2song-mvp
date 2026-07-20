@@ -199,6 +199,11 @@ class GenerationService:
         self, input_path: Path, output_format: str, task_id: UUID
     ) -> Path:
         """Run pipeline with contract task id (segment uploads use *_segment.wav sidecars)."""
+        # An explicitly injected runner is an override (tests and controlled
+        # integrations rely on it); only the default production runner needs
+        # the contract task id passed to core.pipeline.
+        if self._runner is not None:
+            return self._runner(input_path, output_format)
         pipeline_mod = importlib.import_module("core.pipeline")
         fn = getattr(pipeline_mod, "run_pipeline", None)
         if callable(fn):

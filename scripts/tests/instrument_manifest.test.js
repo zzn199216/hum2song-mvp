@@ -111,7 +111,7 @@ assert(timelineController.includes("textOverflow = 'ellipsis'"), 'compact instru
 const indexHtml = fs.readFileSync(path.join(root, 'static/pianoroll/index.html'), 'utf8');
 const manifestScriptIndex = indexHtml.indexOf('core/instrument_manifest.js');
 const timelineScriptIndex = indexHtml.indexOf('timeline_controller.js');
-const instrumentCacheBust = 'gm-drum-kit-v1';
+const instrumentCacheBust = 'instrument-cache-lru-v1';
 assert(manifestScriptIndex >= 0, 'index should load the instrument manifest');
 assert(timelineScriptIndex >= 0, 'index should load the timeline controller');
 assert(manifestScriptIndex < timelineScriptIndex, 'manifest should load before timeline controller');
@@ -199,6 +199,6 @@ for (const key of ["case 'bass'", "case 'lead'", "case 'pad'", "case 'pluck'"]) 
 }
 assert(audioController.includes('H2SGmDrumKit.createToneDrumKit'), 'live playback should use the GM drum engine');
 assert(exportController.includes('H2SGmDrumKit.createToneDrumKit'), 'WAV export should use the GM drum engine');
-assert(indexHtml.includes('core/gm_drum_kit.js?v=gm-drum-kit-v1'), 'index should load and cache-bust GM drum engine');
+assert(indexHtml.includes(`core/gm_drum_kit.js?v=${instrumentCacheBust}`), 'index should load and cache-bust GM drum engine');
 
 console.log('instrument manifest tests passed');

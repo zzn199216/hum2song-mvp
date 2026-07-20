@@ -35,6 +35,23 @@ logger = logging.getLogger("hum2song")
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 STATIC_DIR = PROJECT_ROOT / "static"
+SAMPLER_STATIC_PREFIX = "pianoroll/vendor/tonejs-instruments/samples/"
+SAMPLER_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800"
+
+
+class StudioStaticFiles(StaticFiles):
+    """Static serving policy for immutable-in-practice bundled sample files.
+
+    Keep the browser cache bounded to one day until sample URLs are content-hashed;
+    stale-while-revalidate avoids blocking a later session on validation.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        normalized = path.replace("\\", "/").lower()
+        if normalized.startswith(SAMPLER_STATIC_PREFIX) and normalized.endswith((".mp3", ".ogg", ".wav")):
+            response.headers["Cache-Control"] = SAMPLER_CACHE_CONTROL
+        return response
 
 
 def _is_dev(app_env: str) -> bool:
@@ -168,7 +185,7 @@ def create_app() -> FastAPI:
     app.include_router(export_router)
 
     # ---- Static ----
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", StudioStaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/", include_in_schema=False)
     def root():

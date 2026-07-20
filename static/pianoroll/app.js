@@ -2338,7 +2338,7 @@ getActiveProjectDocumentLocalStorageKey(){
   return _getActiveProjectDocStorageKey();
 },
 
-setProjectFromV2(projectV2){
+setProjectFromV2(projectV2, options){
   // Persist v2 beats-only doc, then refresh derived v1 view for UI/controllers.
   if (!projectV2) return {ok:false, error:'no_project_v2'};
   if (typeof window !== 'undefined' && window.H2SProject && typeof window.H2SProject.normalizeProjectRevisionChains === 'function'){
@@ -2360,7 +2360,7 @@ setProjectFromV2(projectV2){
   _writeLS(docKey, projectV2);
   _touchCurrentProjectIndexFromDoc(projectV2);
   this.project = _projectV2ToV1View(projectV2);
-  this.render();
+  if (!options || options.render !== false) this.render();
   return {ok:true};
 },
 
@@ -2832,7 +2832,17 @@ setTrackInstrument(trackId, instrument){
   // Repair legacy data that used `id` instead of `trackId`
   if (!t.trackId && t.id === trackId) t.trackId = trackId;
   t.instrument = instrument;
-  this.setProjectFromV2(p2); // persist + rebuild v1 view + render
+  // Start loading from the user's selection gesture. The audio controller
+  // deduplicates in-flight requests, retains only a bounded LRU set, and guards
+  // rapid A -> B -> A changes with a generation token.
+  try{
+    if (this.audioCtrl && typeof this.audioCtrl.prepareTrackInstrument === 'function'){
+      Promise.resolve(this.audioCtrl.prepareTrackInstrument(trackId, instrument)).catch(function(){});
+    }
+  }catch(e){}
+  // The picker already updated its label. Persist and refresh the derived model
+  // without rebuilding the entire timeline DOM for this one-field change.
+  this.setProjectFromV2(p2, { render: false });
 },
 setTrackGainDb(trackId, gainDb){
   const p2 = this.getProjectV2();

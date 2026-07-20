@@ -209,13 +209,23 @@
       _projPlayRafCount = 0;
       _projPlayRafMax = 0;
     }
+    // Instrument nodes are intentionally retained across stop/replay. Audio clip
+    // players and one-off preview synths stay transient and are disposed on stop.
     let _trackSynths = [];
+    let _transientPlaybackNodes = [];
     /** @type {Array<function():void>} Slice E: revoke blob URLs created for localidb: playback */
     let _audioRevokeList = [];
     const synthByTrackId = new Map();
     const lastInstrumentKeyByTid = new Map();
+    const instrumentLastUsedByTid = new Map();
+    const instrumentLoadGenerationByTid = new Map();
+    const pendingInstrumentByTid = new Map();
+    const retiredInstrumentNodes = new Set();
+    const decodedSamplerPackCache = new Map();
     const liveMutedByTrackId = new Map();
     const runtimeNodesByTrackId = new Map();
+    const MAX_CACHED_TRACK_INSTRUMENTS = 8;
+    const MAX_DECODED_SAMPLER_PACKS = 4;
 
     function _trackKey(trackId){
       const s = String(trackId || '').trim();
@@ -274,6 +284,15 @@
       _applyNodeRuntimeState(tid, node);
     }
 
+    function _forgetRuntimeNode(trackId, node){
+      const tid = _trackKey(trackId);
+      if (!tid || !node) return;
+      const set = runtimeNodesByTrackId.get(tid);
+      if (!set) return;
+      set.delete(node);
+      if (!set.size) runtimeNodesByTrackId.delete(tid);
+    }
+
     function _applyTrackRuntimeState(trackId){
       const tid = _trackKey(trackId);
       if (!tid) return;
@@ -318,18 +337,64 @@
       return !!G.Tone;
     }
 
-function _disposeTrackSynths(){
-  for (const s of _trackSynths){
-    try{ s.dispose(); }catch(e){}
+function _disposeTransientPlaybackNodes(){
+  const transientSet = new Set(_transientPlaybackNodes);
+  for (const [tid, nodes] of runtimeNodesByTrackId.entries()){
+    for (const node of transientSet) nodes.delete(node);
+    if (!nodes.size) runtimeNodesByTrackId.delete(tid);
   }
-  _trackSynths = [];
-  synthByTrackId.clear();
-  lastInstrumentKeyByTid.clear();
-  runtimeNodesByTrackId.clear();
+  for (const node of _transientPlaybackNodes){
+    try{ if (node && node.dispose) node.dispose(); }catch(e){}
+  }
+  _transientPlaybackNodes = [];
   for (const rev of _audioRevokeList){
     try{ rev(); }catch(e){}
   }
   _audioRevokeList = [];
+}
+
+function _disposeRetiredInstrumentNodes(){
+  for (const node of retiredInstrumentNodes){
+    try{ if (node && node.dispose) node.dispose(); }catch(e){}
+  }
+  retiredInstrumentNodes.clear();
+}
+
+function _disposeTrackInstrument(trackId){
+  const tid = _trackKey(trackId);
+  if (!tid) return;
+  const node = synthByTrackId.get(tid);
+  if (node){
+    _forgetRuntimeNode(tid, node);
+    try{ if (node.dispose) node.dispose(); }catch(e){}
+    const idx = _trackSynths.indexOf(node);
+    if (idx >= 0) _trackSynths.splice(idx, 1);
+  }
+  synthByTrackId.delete(tid);
+  lastInstrumentKeyByTid.delete(tid);
+  instrumentLastUsedByTid.delete(tid);
+}
+
+function _trimTrackInstrumentCache(protectedTrackIds){
+  if (_trackSynths.length <= MAX_CACHED_TRACK_INSTRUMENTS) return;
+  const protectedSet = protectedTrackIds instanceof Set ? protectedTrackIds : new Set();
+  const candidates = Array.from(synthByTrackId.keys())
+    .filter(function(tid){ return !protectedSet.has(tid); })
+    .sort(function(a, b){ return (instrumentLastUsedByTid.get(a) || 0) - (instrumentLastUsedByTid.get(b) || 0); });
+  while (_trackSynths.length > MAX_CACHED_TRACK_INSTRUMENTS && candidates.length){
+    _disposeTrackInstrument(candidates.shift());
+  }
+}
+
+function _disposeTrackSynths(){
+  _disposeTransientPlaybackNodes();
+  _disposeRetiredInstrumentNodes();
+  for (const tid of Array.from(synthByTrackId.keys())) _disposeTrackInstrument(tid);
+  _trackSynths = [];
+  pendingInstrumentByTid.clear();
+  instrumentLoadGenerationByTid.clear();
+  runtimeNodesByTrackId.clear();
+  decodedSamplerPackCache.clear();
 }
 
   function _makeSynthByInstrument(instr){
@@ -351,6 +416,126 @@ function _disposeTrackSynths(){
 
   const SAMPLER_LOAD_TIMEOUT_MS = 4000;
 
+  function _samplerPackCacheKey(packId, urls){
+    const parts = Object.keys(urls || {}).sort().map(function(key){ return key + '=' + String(urls[key]); });
+    return String(packId || 'sampler') + '|' + parts.join('|');
+  }
+
+  function _trimDecodedSamplerPackCache(){
+    if (decodedSamplerPackCache.size <= MAX_DECODED_SAMPLER_PACKS) return;
+    const entries = Array.from(decodedSamplerPackCache.entries())
+      .filter(function(row){ return row[1] && row[1].ready; })
+      .sort(function(a, b){ return (a[1].lastUsed || 0) - (b[1].lastUsed || 0); });
+    while (decodedSamplerPackCache.size > MAX_DECODED_SAMPLER_PACKS && entries.length){
+      decodedSamplerPackCache.delete(entries.shift()[0]);
+    }
+  }
+
+  function _decodeSamplerUrls(packId, urls){
+    const loader = G.Tone && G.Tone.ToneAudioBuffer && G.Tone.ToneAudioBuffer.load;
+    if (typeof loader !== 'function') return null;
+    const cacheKey = _samplerPackCacheKey(packId, urls);
+    const cached = decodedSamplerPackCache.get(cacheKey);
+    if (cached){
+      cached.lastUsed = Date.now();
+      return cached.promise;
+    }
+    const entry = { ready: false, lastUsed: Date.now(), promise: null };
+    entry.promise = Promise.all(Object.keys(urls || {}).map(function(note){
+      return Promise.resolve(loader.call(G.Tone.ToneAudioBuffer, urls[note]))
+        .then(function(buffer){ return buffer ? { note: note, buffer: buffer } : null; })
+        .catch(function(){ return null; });
+    })).then(function(rows){
+      const buffers = {};
+      for (const row of rows){
+        if (row && row.buffer) buffers[row.note] = row.buffer;
+      }
+      entry.ready = true;
+      entry.lastUsed = Date.now();
+      _trimDecodedSamplerPackCache();
+      return buffers;
+    }).catch(function(err){
+      decodedSamplerPackCache.delete(cacheKey);
+      throw err;
+    });
+    decodedSamplerPackCache.set(cacheKey, entry);
+    _trimDecodedSamplerPackCache();
+    return entry.promise;
+  }
+
+  function _awaitWithSamplerTimeout(promise){
+    return new Promise(function(resolve){
+      let settled = false;
+      const timer = setTimeout(function(){
+        if (settled) return;
+        settled = true;
+        resolve(null);
+      }, SAMPLER_LOAD_TIMEOUT_MS);
+      Promise.resolve(promise).then(function(value){
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      }).catch(function(){
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+  }
+
+  function _makeInstrumentLoadFallback(){
+    const fallback = _makeSynthByInstrument('default');
+    try{ fallback.__h2sInstrumentLoadFallback = true; }catch(e){}
+    return fallback;
+  }
+
+  async function _createSamplerFromUrls(packId, urls, fallbackReason){
+    const decodePromise = _decodeSamplerUrls(packId, urls);
+    if (decodePromise){
+      const decoded = await _awaitWithSamplerTimeout(decodePromise);
+      if (!decoded || Object.keys(decoded).length < 2){
+        onLog(fallbackReason || 'Sampler pack could not be decoded in time. Using default synth.');
+        return _makeInstrumentLoadFallback();
+      }
+      try{
+        // Tone accepts native AudioBuffer values. Each track gets its own Sampler
+        // node while the expensive decoded PCM is shared by the bounded pack cache.
+        return new G.Tone.Sampler({ urls: decoded, baseUrl: '' });
+      }catch(e){
+        onLog(fallbackReason || 'Sampler pack could not be created. Using default synth.');
+        return _makeInstrumentLoadFallback();
+      }
+    }
+
+    // Test/legacy Tone runtimes without ToneAudioBuffer.load keep the old loader.
+    return new Promise(function(resolve){
+      let settled = false;
+      function settle(sampler){
+        if (settled) return;
+        settled = true;
+        resolve(sampler);
+      }
+      const timeout = setTimeout(function(){
+        settle(_makeInstrumentLoadFallback());
+        onLog(fallbackReason || 'Sampler pack could not be loaded in time. Using default synth.');
+        try{ if (sampler && sampler.dispose) sampler.dispose(); }catch(e){}
+      }, SAMPLER_LOAD_TIMEOUT_MS);
+      let sampler;
+      try{
+        sampler = new G.Tone.Sampler({
+          urls: urls,
+          baseUrl: '',
+          onload: function(){ clearTimeout(timeout); settle(sampler); },
+        });
+      }catch(e){
+        clearTimeout(timeout);
+        settle(_makeInstrumentLoadFallback());
+      }
+    });
+  }
+
   /** PR-INS2a/INS2e/INS2e.2: Async instrument creation. Handles tone_synth, sampler (built-in + custom), oneshot. */
   async function _makeSynthByInstrumentAsync(instr){
     const desc = (G.H2SProject && typeof G.H2SProject.normalizeInstrument === 'function')
@@ -359,9 +544,9 @@ function _disposeTrackSynths(){
 
     if (desc.kind === 'oneshot' && desc.packId){
       const resolveOneshot = (G.H2SProject && G.H2SProject.resolveCustomOneshotUrl) ? G.H2SProject.resolveCustomOneshotUrl : null;
-      if (!resolveOneshot) return _makeSynthByInstrument('default');
+      if (!resolveOneshot) return _makeInstrumentLoadFallback();
       const res = await resolveOneshot(desc.packId).catch(function(){ return null; });
-      if (!res || !res.url){ onLog('Custom oneshot missing sample.'); return _makeSynthByInstrument('default'); }
+      if (!res || !res.url){ onLog('Custom oneshot missing sample.'); return _makeInstrumentLoadFallback(); }
       return new Promise(function(resolve){
         var player = new G.Tone.Player({
           url: res.url,
@@ -370,7 +555,7 @@ function _disposeTrackSynths(){
         player.toDestination();
         setTimeout(function(){ resolve(player); }, 2500);
       }).then(function(p){
-        if (!p) return _makeSynthByInstrument('default');
+        if (!p) return _makeInstrumentLoadFallback();
         return {
           triggerAttackRelease: function(freq, dur, time, vel){
             try{ p.start(time, 0, dur || 0.1); }catch(e){}
@@ -392,7 +577,7 @@ function _disposeTrackSynths(){
       const resolveCustom = (G.H2SProject && G.H2SProject.resolveCustomSamplerUrls) ? G.H2SProject.resolveCustomSamplerUrls : null;
       if (!resolveCustom){
         onLog('Custom sampler not supported.');
-        return _makeSynthByInstrument('default');
+        return _makeInstrumentLoadFallback();
       }
       let resolved;
       try{ resolved = await resolveCustom(packId); }catch(e){ resolved = { urls: {}, objectUrls: [], fallbackReason: null }; }
@@ -400,25 +585,14 @@ function _disposeTrackSynths(){
       const keyCount = urls ? Object.keys(urls).length : 0;
       if (!urls || keyCount < 2){
         onLog(resolved.fallbackReason || 'Custom sampler needs >=2 samples.');
-        return _makeSynthByInstrument('default');
+        return _makeInstrumentLoadFallback();
       }
       if (typeof window !== 'undefined' && window.H2S_DEBUG_INSTRUMENT){
         var urlKeys = Object.keys(urls);
         var firstUrl = urlKeys[0] ? urls[urlKeys[0]] : '';
         console.log('[Audio] customSampler urlsCount:' + urlKeys.length + ' firstUrlPrefix:' + (firstUrl ? String(firstUrl).substring(0, 40) : ''));
       }
-      return new Promise(function(resolve){
-        var settled = false;
-        function settle(s){ if (settled) return; settled = true; resolve(s); }
-        var t = setTimeout(function(){
-          settle(_makeSynthByInstrument('default'));
-          try{ if (sam && sam.dispose) sam.dispose(); }catch(e){}
-        }, SAMPLER_LOAD_TIMEOUT_MS);
-        var sam;
-        try{
-          sam = new G.Tone.Sampler({ urls: urls, baseUrl: '', onload: function(){ clearTimeout(t); settle(sam); } });
-        }catch(e){ clearTimeout(t); settle(_makeSynthByInstrument('default')); return; }
-      });
+      return _createSamplerFromUrls(packId, urls, resolved.fallbackReason);
     }
 
     const packs = (G.H2SProject && G.H2SProject.SAMPLER_PACKS) ? G.H2SProject.SAMPLER_PACKS : {};
@@ -426,7 +600,7 @@ function _disposeTrackSynths(){
     const resolveUrls = (G.H2SProject && G.H2SProject.resolveSamplerUrlsForPack) ? G.H2SProject.resolveSamplerUrlsForPack : null;
     if (!pack || !pack.urls || !resolveUrls){
       onLog('Sampler pack missing. See docs to install samples. Using default synth.');
-      return _makeSynthByInstrument('default');
+      return _makeInstrumentLoadFallback();
     }
 
     let resolved;
@@ -436,39 +610,70 @@ function _disposeTrackSynths(){
     if (!urls || keyCount < 2){
       const msg = resolved.fallbackReason || 'Sampler pack missing. See docs to install samples. Using default synth.';
       onLog(msg);
-      return _makeSynthByInstrument('default');
+      return _makeInstrumentLoadFallback();
     }
 
-    return new Promise(function(resolve){
-      let settled = false;
-      const settle = function(synth){
-        if (settled) return;
-        settled = true;
-        resolve(synth);
-      };
-      const timeout = setTimeout(function(){
-        settle(_makeSynthByInstrument('default'));
-        onLog(resolved.fallbackReason || 'Sampler pack missing. See docs to install samples. Using default synth.');
-        try{ if (sampler && sampler.dispose) sampler.dispose(); }catch(e){}
-      }, SAMPLER_LOAD_TIMEOUT_MS);
+    return _createSamplerFromUrls(packId, urls, resolved.fallbackReason);
+  }
 
-      var sampler;
-      try{
-        sampler = new G.Tone.Sampler({
-          urls: urls,
-          baseUrl: '',
-          onload: function(){
-            clearTimeout(timeout);
-            if (!settled) settle(sampler);
-          },
-        });
-      }catch(e){
-        clearTimeout(timeout);
-        onLog('Sampler pack missing. See docs to install samples. Using default synth.');
-        settle(_makeSynthByInstrument('default'));
-        return;
+  async function prepareTrackInstrument(trackId, instrumentKey){
+    const tid = _trackKey(trackId);
+    if (!tid) return null;
+    const key = instrumentKey || 'default';
+    const existing = synthByTrackId.get(tid);
+    const existingKey = lastInstrumentKeyByTid.get(tid);
+    const pending = pendingInstrumentByTid.get(tid);
+
+    if (existing && existingKey === key && !existing.__h2sInstrumentLoadFallback){
+      // A rapid A -> B -> A selection invalidates the still-loading B request.
+      if (pending && pending.key !== key){
+        instrumentLoadGenerationByTid.set(tid, (instrumentLoadGenerationByTid.get(tid) || 0) + 1);
+        pendingInstrumentByTid.delete(tid);
       }
-    });
+      instrumentLastUsedByTid.set(tid, Date.now());
+      _applyNodeRuntimeState(tid, existing);
+      return existing;
+    }
+    if (pending && pending.key === key) return pending.promise;
+
+    const generation = (instrumentLoadGenerationByTid.get(tid) || 0) + 1;
+    instrumentLoadGenerationByTid.set(tid, generation);
+    const promise = (async function(){
+      const synth = await _makeSynthByInstrumentAsync(key);
+      if (!synth) return null;
+      const dest = (synth.toDestination && synth.toDestination.call) ? synth.toDestination() : synth;
+      if (instrumentLoadGenerationByTid.get(tid) !== generation){
+        try{ if (dest && dest.dispose) dest.dispose(); }catch(e){}
+        return synthByTrackId.get(tid) || null;
+      }
+
+      const old = synthByTrackId.get(tid);
+      if (old && old !== dest){
+        _forgetRuntimeNode(tid, old);
+        const oldIndex = _trackSynths.indexOf(old);
+        if (oldIndex >= 0) _trackSynths.splice(oldIndex, 1);
+        // Scheduled callbacks close over the previous node. Let it finish the
+        // current transport session, then dispose it in stop().
+        if (playing) retiredInstrumentNodes.add(old);
+        else try{ if (old.dispose) old.dispose(); }catch(e){}
+      }
+
+      synthByTrackId.set(tid, dest);
+      lastInstrumentKeyByTid.set(tid, key);
+      instrumentLastUsedByTid.set(tid, Date.now());
+      _rememberRuntimeNode(tid, dest);
+      if (_trackSynths.indexOf(dest) < 0) _trackSynths.push(dest);
+      if (!playing) _trimTrackInstrumentCache(new Set([tid]));
+      return dest;
+    })();
+
+    const pendingEntry = { key: key, generation: generation, promise: promise };
+    pendingInstrumentByTid.set(tid, pendingEntry);
+    const clearPending = function(){
+      if (pendingInstrumentByTid.get(tid) === pendingEntry) pendingInstrumentByTid.delete(tid);
+    };
+    promise.then(clearPending, clearPending);
+    return promise;
   }
 
 
@@ -486,7 +691,9 @@ function _disposeTrackSynths(){
     // Stop playback. If resetToStart=true, also reset playhead to 0.
     function stop(resetToStart){
       _logProjectPlaybackPerfIfNeeded();
-      _disposeTrackSynths();
+      _disposeTransientPlaybackNodes();
+      _disposeRetiredInstrumentNodes();
+      _trimTrackInstrumentCache();
       _cancelTimers();
       if (G.Tone){
         try{ G.Tone.Transport.stop(); G.Tone.Transport.cancel(); }catch(e){}
@@ -546,7 +753,8 @@ startAt = (project && project.ui && isFinite(project.ui.playheadSec)) ? project.
 const projectV2 = (typeof getProjectV2 === 'function' && getProjectV2()) ? getProjectV2()
   : ((typeof getProjectDoc === 'function' && getProjectDoc()) ? getProjectDoc() : null);
 
-_disposeTrackSynths();
+_disposeTransientPlaybackNodes();
+_disposeRetiredInstrumentNodes();
 
 G.Tone.Transport.stop();
 G.Tone.Transport.cancel();
@@ -582,35 +790,29 @@ if (projectV2 && G.H2SProject && typeof G.H2SProject.flatten === 'function'){
 
   refreshTrackRuntimeState(p2);
 
+  const projectTrackIds = new Set();
+  for (const track of (p2.tracks || [])){
+    const projectTid = track && (track.trackId || track.id);
+    if (projectTid) projectTrackIds.add(String(projectTid));
+  }
+  for (const cachedTid of Array.from(synthByTrackId.keys())){
+    if (!projectTrackIds.has(String(cachedTid))) _disposeTrackInstrument(cachedTid);
+  }
+
   const getSynth = async (trackId, instrumentKey) => {
     const meta = metaByTrackId.get(trackId) || { muted: false, gainDb: 0 };
     if (meta.muted) return null;
     const key = instrumentKey || 'default';
-    const lastKey = lastInstrumentKeyByTid.get(trackId);
-    if (synthByTrackId.has(trackId) && lastKey !== key){
-      const old = synthByTrackId.get(trackId);
-      try{ if (old && old.dispose) old.dispose(); }catch(e){}
-      const idx = _trackSynths.indexOf(old);
-      if (idx >= 0) _trackSynths.splice(idx, 1);
-      synthByTrackId.delete(trackId);
-      lastInstrumentKeyByTid.delete(trackId);
-    }
-    if (synthByTrackId.has(trackId)) return synthByTrackId.get(trackId);
-    const s = await _makeSynthByInstrumentAsync(key);
-    if (!s) return null;
-    const dest = (s.toDestination && s.toDestination.call) ? s.toDestination() : s;
+    const dest = await prepareTrackInstrument(trackId, key);
+    if (!dest) return null;
     try{ if (dest && dest.volume && Number.isFinite(meta.gainDb)) dest.volume.value = meta.gainDb; }catch(e){};
-    _rememberRuntimeNode(trackId, dest);
-    _trackSynths.push(dest);
-    synthByTrackId.set(trackId, dest);
-    lastInstrumentKeyByTid.set(trackId, key);
     if (typeof window !== 'undefined' && window.H2S_DEBUG_INSTRUMENT){
       try{
-        var cname = s && s.constructor ? s.constructor.name : '?';
-        var isSampler = cname.indexOf('Sampler') >= 0 || (G.Tone.Sampler && s instanceof G.Tone.Sampler);
+        var cname = dest && dest.constructor ? dest.constructor.name : '?';
+        var isSampler = cname.indexOf('Sampler') >= 0 || (G.Tone.Sampler && dest instanceof G.Tone.Sampler);
         var dbg = '[Audio] tid:' + trackId + ' instrumentKey:' + key + ' constructor:' + cname + ' isSampler:' + isSampler;
-        if (isSampler && s){
-          var bufs = s._buffers || (s._sampler && s._sampler._buffers);
+        if (isSampler && dest){
+          var bufs = dest._buffers || (dest._sampler && dest._sampler._buffers);
           if (bufs){ var keys = Object.keys(bufs); if (keys.length) dbg += ' loadedKeys:' + keys.slice(0, 2).join(','); }
         }
         console.log(dbg);
@@ -697,7 +899,7 @@ vel = clamp(vel, 0.01, 1);
       if (dest && dest.volume && Number.isFinite(item.gainDb)) dest.volume.value = item.gainDb;
     }catch(e){}
     _rememberRuntimeNode(item.trackId, player);
-    _trackSynths.push(player);
+    _transientPlaybackNodes.push(player);
     if (item.t + item.dur > maxT) maxT = item.t + item.dur;
     (function(pl, dur, t, trackId){
       G.Tone.Transport.schedule(function(time){
@@ -712,7 +914,7 @@ vel = clamp(vel, 0.01, 1);
 } else {
   // Legacy fallback: v1 seconds-only schedule, single synth.
   const synth = new G.Tone.PolySynth(G.Tone.Synth).toDestination();
-  _trackSynths.push(synth);
+  _transientPlaybackNodes.push(synth);
 
   const flat = flattenProjectToEvents(project, startAt);
   const events = flat.events;
@@ -763,7 +965,7 @@ vel = clamp(vel, 0.01, 1);
         const ok = await ensureTone();
         if (!ok){ onAlert('Tone.js not available.'); return false; }
         await G.Tone.start();
-        _disposeTrackSynths();
+        _disposeTransientPlaybackNodes();
         G.Tone.Transport.stop();
         G.Tone.Transport.cancel();
         G.Tone.Transport.seconds = 0;
@@ -809,7 +1011,7 @@ vel = clamp(vel, 0.01, 1);
         }
         try{
           const dest = (player.toDestination && player.toDestination.call) ? player.toDestination() : player;
-          _trackSynths.push(dest);
+          _transientPlaybackNodes.push(dest);
         }catch(e){
           try{ if (player.dispose) player.dispose(); }catch(e2){}
           return false;
@@ -824,7 +1026,7 @@ vel = clamp(vel, 0.01, 1);
         onLog('Clip play (audio): ' + (clip.name || clipId));
         setTimeout(function(){
           try{ G.Tone.Transport.stop(); G.Tone.Transport.cancel(); }catch(e){}
-          try{ _disposeTrackSynths(); }catch(e2){}
+          try{ _disposeTransientPlaybackNodes(); }catch(e2){}
         }, Math.ceil((maxT + 0.2) * 1000));
         return true;
       }
@@ -834,6 +1036,7 @@ vel = clamp(vel, 0.01, 1);
       await G.Tone.start();
 
       const synth = new G.Tone.PolySynth(G.Tone.Synth).toDestination();
+      _transientPlaybackNodes.push(synth);
 
       G.Tone.Transport.stop();
       G.Tone.Transport.cancel();
@@ -872,9 +1075,29 @@ vel = clamp(vel, 0.01, 1);
 
       setTimeout(() => {
         try{ G.Tone.Transport.stop(); G.Tone.Transport.cancel(); }catch(e){}
+        try{ _disposeTransientPlaybackNodes(); }catch(e2){}
       }, Math.ceil((maxT + 0.2) * 1000));
 
       return true;
+    }
+
+    function dispose(){
+      _cancelTimers();
+      try{
+        if (G.Tone && G.Tone.Transport){
+          G.Tone.Transport.stop();
+          G.Tone.Transport.cancel();
+        }
+      }catch(e){}
+      playing = false;
+      _disposeTrackSynths();
+      if (typeof G.removeEventListener === 'function'){
+        try{ G.removeEventListener('pagehide', dispose); }catch(e){}
+      }
+    }
+
+    if (typeof G.addEventListener === 'function'){
+      try{ G.addEventListener('pagehide', dispose); }catch(e){}
     }
 
     return {
@@ -882,6 +1105,8 @@ vel = clamp(vel, 0.01, 1);
       playProject,
       stop,
       playClip,
+      prepareTrackInstrument,
+      dispose,
       setTrackMuted,
       refreshTrackRuntimeState,
       flattenProjectToEvents,

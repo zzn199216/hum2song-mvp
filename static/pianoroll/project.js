@@ -359,6 +359,21 @@
       }
 
       if (!baseUrl){ result.fallbackReason = 'Sampler pack missing. See docs to install samples.'; return result; }
+      // Built-in packs ship with Studio and their exact filenames are already part of
+      // this manifest. Avoid issuing one HEAD request per note before Tone fetches the
+      // same files again. Keep probing only for a user-configured base URL, where the
+      // legacy mp3/ogg/wav extension fallback is still useful.
+      if (!getSamplerBaseUrl()){
+        var trustedBase = baseUrl.replace(/\/+$/, '') + '/';
+        for (var directIndex = 0; directIndex < keys.length; directIndex++){
+          var directKey = keys[directIndex];
+          var directFile = pack.urls[directKey];
+          if (directFile) result.urls[directKey] = trustedBase + directFile;
+        }
+        result.availableKeys = Object.keys(result.urls);
+        if (result.availableKeys.length < 2) result.fallbackReason = 'Sampler pack incomplete (' + result.availableKeys.length + ' sample(s) found).';
+        return result;
+      }
       return probeSamplerFiles(baseUrl, keys, pack).then(function(probed){
         result.availableKeys = probed.availableKeys || [];
         for (var k in (probed.urlMap || {})) result.urls[k] = probed.urlMap[k];
