@@ -18,7 +18,7 @@ const timelineView = fs.readFileSync(path.join(root, 'static/pianoroll/ui/timeli
 assert(/select\s*\{[^}]*background:\s*rgba\(0,0,0,\.[^)]+\)/s.test(index), 'native select controls should have a global dark background');
 assert(/select\s+option[^{}]*\{[^}]*background:\s*#111827/s.test(index), 'native select options should use a dark option background where supported');
 assert(/select:focus-visible/.test(index), 'native selects should have a visible focus ring');
-assert(/\[data-role="wfSeparatorOption"\]\s+option:checked\s*\{[^}]*background:\s*#2563eb/s.test(index), 'selected separation strategy should use an unambiguous blue highlight');
+assert(/\.h2s-audio-waveform-choice\.is-selected\s*\{[^}]*background:\s*rgba\(59,130,246,\.92\)/s.test(index), 'selected two-choice separation controls should use an unambiguous blue highlight');
 assert(/textarea::placeholder/.test(index), 'textarea placeholders should remain readable in dark panels');
 assert(!/#editorLlmModelSelect option\s*\{[^}]*background:\s*#fff/s.test(index), 'editor model dropdown should not force white option popups');
 assert(!/#editorOptimizePreset option[^}]*background:\s*#fff/s.test(index), 'editor preset dropdowns should not force white option popups');

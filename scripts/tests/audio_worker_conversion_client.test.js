@@ -46,7 +46,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 (function testIndexLoadsWorkerClientBeforeApp(){
   const indexHtml = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'index.html'), 'utf8');
   assert(indexHtml.includes('core/audio_worker_conversion_client.js'), 'index loads worker conversion client');
-  assert(indexHtml.includes('uvr5-ensemble-v3'), 'index cache-busts the current Studio release');
+  assert(indexHtml.includes('uvr5-ensemble-v5'), 'index cache-busts the current Studio release');
   assert(indexHtml.indexOf('core/audio_worker_conversion_client.js') < indexHtml.indexOf('app.js?v='), 'worker client loads before app');
   console.log('PASS index worker conversion client load order');
 })();

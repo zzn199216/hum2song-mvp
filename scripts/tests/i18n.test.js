@@ -122,7 +122,7 @@ if (fs.existsSync(indexHtmlPath)) {
   assert(indexHtml.indexOf('id="btnLastOptimizeDetails"') !== -1, 'index.html must include last optimize details button');
   assert(indexHtml.indexOf('id="studioLastOptimizeDetails"') !== -1, 'index.html must include last optimize details panel');
   assert(indexHtml.indexOf('studio-lang-select-active') !== -1, 'language select should temporarily de-emphasize AI dock while open');
-  assert(indexHtml.indexOf('uvr5-ensemble-v3') !== -1, 'UVR5 release should bump Studio script cache version');
+  assert(indexHtml.indexOf('uvr5-ensemble-v5') !== -1, 'UVR5 release should bump Studio script cache version');
 }
 
 // Last optimize: staleness uses revision + project doc key (see app.js)
@@ -149,7 +149,7 @@ if (fs.existsSync(i18nCorePath)) {
 var assetVersionPath = path.join(__dirname, '../../static/pianoroll/studio_asset_version.js');
 if (fs.existsSync(assetVersionPath)) {
   var assetVersionSrc = fs.readFileSync(assetVersionPath, 'utf8');
-  assert(assetVersionSrc.indexOf('uvr5-ensemble-v3') !== -1, 'Studio asset version should change for UVR5 release');
+  assert(assetVersionSrc.indexOf('uvr5-ensemble-v5') !== -1, 'Studio asset version should change for UVR5 release');
 }
 
 var bridgePath = path.join(__dirname, '../../static/pianoroll/cloud_project_bridge.js');

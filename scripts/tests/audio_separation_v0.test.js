@@ -28,10 +28,10 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   const html = read('static', 'pianoroll', 'index.html');
   const assetVersion = read('static', 'pianoroll', 'studio_asset_version.js');
   const locale = read('static', 'i18n', 'locales', 'zh.json');
-  assert(assetVersion.includes("H2S_STUDIO_ASSET_VERSION = 'uvr5-ensemble-v3'"));
-  assert(html.includes('studio_asset_version.js?v=uvr5-ensemble-v3'));
-  assert(html.includes('audio_worker_separation_client.js?v=uvr5-ensemble-v3'));
-  assert(html.includes('app.js?v=uvr5-ensemble-v3'));
+  assert(assetVersion.includes("H2S_STUDIO_ASSET_VERSION = 'uvr5-ensemble-v5'"));
+  assert(html.includes('studio_asset_version.js?v=uvr5-ensemble-v5'));
+  assert(html.includes('audio_worker_separation_client.js?v=uvr5-ensemble-v5'));
+  assert(html.includes('app.js?v=uvr5-ensemble-v5'));
   assert(locale.includes('"audio.waveform.separatorOption.uvr5"'));
   console.log('PASS UVR5 UI and locale assets share a cache-busting version');
 })();
@@ -56,6 +56,12 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(waveform.includes('data-role="wfSeparationPreset"'));
   assert(waveform.includes('data-role="wfSeparationMode"'));
   assert(waveform.includes('data-role="wfSeparatorOption"'));
+  assert(waveform.includes('data-role="wfSeparatorOptionChoices"'));
+  assert(waveform.includes('data-role="wfSeparationModeChoices"'));
+  assert(waveform.includes('data-separator-option-value="uvr5_ensemble_vocal_full"'));
+  assert(waveform.includes('data-separation-mode-value="separate_and_transcribe"'));
+  assert(waveform.includes("button.classList.toggle('is-selected', selected)"));
+  assert(waveform.includes('transcribeOption.disabled = uvrSelected'));
   assert(waveform.includes('value="uvr5_ensemble_vocal_full" data-uvr5-option hidden disabled'));
   assert(waveform.includes("uvrOption.disabled = !uvr5EnsembleUiEnabled() || midiEnabled"));
   assert(waveform.includes("preset.disabled = uvrSelected || separationBusy || _isConvertBusy()"));

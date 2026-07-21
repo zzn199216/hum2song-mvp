@@ -376,13 +376,17 @@
             '<button type="button" class="btn mini primary" data-act="waveSeparate"></button>' +
           '</div>' +
           '<div class="h2s-audio-waveform-separation-controls" data-role="wfSeparationSettings" hidden>' +
-            '<label>' +
+            '<div class="h2s-audio-waveform-separation-field">' +
               '<span data-i18n-role="wfSeparatorOptionLabel"></span>' +
-              '<select data-role="wfSeparatorOption">' +
+              '<div class="h2s-audio-waveform-choice-group" data-role="wfSeparatorOptionChoices" role="radiogroup">' +
+                '<button type="button" class="h2s-audio-waveform-choice is-selected" data-separator-option-value="demucs" role="radio" aria-checked="true"></button>' +
+                '<button type="button" class="h2s-audio-waveform-choice" data-separator-option-value="uvr5_ensemble_vocal_full" role="radio" aria-checked="false" hidden disabled></button>' +
+              '</div>' +
+              '<select data-role="wfSeparatorOption" hidden aria-hidden="true" tabindex="-1">' +
                 '<option value="demucs" selected></option>' +
                 '<option value="uvr5_ensemble_vocal_full" data-uvr5-option hidden disabled></option>' +
               '</select>' +
-            '</label>' +
+            '</div>' +
             '<label>' +
               '<span data-i18n-role="wfSeparationPresetLabel"></span>' +
               '<select data-role="wfSeparationPreset">' +
@@ -392,13 +396,17 @@
                 '<option value="vocals_bass_drums"></option>' +
               '</select>' +
             '</label>' +
-            '<label>' +
+            '<div class="h2s-audio-waveform-separation-field">' +
               '<span data-i18n-role="wfSeparationModeLabel"></span>' +
-              '<select data-role="wfSeparationMode">' +
+              '<div class="h2s-audio-waveform-choice-group" data-role="wfSeparationModeChoices" role="radiogroup">' +
+                '<button type="button" class="h2s-audio-waveform-choice is-selected" data-separation-mode-value="separate_only" role="radio" aria-checked="true"></button>' +
+                '<button type="button" class="h2s-audio-waveform-choice" data-separation-mode-value="separate_and_transcribe" role="radio" aria-checked="false"></button>' +
+              '</div>' +
+              '<select data-role="wfSeparationMode" hidden aria-hidden="true" tabindex="-1">' +
                 '<option value="separate_only" selected></option>' +
                 '<option value="separate_and_transcribe"></option>' +
               '</select>' +
-            '</label>' +
+            '</div>' +
             '<div class="muted" data-role="wfSeparatorOptionHint"></div>' +
             '<div class="muted" data-role="wfSeparationCost"></div>' +
           '</div>' +
@@ -463,6 +471,21 @@
       });
       var separatorOption = panel.querySelector('[data-role="wfSeparatorOption"]');
       if (separatorOption) separatorOption.addEventListener('change', syncSeparatorAvailability);
+      Array.prototype.forEach.call(panel.querySelectorAll('[data-separator-option-value]'), function (button) {
+        button.addEventListener('click', function () {
+          if (!separatorOption || button.disabled) return;
+          separatorOption.value = button.getAttribute('data-separator-option-value') || 'demucs';
+          syncSeparatorAvailability();
+        });
+      });
+      Array.prototype.forEach.call(panel.querySelectorAll('[data-separation-mode-value]'), function (button) {
+        button.addEventListener('click', function () {
+          if (!separationMode || button.disabled) return;
+          separationMode.value = button.getAttribute('data-separation-mode-value') || 'separate_only';
+          updateSeparationCost();
+          syncSeparatorAvailability();
+        });
+      });
       var separateBeforeConvertInput = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
       if (separateBeforeConvertInput) separateBeforeConvertInput.addEventListener('change', syncSeparatorAvailability);
       var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
@@ -486,11 +509,37 @@
         : t('audio.waveform.separationCostOne', 'Stem separation uses 1 AI transcription credit.');
     }
 
+    function syncTwoChoiceButtons(selectRole, groupRole, valueAttribute) {
+      if (!panel) return;
+      var select = panel.querySelector('[data-role="' + selectRole + '"]');
+      var group = panel.querySelector('[data-role="' + groupRole + '"]');
+      if (!select || !group) return;
+      Array.prototype.forEach.call(group.querySelectorAll('[' + valueAttribute + ']'), function (button) {
+        var value = button.getAttribute(valueAttribute) || '';
+        var option = null;
+        Array.prototype.forEach.call(select.options, function (candidate) {
+          if (candidate.value === value) option = candidate;
+        });
+        var selected = select.value === value;
+        button.textContent = option ? option.textContent : value;
+        button.hidden = !!(option && option.hidden);
+        button.disabled = !!select.disabled || !!(option && option.disabled);
+        button.classList.toggle('is-selected', selected);
+        button.setAttribute('aria-checked', selected ? 'true' : 'false');
+      });
+    }
+
+    function syncSeparationChoiceButtons() {
+      syncTwoChoiceButtons('wfSeparatorOption', 'wfSeparatorOptionChoices', 'data-separator-option-value');
+      syncTwoChoiceButtons('wfSeparationMode', 'wfSeparationModeChoices', 'data-separation-mode-value');
+    }
+
     function syncSeparatorAvailability() {
       if (!panel) return;
       var separator = panel.querySelector('[data-role="wfSeparatorOption"]');
       var uvrOption = separator && separator.querySelector('[data-uvr5-option]');
       var mode = panel.querySelector('[data-role="wfSeparationMode"]');
+      var transcribeOption = mode && mode.querySelector('option[value="separate_and_transcribe"]');
       var preset = panel.querySelector('[data-role="wfSeparationPreset"]');
       var separateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
       var midiEnabled = !!((mode && mode.value === 'separate_and_transcribe') || (separateBeforeConvert && separateBeforeConvert.checked));
@@ -504,11 +553,13 @@
         if (preset) preset.value = 'vocals_instrumental';
         if (mode) mode.value = 'separate_only';
       }
+      if (transcribeOption) transcribeOption.disabled = uvrSelected;
       if (preset) preset.disabled = uvrSelected || separationBusy || _isConvertBusy();
       var hint = panel.querySelector('[data-role="wfSeparatorOptionHint"]');
       if (hint) hint.textContent = midiEnabled
         ? t('audio.waveform.uvr5DisabledForMidi', 'Enhanced vocal separation is unavailable when MIDI conversion is selected.')
         : t('audio.waveform.uvr5Hint', 'Experimental and slower. Produces vocals.wav and instrumental.wav only.');
+      syncSeparationChoiceButtons();
     }
 
     async function startSeparation() {
@@ -608,6 +659,11 @@
             : t('audio.waveform.separationMode.only', 'Separate only (1 credit)');
         });
       }
+      var separatorChoices = panel.querySelector('[data-role="wfSeparatorOptionChoices"]');
+      if (separatorChoices && separatorLabel) separatorChoices.setAttribute('aria-label', separatorLabel.textContent || '');
+      var modeChoices = panel.querySelector('[data-role="wfSeparationModeChoices"]');
+      if (modeChoices && modeLabel) modeChoices.setAttribute('aria-label', modeLabel.textContent || '');
+      syncSeparationChoiceButtons();
       var btnMap = [
         ['waveAtPlayhead', 'convert.atPlayhead', 'Start at playhead'],
         ['waveLen15', 'convert.preset15', '15s'],
