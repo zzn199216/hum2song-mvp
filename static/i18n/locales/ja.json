@@ -148,6 +148,7 @@
   "audio.waveform.separationRunning": "AI ステム分離を実行中です。この画面で進捗を確認できます。",
   "audio.waveform.separationDone": "AI ステム分離が完了しました。元の音声は保持されています。",
   "audio.waveform.separationFailed": "AI ステム分離に失敗しました。再試行してください。",
+  "audio.waveform.separationTooLarge": "音声が大きすぎるためステム分離用にアップロードできません。選択範囲を短くして再試行してください。",
   "audio.waveform.convert": "編集可能なノートへ変換",
   "audio.waveform.retry": "変換を再試行",
   "audio.waveform.extract": "新しい音声クリップとして抽出",

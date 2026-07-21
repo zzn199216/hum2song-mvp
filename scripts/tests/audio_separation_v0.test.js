@@ -46,6 +46,8 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(waveform.includes('data-role="wfSeparationSettingsToggle"'));
   assert(waveform.includes('data-role="wfSeparationSettings" hidden'));
   assert(waveform.includes('hooks.runSeparation'));
+  assert(waveform.includes("message === 'payload_too_large'"));
+  assert(waveform.includes("audio.waveform.separationTooLarge"));
   assert(!waveform.includes('hooks.openSeparation'));
   assert(libraryView.includes('data-act="audioSeparation"'));
   assert(libraryController.includes("act === 'audioSeparation'"));

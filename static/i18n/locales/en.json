@@ -148,6 +148,7 @@
   "audio.waveform.separationRunning": "AI stem separation is running. You can keep this window open to see progress.",
   "audio.waveform.separationDone": "AI stem separation is complete. The original audio was preserved.",
   "audio.waveform.separationFailed": "AI stem separation failed. Please try again.",
+  "audio.waveform.separationTooLarge": "This audio is too large to upload for stem separation. Shorten the selected segment and try again.",
   "audio.waveform.convert": "Convert to editable notes",
   "audio.waveform.retry": "Retry conversion",
   "audio.waveform.extract": "Extract as new audio clip",

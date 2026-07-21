@@ -485,7 +485,9 @@
       } catch (err) {
         if (statusEl) {
           var message = err && err.message ? String(err.message) : 'worker_failed';
-          statusEl.textContent = t('audio.waveform.separationFailed', 'AI stem separation failed. Please try again.') + ' (' + message + ')';
+          statusEl.textContent = message === 'payload_too_large'
+            ? t('audio.waveform.separationTooLarge', 'This audio is too large to upload for stem separation. Shorten the selected segment and try again.')
+            : t('audio.waveform.separationFailed', 'AI stem separation failed. Please try again.') + ' (' + message + ')';
         }
       } finally {
         separationBusy = false;

@@ -148,6 +148,7 @@
   "audio.waveform.separationRunning": "AI 正在分轨，请保持此窗口打开以查看进度。",
   "audio.waveform.separationDone": "AI 自动分轨完成，原始音频已保留。",
   "audio.waveform.separationFailed": "AI 自动分轨失败，请重试。",
+  "audio.waveform.separationTooLarge": "音频过大，无法上传分轨。请缩短所选片段后重试。",
   "audio.waveform.convert": "转换为可编辑音符",
   "audio.waveform.retry": "重试转换",
   "audio.waveform.extract": "截取为新音频片段",
