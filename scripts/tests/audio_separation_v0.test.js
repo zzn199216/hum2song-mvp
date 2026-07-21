@@ -24,6 +24,18 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   console.log('PASS audio separation modal and import controls');
 })();
 
+(function testUvr5AssetsUseOneCacheVersion(){
+  const html = read('static', 'pianoroll', 'index.html');
+  const assetVersion = read('static', 'pianoroll', 'studio_asset_version.js');
+  const locale = read('static', 'i18n', 'locales', 'zh.json');
+  assert(assetVersion.includes("H2S_STUDIO_ASSET_VERSION = 'uvr5-ensemble-v3'"));
+  assert(html.includes('studio_asset_version.js?v=uvr5-ensemble-v3'));
+  assert(html.includes('audio_worker_separation_client.js?v=uvr5-ensemble-v3'));
+  assert(html.includes('app.js?v=uvr5-ensemble-v3'));
+  assert(locale.includes('"audio.waveform.separatorOption.uvr5"'));
+  console.log('PASS UVR5 UI and locale assets share a cache-busting version');
+})();
+
 (function testAudioOnlySelectionEntry(){
   const view = require(path.join(repoRoot, 'static', 'pianoroll', 'ui', 'selection_view.js'));
   const common = { fmtSec: String, escapeHtml: String, clipName: 'clip', startSec: 0 };
@@ -43,6 +55,11 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert(waveform.includes('data-role="wfSeparateBeforeConvert"'));
   assert(waveform.includes('data-role="wfSeparationPreset"'));
   assert(waveform.includes('data-role="wfSeparationMode"'));
+  assert(waveform.includes('data-role="wfSeparatorOption"'));
+  assert(waveform.includes('value="uvr5_ensemble_vocal_full" data-uvr5-option hidden disabled'));
+  assert(waveform.includes("uvrOption.disabled = !uvr5EnsembleUiEnabled() || midiEnabled"));
+  assert(waveform.includes("preset.disabled = uvrSelected || separationBusy || _isConvertBusy()"));
+  assert(waveform.includes("audio.waveform.uvr5FailedRefunded"));
   assert(waveform.includes('data-role="wfSeparationSettingsToggle"'));
   assert(waveform.includes('data-role="wfSeparationSettings" hidden'));
   assert(waveform.includes('hooks.runSeparation'));
@@ -162,6 +179,24 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   assert.strictEqual(client.maxDurationSec, 600);
   assert.strictEqual(createPayload.separationPreset, 'vocals_bass_drums');
   assert.strictEqual(createPayload.mode, 'separate_and_transcribe');
+  assert.strictEqual(createPayload.separatorOption, 'demucs');
+  const invalidUvr = await client.separate({
+    file: { name: 'mix.wav' },
+    durationSec: 20,
+    mode: 'separate_and_transcribe',
+    separationPreset: 'vocals_instrumental',
+    separatorOption: 'uvr5_ensemble_vocal_full',
+  });
+  assert.deepStrictEqual(invalidUvr, { ok: false, reason: 'uvr5_separate_only' });
+  const validUvr = await client.separate({
+    file: { name: 'mix.wav' },
+    durationSec: 20,
+    mode: 'separate_only',
+    separationPreset: 'vocals_instrumental',
+    separatorOption: 'uvr5_ensemble_vocal_full',
+  });
+  assert.strictEqual(validUvr.ok, true);
+  assert.strictEqual(createPayload.separatorOption, 'uvr5_ensemble_vocal_full');
   const tooLong = await client.separate({
     file: { name: 'mix.wav' },
     durationSec: 600.01,

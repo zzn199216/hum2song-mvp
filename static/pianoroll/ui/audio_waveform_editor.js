@@ -8,6 +8,14 @@
   var MAX_SELECT_SEC = 3600;
   var DEFAULT_PEAKS = 900;
 
+  function uvr5EnsembleUiEnabled() {
+    try {
+      return new URLSearchParams(window.location.search || '').get('uvr5Ensemble') === '1';
+    } catch (_err) {
+      return false;
+    }
+  }
+
   function _num(x, fb) {
     var n = Number(x);
     return Number.isFinite(n) ? n : fb;
@@ -369,6 +377,13 @@
           '</div>' +
           '<div class="h2s-audio-waveform-separation-controls" data-role="wfSeparationSettings" hidden>' +
             '<label>' +
+              '<span data-i18n-role="wfSeparatorOptionLabel"></span>' +
+              '<select data-role="wfSeparatorOption">' +
+                '<option value="demucs" selected></option>' +
+                '<option value="uvr5_ensemble_vocal_full" data-uvr5-option hidden disabled></option>' +
+              '</select>' +
+            '</label>' +
+            '<label>' +
               '<span data-i18n-role="wfSeparationPresetLabel"></span>' +
               '<select data-role="wfSeparationPreset">' +
                 '<option value="vocals_instrumental"></option>' +
@@ -384,6 +399,7 @@
                 '<option value="separate_and_transcribe"></option>' +
               '</select>' +
             '</label>' +
+            '<div class="muted" data-role="wfSeparatorOptionHint"></div>' +
             '<div class="muted" data-role="wfSeparationCost"></div>' +
           '</div>' +
           '<div class="muted" data-role="wfStatus" style="margin-top:8px;font-size:11px;min-height:1.2em;"></div>' +
@@ -441,7 +457,14 @@
         if (overlay && !overlay.hidden) redrawCanvas();
       });
       var separationMode = panel.querySelector('[data-role="wfSeparationMode"]');
-      if (separationMode) separationMode.addEventListener('change', updateSeparationCost);
+      if (separationMode) separationMode.addEventListener('change', function () {
+        updateSeparationCost();
+        syncSeparatorAvailability();
+      });
+      var separatorOption = panel.querySelector('[data-role="wfSeparatorOption"]');
+      if (separatorOption) separatorOption.addEventListener('change', syncSeparatorAvailability);
+      var separateBeforeConvertInput = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
+      if (separateBeforeConvertInput) separateBeforeConvertInput.addEventListener('change', syncSeparatorAvailability);
       var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
       if (separationSettingsToggle) separationSettingsToggle.addEventListener('change', syncSeparationSettingsVisibility);
     }
@@ -463,10 +486,37 @@
         : t('audio.waveform.separationCostOne', 'Stem separation uses 1 AI transcription credit.');
     }
 
+    function syncSeparatorAvailability() {
+      if (!panel) return;
+      var separator = panel.querySelector('[data-role="wfSeparatorOption"]');
+      var uvrOption = separator && separator.querySelector('[data-uvr5-option]');
+      var mode = panel.querySelector('[data-role="wfSeparationMode"]');
+      var preset = panel.querySelector('[data-role="wfSeparationPreset"]');
+      var separateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
+      var midiEnabled = !!((mode && mode.value === 'separate_and_transcribe') || (separateBeforeConvert && separateBeforeConvert.checked));
+      if (uvrOption) {
+        uvrOption.hidden = !uvr5EnsembleUiEnabled();
+        uvrOption.disabled = !uvr5EnsembleUiEnabled() || midiEnabled;
+      }
+      if (separator && separator.value === 'uvr5_ensemble_vocal_full' && midiEnabled) separator.value = 'demucs';
+      var uvrSelected = !!(separator && separator.value === 'uvr5_ensemble_vocal_full');
+      if (uvrSelected) {
+        if (preset) preset.value = 'vocals_instrumental';
+        if (mode) mode.value = 'separate_only';
+      }
+      if (preset) preset.disabled = uvrSelected || separationBusy || _isConvertBusy();
+      var hint = panel.querySelector('[data-role="wfSeparatorOptionHint"]');
+      if (hint) hint.textContent = midiEnabled
+        ? t('audio.waveform.uvr5DisabledForMidi', 'Enhanced vocal separation is unavailable when MIDI conversion is selected.')
+        : t('audio.waveform.uvr5Hint', 'Experimental and slower. Produces vocals.wav and instrumental.wav only.');
+    }
+
     async function startSeparation() {
       if (separationBusy || _isConvertBusy() || !openCtx || typeof hooks.runSeparation !== 'function') return;
       var preset = panel.querySelector('[data-role="wfSeparationPreset"]');
       var mode = panel.querySelector('[data-role="wfSeparationMode"]');
+      var separator = panel.querySelector('[data-role="wfSeparatorOption"]');
+      var requestedSeparator = separator ? separator.value : 'demucs';
       separationBusy = true;
       updateConvertButtons();
       if (statusEl) statusEl.textContent = t('audio.waveform.separationRunning', 'AI stem separation is running. You can keep this window open to see progress.');
@@ -474,6 +524,7 @@
         var result = await hooks.runSeparation(openCtx.clipId, openCtx.instanceId, {
           separationPreset: preset ? preset.value : 'four_stem',
           mode: mode ? mode.value : 'separate_only',
+          separatorOption: requestedSeparator,
           onStatus: function (text) {
             if (statusEl && text) statusEl.textContent = String(text);
           },
@@ -487,7 +538,9 @@
           var message = err && err.message ? String(err.message) : 'worker_failed';
           statusEl.textContent = message === 'payload_too_large'
             ? t('audio.waveform.separationTooLarge', 'This audio is too large to upload for stem separation. Shorten the selected segment and try again.')
-            : t('audio.waveform.separationFailed', 'AI stem separation failed. Please try again.') + ' (' + message + ')';
+            : requestedSeparator === 'uvr5_ensemble_vocal_full'
+              ? t('audio.waveform.uvr5FailedRefunded', 'Enhanced vocal separation failed. This attempt was not charged.')
+              : t('audio.waveform.separationFailed', 'AI stem separation failed. Please try again.') + ' (' + message + ')';
         }
       } finally {
         separationBusy = false;
@@ -525,6 +578,16 @@
       if (presetLabel) presetLabel.textContent = t('transcription.separationPreset', 'Stem separation target');
       var modeLabel = panel.querySelector('[data-i18n-role="wfSeparationModeLabel"]');
       if (modeLabel) modeLabel.textContent = t('audio.waveform.separationMode', 'Processing mode');
+      var separatorLabel = panel.querySelector('[data-i18n-role="wfSeparatorOptionLabel"]');
+      if (separatorLabel) separatorLabel.textContent = t('audio.waveform.separatorOption', 'Separation strategy');
+      var separator = panel.querySelector('[data-role="wfSeparatorOption"]');
+      if (separator) {
+        Array.prototype.forEach.call(separator.options, function (option) {
+          option.textContent = option.value === 'uvr5_ensemble_vocal_full'
+            ? t('audio.waveform.separatorOption.uvr5', 'Enhanced vocal separation (experimental only)')
+            : t('audio.waveform.separatorOption.demucs', 'Standard separation (default)');
+        });
+      }
       var preset = panel.querySelector('[data-role="wfSeparationPreset"]');
       if (preset) {
         var presetLabels = {
@@ -563,6 +626,7 @@
       });
       updatePreviewButton();
       updateSeparationCost();
+      syncSeparatorAvailability();
       updateConvertButtons();
     }
 
@@ -579,6 +643,7 @@
       var separationSettingsToggle = panel.querySelector('[data-role="wfSeparationSettingsToggle"]');
       var separationPreset = panel.querySelector('[data-role="wfSeparationPreset"]');
       var separationMode = panel.querySelector('[data-role="wfSeparationMode"]');
+      var separatorOption = panel.querySelector('[data-role="wfSeparatorOption"]');
       var busy = _isConvertBusy();
       if (convertBtn) convertBtn.disabled = busy || separationBusy;
       if (separateBtn) separateBtn.disabled = busy || separationBusy;
@@ -586,6 +651,8 @@
       if (separationSettingsToggle) separationSettingsToggle.disabled = busy || separationBusy;
       if (separationPreset) separationPreset.disabled = busy || separationBusy;
       if (separationMode) separationMode.disabled = busy || separationBusy;
+      if (separatorOption) separatorOption.disabled = busy || separationBusy;
+      syncSeparatorAvailability();
       if (retryBtn) {
         var showRetry = convertPhase === 'failed' || convertPhase === 'timed_out';
         retryBtn.hidden = !showRetry;
@@ -629,6 +696,8 @@
         : null;
       var separateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
       if (separateBeforeConvert) separateBeforeConvert.checked = !!(transcriptionControls && transcriptionControls.separateFirst === true);
+      var separatorOption = panel.querySelector('[data-role="wfSeparatorOption"]');
+      if (separatorOption) separatorOption.value = 'demucs';
       var separationPreset = panel.querySelector('[data-role="wfSeparationPreset"]');
       if (separationPreset && transcriptionControls && transcriptionControls.separationPreset) {
         var requestedPreset = String(transcriptionControls.separationPreset);
@@ -641,6 +710,7 @@
       if (separationSettingsToggle) separationSettingsToggle.checked = false;
       syncSeparationSettingsVisibility();
       applyI18nLabels();
+      syncSeparatorAvailability();
       stopPreview();
       if (objectUrl) {
         try { URL.revokeObjectURL(objectUrl); } catch (e) {}

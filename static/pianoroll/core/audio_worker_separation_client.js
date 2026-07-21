@@ -16,6 +16,7 @@
     instruments_only: true,
     vocals_bass_drums: true,
   };
+  var SEPARATOR_OPTIONS = { demucs: true, uvr5_ensemble_vocal_full: true };
 
   function baseClient() {
     return (typeof window !== 'undefined') ? window.H2SAudioWorkerConversionClient : null;
@@ -46,8 +47,12 @@
     var durationSec = Number(options.durationSec);
     var mode = String(options.mode || 'separate_only');
     var preset = String(options.separationPreset || 'four_stem');
-    if (!file || !isFinite(durationSec) || durationSec <= 0 || !MODES[mode] || !PRESETS[preset]) {
+    var separatorOption = String(options.separatorOption || 'demucs');
+    if (!file || !isFinite(durationSec) || durationSec <= 0 || !MODES[mode] || !PRESETS[preset] || !SEPARATOR_OPTIONS[separatorOption]) {
       return { ok: false, reason: 'bad_args' };
+    }
+    if (separatorOption === 'uvr5_ensemble_vocal_full' && (mode !== 'separate_only' || preset !== 'vocals_instrumental')) {
+      return { ok: false, reason: 'uvr5_separate_only' };
     }
     if (durationSec > MAX_DURATION_SEC + 0.001) return { ok: false, reason: 'audio_too_long' };
 
@@ -59,6 +64,7 @@
       mimeType: 'audio/wav',
       mode: mode,
       separationPreset: preset,
+      separatorOption: separatorOption,
       metadata: options.metadata || {},
       transcriptionTarget: options.transcriptionTarget || 'auto',
       cleanupStrength: options.cleanupStrength == null ? 50 : options.cleanupStrength,
@@ -81,7 +87,11 @@
       emit(options, { phase: 'processing', jobId: jobId, status: statusJob.status || '' });
       if (statusJob.status === 'failed' || statusJob.status === 'cancelled') {
         var code = statusJob.error && statusJob.error.code ? String(statusJob.error.code) : 'task_failed';
-        throw new Error(code);
+        var message = statusJob.error && statusJob.error.message ? String(statusJob.error.message) : code;
+        var failure = new Error(message);
+        failure.code = code;
+        failure.refunded = statusJob.type === 'audio_separation_uvr5';
+        throw failure;
       }
       if (statusJob.status === 'succeeded') break;
       await delay(POLL_MS);
@@ -121,6 +131,7 @@
     separate: separate,
     downloadArtifact: downloadArtifact,
     presets: Object.keys(PRESETS),
+    separatorOptions: Object.keys(SEPARATOR_OPTIONS),
     modes: Object.keys(MODES),
     maxDurationSec: MAX_DURATION_SEC,
     _timeouts: {

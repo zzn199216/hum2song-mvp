@@ -7074,6 +7074,12 @@ renderTimeline(){
       const mode = opts.mode === 'separate_and_transcribe' ? 'separate_and_transcribe' : 'separate_only';
       const allowedPresets = ['vocals_instrumental', 'four_stem', 'instruments_only', 'vocals_bass_drums'];
       const separationPreset = allowedPresets.indexOf(String(opts.separationPreset)) >= 0 ? String(opts.separationPreset) : 'four_stem';
+      const separatorOption = opts.separatorOption === 'uvr5_ensemble_vocal_full'
+        ? 'uvr5_ensemble_vocal_full'
+        : 'demucs';
+      if (separatorOption === 'uvr5_ensemble_vocal_full' && (mode !== 'separate_only' || separationPreset !== 'vocals_instrumental')) {
+        throw new Error('uvr5_separate_only');
+      }
       const controls = this.getAudioTranscriptionControls(clipId);
       const placementOffsetSec = Math.max(0, Number(opts.placementOffsetSec) || 0);
       const bpm = Number(p2.bpm || 120);
@@ -7089,6 +7095,7 @@ renderTimeline(){
           durationSec: durationSec,
           mode: mode,
           separationPreset: separationPreset,
+          separatorOption: separatorOption,
           metadata: {
             originalAudioClipId: clipId,
             originalAudioAssetId: clip.audio && clip.audio.assetRef ? String(clip.audio.assetRef) : null,
