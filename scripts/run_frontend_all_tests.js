@@ -37,6 +37,7 @@ runOne('scripts/tests/commands.test.js');
 runOne('scripts/tests/run_command_mvp.test.js');
 runOne('scripts/tests/internal_skill_registry.test.js');
 runOne('scripts/tests/cloud_parent_origins_runtime.test.js');
+runOne('scripts/tests/cloud_embed_release_guard.test.js');
 runOne('scripts/tests/cloud_ai_mode.test.js');
 runOne('scripts/tests/cloud_ai_settings_drawer.test.js');
 runOne('scripts/tests/studio_cloud_ai_runtime.test.js');

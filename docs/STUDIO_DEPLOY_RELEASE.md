@@ -2,6 +2,21 @@
 
 Host: SSH alias `aliyun-music-core`.
 
+Current production uses `/opt/hum2song/studio/current` and immutable releases
+under `/opt/hum2song/studio/releases`. Package static changes only through:
+
+```bash
+bash scripts/deploy/package-studio-delta-artifact.sh \
+  --base <active-production-commit> \
+  --version <new-cache-version>
+```
+
+The packager runs the complete frontend suite and refuses stale bases, dirty
+tracked files, deletes/renames, or mixed asset cache versions. Deploy the
+result with the Cloud ops repository's
+`scripts/deploy/deploy-studio-delta-artifact.sh`; it verifies `baseCommit`
+against the active release and automatically rolls back on failed health.
+
 ## Package requirements
 
 Each release under `/root/hum2song-studio-releases/<commit-short>` must include:
