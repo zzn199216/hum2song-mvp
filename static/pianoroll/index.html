@@ -1396,18 +1396,18 @@
           <button type="button" id="btnTopImportTranscriptionSettings" class="btn transcriptionSettingsTrigger" data-i18n="transcription.settings" data-i18n-title="transcription.settings">Transcription settings</button>
           <label class="transcriptionImportToggle">
             <input type="checkbox" id="chkImportAudioSeparateFirst" />
-            <span>先 AI 分轨后转写</span>
+            <span data-i18n="transcription.separateFirst">Separate stems with AI before transcription</span>
           </label>
           <label class="transcriptionImportToggle">
-            <span>分轨目标</span>
+            <span data-i18n="transcription.separationPreset">Stem separation target</span>
             <select id="selImportAudioSeparationPreset" disabled>
-              <option value="vocals_instrumental">人声 / 伴奏</option>
-              <option value="four_stem" selected>四轨分离</option>
-              <option value="instruments_only">乐器分轨</option>
-              <option value="vocals_bass_drums">人声 + 贝斯 + 鼓</option>
+              <option value="vocals_instrumental" data-i18n="transcription.separationPreset.vocalsInstrumental">Vocals / instrumental</option>
+              <option value="four_stem" data-i18n="transcription.separationPreset.fourStem" selected>Four stems</option>
+              <option value="instruments_only" data-i18n="transcription.separationPreset.instrumentsOnly">Instrument stems</option>
+              <option value="vocals_bass_drums" data-i18n="transcription.separationPreset.vocalsBassDrums">Vocals + bass + drums</option>
             </select>
           </label>
-          <span id="importAudioSeparationCost" class="transcriptionImportHint">普通转写将扣除 1 次 AI 转写次数</span>
+          <span id="importAudioSeparationCost" class="transcriptionImportHint" data-i18n="transcription.separationCost.normal">Normal transcription uses 1 AI transcription credit.</span>
           <span class="transcriptionImportHint" data-transcription-mode-on data-i18n="top.importAudioModeHint">When enabled, Transcription settings apply to imported audio.</span>
           <span class="transcriptionImportHint" data-transcription-mode-off data-i18n="top.importAudioModeOffHint">Off: import an audio-only clip.</span>
         </span>
@@ -1431,33 +1431,33 @@
     <div class="transcriptionSettingsCenter">
       <section class="transcriptionSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="audioSeparationTitle">
         <header class="transcriptionSettingsHeader">
-          <h2 id="audioSeparationTitle" class="transcriptionSettingsTitle">AI 自动分轨</h2>
+          <h2 id="audioSeparationTitle" class="transcriptionSettingsTitle" data-i18n="audio.waveform.separate">AI stem separation</h2>
           <button type="button" class="btn icon" data-audio-separation-close aria-label="Close">&times;</button>
         </header>
         <div class="transcriptionSettingsBody">
           <label class="transcriptionSettingsField">
-            <span>分轨目标</span>
+            <span data-i18n="transcription.separationPreset">Stem separation target</span>
             <select id="audioSeparationPreset">
-              <option value="vocals_instrumental">人声 / 伴奏</option>
-              <option value="four_stem" selected>四轨分离</option>
-              <option value="instruments_only">乐器分轨</option>
-              <option value="vocals_bass_drums">人声 + 贝斯 + 鼓</option>
+              <option value="vocals_instrumental" data-i18n="transcription.separationPreset.vocalsInstrumental">Vocals / instrumental</option>
+              <option value="four_stem" data-i18n="transcription.separationPreset.fourStem" selected>Four stems</option>
+              <option value="instruments_only" data-i18n="transcription.separationPreset.instrumentsOnly">Instrument stems</option>
+              <option value="vocals_bass_drums" data-i18n="transcription.separationPreset.vocalsBassDrums">Vocals + bass + drums</option>
             </select>
           </label>
           <label class="transcriptionSettingsField">
-            <span>处理方式</span>
+            <span data-i18n="audio.waveform.separationMode">Processing mode</span>
             <select id="audioSeparationMode">
-              <option value="separate_only">生成分轨（消耗 1 次 AI 转写额度）</option>
-              <option value="separate_and_transcribe">生成分轨并转为可编辑音符（消耗 2 次 AI 转写额度）</option>
+              <option value="separate_only" data-i18n="audio.waveform.separationMode.only">Create stems (uses 1 credit)</option>
+              <option value="separate_and_transcribe" data-i18n="audio.waveform.separationMode.transcribe">Create stems and editable notes (uses 2 credits)</option>
             </select>
           </label>
-          <p id="audioSeparationCost" class="transcriptionSettingsTargetHelp">将扣除 1 次 AI 转写次数</p>
-          <p class="transcriptionSettingsTargetHelp">鼓声会识别为可编辑的底鼓、军鼓和踩镲事件；识别不可靠时保留音频 stem。“其它”声部转写为实验结果，可能需要手动调整。原始音频不会被删除或覆盖。</p>
+          <p id="audioSeparationCost" class="transcriptionSettingsTargetHelp" data-i18n="audio.waveform.separationCostOne">Creating audio stems uses 1 AI transcription credit.</p>
+          <p class="transcriptionSettingsTargetHelp" data-i18n="audio.waveform.separationHelp">Drums are mapped to editable kick, snare, and hi-hat events when reliable; otherwise the audio stem is kept. Other-stem transcription is experimental and may need manual cleanup. Original audio is never deleted or overwritten.</p>
           <p id="audioSeparationStatus" class="transcriptionSettingsTargetHelp" aria-live="polite"></p>
         </div>
         <div class="transcriptionSettingsActions">
-          <button type="button" class="btn" data-audio-separation-close>取消</button>
-          <button type="button" id="btnAudioSeparationRun" class="btn primary">开始处理</button>
+          <button type="button" class="btn" data-audio-separation-close data-i18n="common.cancel">Cancel</button>
+          <button type="button" id="btnAudioSeparationRun" class="btn primary" data-i18n="audio.waveform.separationStart">Start processing</button>
         </div>
       </section>
     </div>
@@ -2173,18 +2173,18 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=quota-copy-v1"></script>
-  <script src="/static/i18n/i18n.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=global-i18n-v1"></script>
+  <script src="/static/i18n/i18n.js?v=global-i18n-v1"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
-  <script src="/static/pianoroll/project.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/project.js?v=global-i18n-v1"></script>
   <script src="/static/pianoroll/core/waveform_peaks.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/local_audio_assets.js"></script>
-  <script src="/static/pianoroll/controllers/instrument_library_store.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/core/instrument_manifest.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/core/gm_drum_kit.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/controllers/instrument_library_store.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/core/instrument_manifest.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/core/gm_drum_kit.js?v=global-i18n-v1"></script>
   <script src="/static/pianoroll/core/agent_patch.js?v=1"></script>
   <script src="/static/pianoroll/core/velocity_shape.js?v=1"></script>
   <script src="/static/pianoroll/core/local_transpose.js?v=1"></script>
@@ -2203,12 +2203,12 @@
   <script src="/static/pianoroll/ui/timeline_view.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
-  <script src="/static/pianoroll/timeline_controller.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/controllers/library_controller.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/controllers/audio_controller.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/timeline_controller.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/controllers/library_controller.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/controllers/audio_controller.js?v=global-i18n-v1"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
   <script src="/static/pianoroll/llm_client.js"></script>
@@ -2225,11 +2225,11 @@
   <script src="/static/pianoroll/controllers/editor_runtime.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/controllers/export_flatten_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
-  <script src="/static/pianoroll/controllers/export_wav_controller.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/controllers/export_wav_controller.js?v=global-i18n-v1"></script>
   <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v16"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=global-i18n-v1"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -2455,9 +2455,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=quota-copy-v1"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/app.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=global-i18n-v1"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=global-i18n-v1"></script>
   <script>
   (function () {
     try {

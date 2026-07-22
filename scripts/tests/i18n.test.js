@@ -122,7 +122,12 @@ if (fs.existsSync(indexHtmlPath)) {
   assert(indexHtml.indexOf('id="btnLastOptimizeDetails"') !== -1, 'index.html must include last optimize details button');
   assert(indexHtml.indexOf('id="studioLastOptimizeDetails"') !== -1, 'index.html must include last optimize details panel');
   assert(indexHtml.indexOf('studio-lang-select-active') !== -1, 'language select should temporarily de-emphasize AI dock while open');
-  assert(indexHtml.indexOf('quota-copy-v1') !== -1, 'UVR5 release should bump Studio script cache version');
+  assert(indexHtml.indexOf('id="chkImportAudioSeparateFirst"') !== -1, 'top-bar separation toggle should exist');
+  assert(indexHtml.indexOf('data-i18n="transcription.separateFirst"') !== -1, 'top-bar separation toggle should be localized');
+  assert(indexHtml.indexOf('data-i18n="transcription.separationPreset.fourStem"') !== -1, 'separation preset choices should be localized');
+  assert(indexHtml.indexOf('data-i18n="audio.waveform.separationHelp"') !== -1, 'separation dialog help should be localized');
+  assert(indexHtml.indexOf('data-i18n="audio.waveform.separationStart"') !== -1, 'separation dialog action should be localized');
+  assert(indexHtml.indexOf('global-i18n-v1') !== -1, 'global i18n release should bump Studio script cache version');
 }
 
 // Last optimize: staleness uses revision + project doc key (see app.js)
@@ -138,6 +143,7 @@ if (fs.existsSync(appJsPath)) {
   assert(appJs.indexOf('_normalizeStudioLocale') !== -1, 'app.js should normalize host locales such as ja-JP to Studio locale codes');
   assert(appJs.indexOf('ja-jp') !== -1, 'app.js should recognize ja-JP host locale');
   assert(appJs.indexOf('studio-lang-select-active') !== -1, 'app.js should mark language select activity for overlay-safe interaction');
+  assert(appJs.indexOf("_t('transcription.separationCost.enabled')") !== -1, 'dynamic separation cost should use localized copy');
 }
 
 var i18nCorePath = path.join(__dirname, '../../static/i18n/i18n.js');
@@ -149,7 +155,7 @@ if (fs.existsSync(i18nCorePath)) {
 var assetVersionPath = path.join(__dirname, '../../static/pianoroll/studio_asset_version.js');
 if (fs.existsSync(assetVersionPath)) {
   var assetVersionSrc = fs.readFileSync(assetVersionPath, 'utf8');
-  assert(assetVersionSrc.indexOf('quota-copy-v1') !== -1, 'Studio asset version should change for UVR5 release');
+  assert(assetVersionSrc.indexOf('global-i18n-v1') !== -1, 'Studio asset version should change for global i18n release');
 }
 
 var bridgePath = path.join(__dirname, '../../static/pianoroll/cloud_project_bridge.js');

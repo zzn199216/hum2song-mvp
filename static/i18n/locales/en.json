@@ -151,6 +151,8 @@
   "audio.waveform.separationMode.transcribe": "Create stems and editable notes (uses 2 credits)",
   "audio.waveform.separationCostOne": "Creating audio stems uses 1 AI transcription credit.",
   "audio.waveform.separationCostTwo": "Creating audio stems and editable notes uses 2 AI transcription credits.",
+  "audio.waveform.separationHelp": "Drums are mapped to editable kick, snare, and hi-hat events when reliable; otherwise the audio stem is kept. Other-stem transcription is experimental and may need manual cleanup. Original audio is never deleted or overwritten.",
+  "audio.waveform.separationStart": "Start processing",
   "audio.waveform.separationRunning": "AI stem separation is running. You can keep this window open to see progress.",
   "audio.waveform.separationDone": "AI stem separation is complete. The original audio was preserved.",
   "audio.waveform.separationFailed": "AI stem separation failed. Please try again.",

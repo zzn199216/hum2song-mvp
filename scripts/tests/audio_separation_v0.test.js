@@ -13,14 +13,14 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   const html = read('static', 'pianoroll', 'index.html');
   assert(html.includes('id="audioSeparationModal"'));
   assert(html.includes('id="audioSeparationPreset"'));
-  assert(html.includes('<option value="four_stem" selected>四轨分离</option>'));
+  assert(html.includes('value="four_stem" data-i18n="transcription.separationPreset.fourStem" selected'));
   assert(html.includes('id="audioSeparationMode"'));
   assert(html.includes('id="chkImportAudioSeparateFirst"'));
   assert(html.includes('id="selImportAudioSeparationPreset" disabled'));
   assert(html.includes('id="transcriptionSettingsSeparateFirst"'));
   assert(html.includes('id="transcriptionSettingsSeparationPreset" disabled'));
-  assert(html.includes('鼓声会识别为可编辑的底鼓、军鼓和踩镲事件'));
-  assert(html.includes('原始音频不会被删除或覆盖'));
+  assert(html.includes('data-i18n="audio.waveform.separationHelp"'));
+  assert(html.includes('data-i18n="audio.waveform.separationStart"'));
   console.log('PASS audio separation modal and import controls');
 })();
 
@@ -28,10 +28,10 @@ const timeline = require(path.join(repoRoot, 'static', 'pianoroll', 'core', 'aud
   const html = read('static', 'pianoroll', 'index.html');
   const assetVersion = read('static', 'pianoroll', 'studio_asset_version.js');
   const locale = read('static', 'i18n', 'locales', 'zh.json');
-  assert(assetVersion.includes("H2S_STUDIO_ASSET_VERSION = 'quota-copy-v1'"));
-  assert(html.includes('studio_asset_version.js?v=quota-copy-v1'));
-  assert(html.includes('audio_worker_separation_client.js?v=quota-copy-v1'));
-  assert(html.includes('app.js?v=quota-copy-v1'));
+  assert(assetVersion.includes("H2S_STUDIO_ASSET_VERSION = 'global-i18n-v1'"));
+  assert(html.includes('studio_asset_version.js?v=global-i18n-v1'));
+  assert(html.includes('audio_worker_separation_client.js?v=global-i18n-v1'));
+  assert(html.includes('app.js?v=global-i18n-v1'));
   assert(locale.includes('"audio.waveform.separatorOption.uvr5"'));
   console.log('PASS UVR5 UI and locale assets share a cache-busting version');
 })();

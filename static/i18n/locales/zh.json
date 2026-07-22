@@ -151,6 +151,8 @@
   "audio.waveform.separationMode.transcribe": "生成分轨并转为可编辑音符（消耗 2 次）",
   "audio.waveform.separationCostOne": "将生成音频分轨，消耗 1 次 AI 转写额度。",
   "audio.waveform.separationCostTwo": "将生成音频分轨和可编辑音符，消耗 2 次 AI 转写额度。",
+  "audio.waveform.separationHelp": "鼓声会尽量识别为可编辑的底鼓、军鼓和踩镲事件；识别不可靠时会保留音频分轨。“其它”声部转写属于实验结果，可能需要手动调整。原始音频不会被删除或覆盖。",
+  "audio.waveform.separationStart": "开始处理",
   "audio.waveform.separationRunning": "AI 正在分轨，请保持此窗口打开以查看进度。",
   "audio.waveform.separationDone": "AI 自动分轨完成，原始音频已保留。",
   "audio.waveform.separationFailed": "AI 自动分轨失败，请重试。",

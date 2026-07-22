@@ -151,6 +151,8 @@
   "audio.waveform.separationMode.transcribe": "ステムと編集可能なノートを生成（2回消費）",
   "audio.waveform.separationCostOne": "オーディオステムの生成は AI 採譜回数を1回消費します。",
   "audio.waveform.separationCostTwo": "オーディオステムと編集可能なノートの生成は AI 採譜回数を2回消費します。",
+  "audio.waveform.separationHelp": "ドラムは信頼できる場合に編集可能なキック、スネア、ハイハットへ変換し、それ以外はオーディオステムを保持します。その他のステムの採譜は実験的で、手動調整が必要な場合があります。元の音声は削除も上書きもされません。",
+  "audio.waveform.separationStart": "処理を開始",
   "audio.waveform.separationRunning": "AI ステム分離を実行中です。この画面で進捗を確認できます。",
   "audio.waveform.separationDone": "AI ステム分離が完了しました。元の音声は保持されています。",
   "audio.waveform.separationFailed": "AI ステム分離に失敗しました。再試行してください。",

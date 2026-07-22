@@ -6848,8 +6848,8 @@ renderTimeline(){
         separationPreset.disabled = !(enabled && controls.separateFirst === true);
       }
       if (separationCost) separationCost.textContent = enabled && controls.separateFirst === true
-        ? '先分轨后转写将扣除 2 次 AI 转写次数'
-        : '普通转写将扣除 1 次 AI 转写次数';
+        ? _t('transcription.separationCost.enabled')
+        : _t('transcription.separationCost.normal');
       if (!enabled && this._transcriptionSettingsContext && !this._transcriptionSettingsContext.clipId){
         this.closeTranscriptionSettings();
       }
