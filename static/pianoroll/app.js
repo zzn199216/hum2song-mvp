@@ -4878,6 +4878,7 @@ try{
     onPersistAndRender: () => { persist(); this.render(); },
     onBeginInstanceDrag: () => { this.captureTimelineUndo('move_instance'); },
     onRemoveInstance: (instId) => this.deleteInstance(instId),
+    resolveAudioFile: (clipId) => this._resolveLocalAudioFileForClip(clipId),
     escapeHtml,
     fmtSec,
     // Click empty timeline -> move playhead (seek if playing, persist if stopped)
@@ -7285,6 +7286,28 @@ renderTimeline(){
      * Slice D/E: import a local audio file as a native `kind: 'audio'` clip.
      * Slice E: audio bytes are stored in IndexedDB; assetRef is `localidb:<id>` (durable across reload in this browser).
      */
+    async _analyzeAudioFileForTimeline(file){
+      if (!file || !(file instanceof Blob)) return { durationSec: 1e-6, waveform: null };
+      const Ctx = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
+      if (!Ctx || typeof file.arrayBuffer !== 'function') return { durationSec: 1, waveform: null };
+      const ctx = new Ctx();
+      try{
+        const encoded = await file.arrayBuffer();
+        const buffer = await ctx.decodeAudioData(encoded.slice(0));
+        const durationSec = (buffer && isFinite(buffer.duration) && buffer.duration > 0) ? buffer.duration : 1e-6;
+        const Peaks = window.H2SWaveformPeaks;
+        let waveform = null;
+        if (Peaks && typeof Peaks.computePeakPyramidFromAudioBufferAsync === 'function'){
+          waveform = await Peaks.computePeakPyramidFromAudioBufferAsync(buffer);
+        } else if (Peaks && typeof Peaks.computePeakPyramidFromAudioBuffer === 'function'){
+          waveform = Peaks.computePeakPyramidFromAudioBuffer(buffer);
+        }
+        return { durationSec, waveform };
+      } finally {
+        try { await ctx.close(); } catch (_e) {}
+      }
+    },
+
     async _decodeAudioFileDurationSec(file){
       if (!file || !(file instanceof Blob)) return 1e-6;
       const Ctx = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
@@ -7327,11 +7350,15 @@ renderTimeline(){
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k) => k;
       this.setImportStatus(_t('io.importAudioDecoding'), false);
       let durationSec = 1;
+      let waveform = null;
       try{
-        durationSec = await this._decodeAudioFileDurationSec(file);
+        const analysis = await this._analyzeAudioFileForTimeline(file);
+        durationSec = analysis && analysis.durationSec;
+        waveform = analysis && analysis.waveform ? analysis.waveform : null;
       } catch (e){
-        console.warn('[App] audio duration decode failed', e);
-        durationSec = 1;
+        console.warn('[App] audio timeline analysis failed', e);
+        try { durationSec = await this._decodeAudioFileDurationSec(file); }
+        catch (_durationError) { durationSec = 1; }
       }
       if (!isFinite(durationSec) || durationSec <= 0) durationSec = 1e-6;
       const LAS = (typeof window !== 'undefined') ? window.H2SLocalAudioAssets : null;
@@ -7341,7 +7368,7 @@ renderTimeline(){
       }
       let assetRef;
       try{
-        const st = await LAS.storeImportedAudioFile(file);
+        const st = await LAS.storeImportedAudioFile(file, { waveform });
         assetRef = st && st.assetRef ? String(st.assetRef) : '';
       } catch (e){
         console.warn('[App] storeImportedAudioFile failed', e);

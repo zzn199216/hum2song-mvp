@@ -49,7 +49,7 @@ function testV1SecScoreClip() {
   assert.equal(p.notes.length, 10);
   const html = thumbView.instThumbHTML(clip, 240, 60, { spanSec: 2.5 });
   assert.match(html, /instThumb/);
-  assert.match(html, /rgba\(255,255,255/);
+  assert.match(html, /instThumbCanvas/);
 }
 
 function testAudioSkipsScore() {
@@ -63,15 +63,7 @@ function testAudioSkipsScore() {
   const p = math.deriveClipThumbnailPreview(clip);
   assert.equal(p.kind, 'audio');
   assert.equal(p.notes.length, 0);
-  assert.ok(p.waveformPeaks.length >= 8);
-}
-
-function testPseudoWaveformDeterministic() {
-  const a = math.derivePseudoWaveformPeaks('clip-a|6', 24);
-  const b = math.derivePseudoWaveformPeaks('clip-a|6', 24);
-  const c = math.derivePseudoWaveformPeaks('clip-b|6', 24);
-  assert.deepEqual(a, b);
-  assert.notDeepEqual(a, c);
+  assert.equal(p.waveformPeaks.length, 0, 'audio preview never fabricates waveform peaks');
 }
 
 function testTruncation() {
@@ -82,6 +74,22 @@ function testTruncation() {
   const p = math.deriveClipThumbnailPreview(noteClip('big', notes), { maxNotesPerClip: 20 });
   assert.equal(p.notes.length, 20);
   assert.equal(p.truncated, true);
+}
+
+function testCanvasRasterUsesEveryNote() {
+  const notes = [];
+  for (let i = 0; i < 1200; i++) {
+    notes.push({ startBeat: i * 0.05, durationBeat: 0.03, pitch: 48 + (i % 36), velocity: 40 + (i % 80) });
+  }
+  const clip = noteClip('dense', notes, { spanBeat: 60 });
+  const preview = math.deriveClipThumbnailPreview(clip, {
+    maxNotesPerClip: Number.MAX_SAFE_INTEGER,
+    maxScanNotesPerClip: Number.MAX_SAFE_INTEGER,
+  });
+  const raster = thumbView.buildMidiDrawCommands(preview, 800, 60);
+  assert.equal(preview.notes.length, notes.length, 'canvas preview keeps every valid MIDI note');
+  assert.equal(raster.commands.length, notes.length, 'every in-range MIDI note contributes a draw command');
+  assert.ok(raster.commands.every((command) => command.width > 0 && command.height > 0));
 }
 
 function testEmptyClip() {
@@ -120,15 +128,22 @@ function testSvgRendering() {
   const clip = noteClip('c1', [{ startBeat: 0, durationBeat: 2, pitch: 60 }]);
   const html = thumbView.instThumbHTML(clip, 160, 60);
   assert.match(html, /instThumb/);
-  assert.match(html, /<rect/);
+  assert.match(html, /instThumbCanvas/);
   const audioHtml = thumbView.instThumbHTML({
     id: 'a1',
     kind: 'audio',
     audio: { durationSec: 2 },
     meta: { spanBeat: 4 },
   }, 120, 60);
-  assert.match(audioHtml, /instThumbSvg/);
-  assert.match(audioHtml, /<rect/);
+  assert.match(audioHtml, /instThumbCanvas/);
+
+  const legacySvg = thumbView.thumbnailSvgHTML(
+    math.deriveClipThumbnailPreview(noteClip('legacy', [{ startBeat: 0, durationBeat: 1, pitch: 60 }])),
+    120,
+    60,
+  );
+  assert.match(legacySvg, /instThumbSvg/);
+  assert.match(legacySvg, /<rect/);
 }
 
 function testTimelineViewIntegration() {
@@ -156,8 +171,8 @@ function main() {
   testNoteExtraction();
   testV1SecScoreClip();
   testAudioSkipsScore();
-  testPseudoWaveformDeterministic();
   testTruncation();
+  testCanvasRasterUsesEveryNote();
   testEmptyClip();
   testInvalidNotesIgnored();
   testPitchRangePadding();

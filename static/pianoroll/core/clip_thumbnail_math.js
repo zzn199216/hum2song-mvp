@@ -16,7 +16,6 @@
 
   const DEFAULT_MAX_NOTES = 144;
   const DEFAULT_MAX_SCAN = 3000;
-  const DEFAULT_WAVEFORM_BARS = 48;
 
   function isFiniteNumber(x){
     return typeof x === 'number' && isFinite(x);
@@ -29,16 +28,6 @@
   function clipKind(clip){
     if (!isPlainObject(clip)) return 'unsupported';
     return clip.kind === 'audio' ? 'audio' : 'note';
-  }
-
-  function hashString(s){
-    let h = 2166136261;
-    const str = String(s == null ? '' : s);
-    for (let i = 0; i < str.length; i++){
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
   }
 
   function padPitchRange(min, max){
@@ -121,26 +110,10 @@
     return { notes, scanTruncated, hasScore: true, timeUnit };
   }
 
-  function derivePseudoWaveformPeaks(seedKey, barCount){
-    const n = Math.max(8, Math.min(128, Math.floor(Number(barCount) || DEFAULT_WAVEFORM_BARS)));
-    let h = hashString(seedKey);
-    const peaks = [];
-    for (let i = 0; i < n; i++){
-      h = Math.imul(h ^ (h >>> 16), 2246822519);
-      h = Math.imul(h ^ (h >>> 13), 3266489917);
-      const t = ((h >>> 0) % 1000) / 1000;
-      const wave = 0.12 + t * 0.88;
-      const envelope = 0.55 + 0.45 * Math.sin((i / Math.max(1, n - 1)) * Math.PI);
-      peaks.push(Math.max(0.08, Math.min(1, wave * envelope)));
-    }
-    return peaks;
-  }
-
   function deriveClipThumbnailPreview(clip, options){
     options = options || {};
     const maxNotes = options.maxNotesPerClip != null ? options.maxNotesPerClip : DEFAULT_MAX_NOTES;
     const maxScan = options.maxScanNotesPerClip != null ? options.maxScanNotesPerClip : DEFAULT_MAX_SCAN;
-    const waveformBars = options.waveformBars != null ? options.waveformBars : DEFAULT_WAVEFORM_BARS;
 
     if (!isPlainObject(clip)){
       return {
@@ -150,16 +123,16 @@
     }
 
     if (clipKind(clip) === 'audio'){
-      const clipId = String(clip.id || clip.name || 'audio');
       const spanBeat = readMetaNumber(clip.meta, 'spanBeat');
       const spanSec = readMetaNumber(clip.meta, 'spanSec')
         || ((clip.audio && isFiniteNumber(clip.audio.durationSec)) ? clip.audio.durationSec : null);
       const spanTime = (spanSec != null && spanSec > 0) ? spanSec : ((spanBeat != null && spanBeat > 0) ? spanBeat : 1);
-      const seed = clipId + '|' + String(spanTime);
       return {
         kind: 'audio',
         notes: [],
-        waveformPeaks: derivePseudoWaveformPeaks(seed, waveformBars),
+        // Real PCM peaks are loaded asynchronously from the audio asset store by
+        // clip_thumbnail_view. Never fabricate audio content in this pure preview.
+        waveformPeaks: [],
         spanTime,
         timeUnit: (spanSec != null && spanSec > 0) ? 'sec' : 'beat',
         pitchMin: null,
@@ -241,9 +214,8 @@
   }
 
   return {
-    VERSION: 'clip_thumbnail_math_v2',
+    VERSION: 'clip_thumbnail_math_v3_real_audio',
     clipKind,
-    derivePseudoWaveformPeaks,
     deriveClipThumbnailPreview,
   };
 });

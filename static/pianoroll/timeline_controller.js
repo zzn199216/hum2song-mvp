@@ -920,6 +920,14 @@
             el.addEventListener('dblclick', (e)=>{ e.stopPropagation(); dbg(ctrl,'dblclick inst', inst.id); if (config.onOpenClipEditor) config.onOpenClipEditor(inst.clipId); });
 
             lane.appendChild(el);
+            // Visual-only thumbnail hydration. MIDI draws synchronously from score data;
+            // audio resolves cached real PCM peaks asynchronously without blocking interactions.
+            if (window.H2SClipThumbnailView && typeof window.H2SClipThumbnailView.hydrateInstThumb === 'function'){
+              Promise.resolve(window.H2SClipThumbnailView.hydrateInstThumb(el, clip, w, 60, {
+                spanSec: spanSec,
+                resolveAudioFile: config.resolveAudioFile,
+              })).catch(function(){});
+            }
           }
 
           tracks.appendChild(lane);

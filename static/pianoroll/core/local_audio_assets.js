@@ -80,7 +80,8 @@
    * Store a user-picked File/Blob and return a durable assetRef for ProjectDoc v2.
    * @returns {Promise<{ assetRef: string, id: string }>}
    */
-  function storeImportedAudioFile(file){
+  function storeImportedAudioFile(file, options){
+    options = options || {};
     if (!file) return Promise.reject(new Error('no_file'));
     if (typeof indexedDB === 'undefined'){
       return Promise.reject(new Error('indexedDB_unavailable'));
@@ -96,6 +97,7 @@
         buffer: ab,
         createdAt: Date.now(),
       };
+      if (options.waveform) rec.waveform = options.waveform;
       return _putRecord(rec).then(function(){
         return { id: id, assetRef: LOCAL_AUDIO_ASSET_PREFIX + id };
       });
@@ -183,6 +185,39 @@
     });
   }
 
+  /** Read cached, versioned waveform peak data for a local audio asset. */
+  function getWaveformForLocalAssetRef(assetRef){
+    if (!isLocalImportedAudioRef(assetRef) || typeof indexedDB === 'undefined'){
+      return Promise.resolve(null);
+    }
+    var id = localAssetIdFromRef(assetRef);
+    if (!id) return Promise.resolve(null);
+    return _getRecord(id).then(function(rec){
+      return rec && rec.waveform ? rec.waveform : null;
+    }).catch(function(e){
+      console.warn('[H2SLocalAudioAssets] waveform read failed', e);
+      return null;
+    });
+  }
+
+  /** Persist generated waveform peaks without changing the original audio bytes. */
+  function putWaveformForLocalAssetRef(assetRef, waveform){
+    if (!isLocalImportedAudioRef(assetRef) || !waveform || typeof indexedDB === 'undefined'){
+      return Promise.resolve(false);
+    }
+    var id = localAssetIdFromRef(assetRef);
+    if (!id) return Promise.resolve(false);
+    return _getRecord(id).then(function(rec){
+      if (!rec || !rec.buffer) return false;
+      rec.waveform = waveform;
+      rec.waveformUpdatedAt = Date.now();
+      return _putRecord(rec).then(function(){ return true; });
+    }).catch(function(e){
+      console.warn('[H2SLocalAudioAssets] waveform write failed', e);
+      return false;
+    });
+  }
+
   return {
     LOCAL_AUDIO_ASSET_PREFIX: LOCAL_AUDIO_ASSET_PREFIX,
     isLocalImportedAudioRef: isLocalImportedAudioRef,
@@ -190,5 +225,7 @@
     storeImportedAudioFile: storeImportedAudioFile,
     resolveAssetRefToPlaybackUrl: resolveAssetRefToPlaybackUrl,
     getFileForLocalAssetRef: getFileForLocalAssetRef,
+    getWaveformForLocalAssetRef: getWaveformForLocalAssetRef,
+    putWaveformForLocalAssetRef: putWaveformForLocalAssetRef,
   };
 });

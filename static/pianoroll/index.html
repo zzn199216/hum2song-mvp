@@ -936,10 +936,15 @@
       inset:0;
       z-index:0;
       pointer-events:none;
-      background:linear-gradient(180deg, rgba(37,99,235,.42) 0%, rgba(29,78,216,.28) 100%);
+      background:linear-gradient(180deg, rgba(15,23,42,.58) 0 17px, rgba(37,99,235,.24) 17px, rgba(29,78,216,.14) 100%);
     }
     .instance--audio .instThumb{
-      background:linear-gradient(180deg, rgba(5,150,105,.38) 0%, rgba(4,120,87,.24) 100%);
+      background:linear-gradient(180deg, rgba(15,23,42,.58) 0 17px, rgba(5,150,105,.22) 17px, rgba(4,120,87,.12) 100%);
+    }
+    .instThumbCanvas{
+      display:block;
+      width:100%;
+      height:100%;
     }
     .instBody,
     .instActions,
@@ -979,7 +984,11 @@
       gap:6px;
       align-self:stretch;
       margin-top:auto;
+      opacity:0;
+      transition:opacity .12s ease;
     }
+    .instance:hover .instSub,
+    .instance.selected .instSub{ opacity:1; }
     .instance:hover{ border-color: rgba(96,165,250,.95); }
     .instance.selected{
       border-color: rgba(255,255,255,.85);
@@ -987,7 +996,7 @@
       box-shadow: 0 0 0 2px rgba(59,130,246,.35), 0 10px 25px rgba(0,0,0,.35);
     }
     .instance.selected .instThumb{
-      background:linear-gradient(180deg, rgba(37,99,235,.55) 0%, rgba(29,78,216,.38) 100%);
+      background:linear-gradient(180deg, rgba(15,23,42,.64) 0 17px, rgba(37,99,235,.34) 17px, rgba(29,78,216,.20) 100%);
     }
     .instance--audio{
       border-color: rgba(16,185,129,.72);
@@ -1000,7 +1009,7 @@
       box-shadow: 0 0 0 2px rgba(16,185,129,.35), 0 10px 25px rgba(0,0,0,.35);
     }
     .instance--audio.selected .instThumb{
-      background:linear-gradient(180deg, rgba(5,150,105,.52) 0%, rgba(4,120,87,.36) 100%);
+      background:linear-gradient(180deg, rgba(15,23,42,.64) 0 17px, rgba(5,150,105,.34) 17px, rgba(4,120,87,.20) 100%);
     }
     .inst-badge{
       display:inline-block;
@@ -2171,6 +2180,7 @@
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
   <script src="/static/pianoroll/project.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/core/waveform_peaks.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/local_audio_assets.js"></script>
   <script src="/static/pianoroll/controllers/instrument_library_store.js?v=uvr5-ensemble-v5"></script>
   <script src="/static/pianoroll/core/instrument_manifest.js?v=uvr5-ensemble-v5"></script>
@@ -2188,9 +2198,9 @@
   <script src="/static/pianoroll/core/optimize_templates_v1.js"></script>
   <script src="/static/pianoroll/controllers/agent_controller.js?v=typed-ai-optfail-detail-20260526-0355"></script>
   <script src="/static/pianoroll/controllers/arrangement_controller.js?v=arrangement-creative-v1"></script>
-  <script src="/static/pianoroll/core/clip_thumbnail_math.js?v=clip-ui-v1"></script>
-  <script src="/static/pianoroll/ui/clip_thumbnail_view.js?v=clip-ui-v1"></script>
-  <script src="/static/pianoroll/ui/timeline_view.js?v=clip-ui-v1"></script>
+  <script src="/static/pianoroll/core/clip_thumbnail_math.js?v=clip-canvas-v1"></script>
+  <script src="/static/pianoroll/ui/clip_thumbnail_view.js?v=clip-canvas-v1"></script>
+  <script src="/static/pianoroll/ui/timeline_view.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
   <script src="/static/pianoroll/timeline_controller.js?v=uvr5-ensemble-v5"></script>
