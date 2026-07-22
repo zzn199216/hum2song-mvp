@@ -6829,6 +6829,9 @@ renderTimeline(){
 
     _syncTopBarImportTranscriptionControls(){
       if (typeof document === 'undefined') return;
+      const _t = (window.I18N && window.I18N.t)
+        ? window.I18N.t.bind(window.I18N)
+        : (key, fallback) => fallback || key;
       const checkbox = document.getElementById('chkImportAudioToNotes');
       const separateFirst = document.getElementById('chkImportAudioSeparateFirst');
       const separationPreset = document.getElementById('selImportAudioSeparationPreset');
@@ -6848,8 +6851,8 @@ renderTimeline(){
         separationPreset.disabled = !(enabled && controls.separateFirst === true);
       }
       if (separationCost) separationCost.textContent = enabled && controls.separateFirst === true
-        ? _t('transcription.separationCost.enabled')
-        : _t('transcription.separationCost.normal');
+        ? _t('transcription.separationCost.enabled', 'Stem separation + transcription uses 2 AI transcription credits.')
+        : _t('transcription.separationCost.normal', 'Normal transcription uses 1 AI transcription credit.');
       if (!enabled && this._transcriptionSettingsContext && !this._transcriptionSettingsContext.clipId){
         this.closeTranscriptionSettings();
       }
