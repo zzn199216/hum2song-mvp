@@ -220,6 +220,19 @@
         return;
       }
 
+      if (act === 'downloadAudio'){
+        try{ e.preventDefault(); e.stopPropagation(); }catch(_){ /* ignore */ }
+        if (app && typeof app.downloadNativeAudioClip === 'function'){
+          btn.disabled = true;
+          Promise.resolve(app.downloadNativeAudioClip(clipId)).catch(function(err){
+            console.warn('[LibraryController] downloadNativeAudioClip failed', err);
+          }).finally(function(){
+            btn.disabled = false;
+          });
+        }
+        return;
+      }
+
       if (typeof opts.onSelectClip === 'function') opts.onSelectClip(clipId);
 
       if (act === 'play'){

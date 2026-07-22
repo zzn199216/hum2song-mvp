@@ -9014,6 +9014,56 @@ renderTimeline(){
       return LAS.getFileForLocalAssetRef(assetRef);
     },
 
+    /** Save the exact browser-local source file for a native (green) audio clip. */
+    async downloadNativeAudioClip(clipId){
+      const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, fallback) => (fallback != null ? fallback : k);
+      let objectUrl = '';
+      try{
+        const p2 = (typeof this.getProjectV2 === 'function') ? this.getProjectV2() : null;
+        const clip = p2 && p2.clips && p2.clips[clipId];
+        const P = window.H2SProject;
+        if (!clip || !P || typeof P.clipKind !== 'function' || P.clipKind(clip) !== 'audio'){
+          return { ok: false, reason: 'not_audio_clip' };
+        }
+        const file = await this._resolveLocalAudioFileForClip(clipId);
+        if (!file){
+          try{ alert(_t('cliplib.downloadMissing', 'The original audio is no longer available in this browser. Please re-import it and try again.')); }catch(_missingAlert){}
+          return { ok: false, reason: 'no_file' };
+        }
+        const urlApi = window.URL || window.webkitURL;
+        if (!urlApi || typeof urlApi.createObjectURL !== 'function' || typeof document === 'undefined'){
+          throw new Error('browser_download_unavailable');
+        }
+        objectUrl = urlApi.createObjectURL(file);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = (file.name && String(file.name).trim()) ? String(file.name).trim() : 'audio.wav';
+        link.style.display = 'none';
+        (document.body || document.documentElement).appendChild(link);
+        try{
+          link.click();
+        } finally {
+          link.remove();
+        }
+        const urlToRevoke = objectUrl;
+        objectUrl = '';
+        window.setTimeout(function(){
+          try{ if (typeof urlApi.revokeObjectURL === 'function') urlApi.revokeObjectURL(urlToRevoke); }catch(_revokeErr){}
+        }, 1000);
+        return { ok: true, filename: link.download };
+      }catch(err){
+        if (objectUrl){
+          try{
+            const urlApi = window.URL || window.webkitURL;
+            if (urlApi && typeof urlApi.revokeObjectURL === 'function') urlApi.revokeObjectURL(objectUrl);
+          }catch(_revokeOnError){}
+        }
+        console.warn('[H2S audio download] local source download failed', err && err.message ? err.message : String(err));
+        try{ alert(_t('cliplib.downloadFailed', 'Could not download the original audio. Please try again.')); }catch(_failedAlert){}
+        return { ok: false, reason: 'download_failed' };
+      }
+    },
+
     _ensureAudioWaveformEditor(){
       if (this._audioWaveformEditor) return this._audioWaveformEditor;
       const H2E = (typeof window !== 'undefined') ? window.H2SAudioWaveformEditor : null;

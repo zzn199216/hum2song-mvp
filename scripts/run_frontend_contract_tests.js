@@ -110,4 +110,10 @@ pass('audio direct import slice (createClipFromAudio + migrate)');
 execFileSync(process.execPath, [path.join(__dirname, 'tests', 'audio_local_asset_persistence.test.js')], { stdio: 'inherit' });
 pass('audio local asset persistence (localidb ref + resolve)');
 
+execFileSync(process.execPath, [path.join(__dirname, 'tests', 'audio_local_download.test.js')], { stdio: 'inherit' });
+pass('browser-local original audio download');
+
+execFileSync(process.execPath, [path.join(__dirname, 'tests', 'export_wav_mixed_audio.test.js')], { stdio: 'inherit' });
+pass('WAV export mixes MIDI and native audio with playback gain rules');
+
 console.log('\nAll frontend contract tests passed.');

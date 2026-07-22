@@ -9,6 +9,7 @@
   var LS_LEGACY_V2 = 'hum2song_studio_project_v2';
   var LS_V1 = 'hum2song_studio_project_v1';
   var TAIL_SEC = 1.5;
+  var AUDIO_PLAYER_LOAD_TIMEOUT_MS = 30000;
 
   function safeParse(raw){
     try { return JSON.parse(raw); } catch(_e){ return null; }
@@ -228,6 +229,50 @@
     return new Blob([arr], { type: 'audio/wav' });
   }
 
+  function readMasterGainDb(app){
+    if (app && Number.isFinite(Number(app._masterGainDb))){
+      return clamp(Number(app._masterGainDb), -40, 0);
+    }
+    try{
+      var stored = Number(localStorage.getItem('h2s_master_gain_db'));
+      if (Number.isFinite(stored)) return clamp(stored, -40, 0);
+    }catch(_e){}
+    return -24;
+  }
+
+  function loadOfflineAudioPlayer(Tone, url){
+    return new Promise(function(resolve, reject){
+      var settled = false;
+      var player = null;
+      var timer = setTimeout(function(){
+        if (settled) return;
+        settled = true;
+        try{ if (player && player.dispose) player.dispose(); }catch(_e){}
+        reject(new Error('Timed out while loading an audio clip for WAV export.'));
+      }, AUDIO_PLAYER_LOAD_TIMEOUT_MS);
+      function finish(err){
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err){
+          try{ if (player && player.dispose) player.dispose(); }catch(_e){}
+          reject(err instanceof Error ? err : new Error('Could not load an audio clip for WAV export.'));
+          return;
+        }
+        resolve(player);
+      }
+      try{
+        player = new Tone.Player({
+          url: url,
+          onload: function(){ finish(null); },
+          onerror: function(err){ finish(err || new Error('Could not load an audio clip for WAV export.')); },
+        });
+      }catch(err){
+        finish(err);
+      }
+    });
+  }
+
   async function exportWav(){
     var btn = document.getElementById('btnExportWav');
     var H = window.H2SProject;
@@ -264,6 +309,30 @@
     }
 
     var flat = H.flatten(p2);
+    var metaByTrackId = {};
+    var audioMetaByTrackId = new Map();
+    for (var mi = 0; mi < (p2.tracks || []).length; mi++){
+      var mt = p2.tracks[mi];
+      if (!mt) continue;
+      var mtid = mt.trackId || mt.id;
+      if (!mtid) continue;
+      var trackMeta = {
+        instrument: mt.instrument || 'default',
+        muted: !!mt.muted,
+        gainDb: Number.isFinite(Number(mt.gainDb)) ? Number(mt.gainDb) : 0,
+      };
+      metaByTrackId[mtid] = trackMeta;
+      audioMetaByTrackId.set(mtid, trackMeta);
+    }
+    var audioController = window.H2SAudioController;
+    var flatAudioSegments = Array.isArray(flat.audioSegments) ? flat.audioSegments : [];
+    if (flatAudioSegments.length && (!audioController || typeof audioController.computeAudioPlaybackSchedule !== 'function' || typeof audioController.resolveAssetRefForTone !== 'function')){
+      alert('Export WAV: audio clip export engine is unavailable.');
+      return;
+    }
+    var audioSchedule = flatAudioSegments.length
+      ? audioController.computeAudioPlaybackSchedule(flat, 0, audioMetaByTrackId)
+      : { items: [], skipped: [] };
     var endSec = 0;
     for (var ti = 0; ti < (flat.tracks || []).length; ti++){
       var tr = flat.tracks[ti];
@@ -275,7 +344,15 @@
         if (s + d > endSec) endSec = s + d;
       }
     }
+    for (var ai = 0; ai < audioSchedule.items.length; ai++){
+      var audioItem = audioSchedule.items[ai];
+      var audioEnd = Number(audioItem.t || 0) + Math.max(0.01, Number(audioItem.dur || 0));
+      if (audioEnd > endSec) endSec = audioEnd;
+    }
     var totalSec = Math.max(0.5, endSec + TAIL_SEC);
+    var masterGainDb = readMasterGainDb(APP);
+    var resolvedAudioSources = [];
+    var audioSourceRevokers = [];
 
     if (btn){ btn.disabled = true; }
     exportWavCancelled = false;
@@ -285,17 +362,29 @@
     try {
       if (exportWavCancelled){ setStatus((typeof window !== 'undefined' && window.I18N && window.I18N.t) ? window.I18N.t('io.cancelled') : 'Cancelled.', false); return; }
       setStatus((typeof window !== 'undefined' && window.I18N && window.I18N.t) ? window.I18N.t('export.rendering') : 'Rendering audio...', true);
-      var metaByTrackId = {};
-      for (var i = 0; i < (p2.tracks || []).length; i++){
-        var t = p2.tracks[i];
-        if (!t) continue;
-        var tid = t.trackId || t.id;
-        if (tid) metaByTrackId[tid] = { instrument: t.instrument || 'default', muted: !!t.muted, gainDb: Number.isFinite(Number(t.gainDb)) ? Number(t.gainDb) : 0 };
+      for (var ri = 0; ri < audioSchedule.items.length; ri++){
+        var scheduledAudio = audioSchedule.items[ri];
+        var resolvedAudio = await audioController.resolveAssetRefForTone(scheduledAudio.assetRef);
+        if (!resolvedAudio || !resolvedAudio.url){
+          throw new Error('Could not resolve an audio clip for WAV export. The project was not exported to avoid an incomplete mix.');
+        }
+        if (typeof resolvedAudio.revoke === 'function') audioSourceRevokers.push(resolvedAudio.revoke);
+        resolvedAudioSources.push({
+          trackId: scheduledAudio.trackId,
+          t: scheduledAudio.t,
+          dur: scheduledAudio.dur,
+          gainDb: scheduledAudio.gainDb,
+          url: resolvedAudio.url,
+        });
       }
 
       var result = await Tone.Offline(async function(ctx){
         var transport = ctx.transport;
         var synthByTid = {};
+        try{
+          var offlineDestination = ctx.destination || Tone.Destination;
+          if (offlineDestination && offlineDestination.volume) offlineDestination.volume.value = masterGainDb;
+        }catch(_masterErr){}
         async function getSynth(trackId){
           if (synthByTid[trackId]) return synthByTid[trackId];
           var meta = metaByTrackId[trackId] || { instrument: 'default', muted: false, gainDb: 0 };
@@ -337,6 +426,17 @@
             })(synthForNote, n.pitch, dur, vel, time);
           }
         }
+        for (var api = 0; api < resolvedAudioSources.length; api++){
+          var source = resolvedAudioSources[api];
+          var player = await loadOfflineAudioPlayer(Tone, source.url);
+          var audioDest = (player && player.toDestination) ? player.toDestination() : player;
+          try{ if (audioDest && audioDest.volume && isFinite(source.gainDb)) audioDest.volume.value = source.gainDb; }catch(_gainErr){}
+          (function(pl, startTime, duration){
+            transport.schedule(function(time){
+              try{ pl.start(time, 0, duration); }catch(_audioStartErr){}
+            }, startTime);
+          })(audioDest, Number(source.t || 0), Math.max(0.01, Number(source.dur || 0)));
+        }
         transport.start(0);
       }, totalSec);
 
@@ -370,6 +470,9 @@
         alert('Export WAV failed: ' + (e && e.message ? e.message : String(e)));
       }
     } finally {
+      for (var revokerIndex = 0; revokerIndex < audioSourceRevokers.length; revokerIndex++){
+        try{ audioSourceRevokers[revokerIndex](); }catch(_revokeErr){}
+      }
       exportWavActive = false;
       setStatus('', false);
       if (btn){ btn.disabled = false; }
@@ -386,7 +489,7 @@
   function bindOnce(btn){
     if (!btn) return;
     if (btn.__h2sExportWavBound) return;
-    btn.addEventListener('click', function(){ exportWav(); });
+    btn.addEventListener('click', function(){ return exportWav(); });
     btn.__h2sExportWavBound = true;
   }
 

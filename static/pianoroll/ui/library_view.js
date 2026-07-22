@@ -264,6 +264,7 @@ function clipCardInnerHTML(clip, stats, fmtSec, escapeHtml, revInfo, selectedPre
     const primaryActions = isAudio
       ? (
           `<button class="btn" data-act="play" data-id="${id}">${escapeHtml(t('cliplib.play'))}</button>` +
+          `<button class="btn" data-act="downloadAudio" data-id="${id}" title="${escapeHtml(t('cliplib.downloadOriginalTitle'))}">${escapeHtml(t('cliplib.downloadOriginal'))}</button>` +
           `<button class="btn" data-act="add" data-id="${id}">${escapeHtml(t('cliplib.addToSong'))}</button>` +
           `<button class="btn" data-act="audioSeparation" data-id="${id}">${escapeHtml(t('audio.waveform.separate', 'AI stem separation'))}</button>` +
           `<button class="btn primary" data-act="convertToEditable" data-id="${id}" title="${escapeHtml(t('cliplib.convertSegmentTitle'))}"${convActive ? ' disabled' : ''}>${escapeHtml(t('cliplib.convertSegment'))}</button>` +
