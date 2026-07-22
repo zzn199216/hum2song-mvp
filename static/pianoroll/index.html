@@ -1447,8 +1447,8 @@
           <label class="transcriptionSettingsField">
             <span>处理方式</span>
             <select id="audioSeparationMode">
-              <option value="separate_only">仅分轨（扣除 1 次 AI 转写次数）</option>
-              <option value="separate_and_transcribe">分轨并转为可编辑音符（扣除 2 次 AI 转写次数）</option>
+              <option value="separate_only">生成分轨（消耗 1 次 AI 转写额度）</option>
+              <option value="separate_and_transcribe">生成分轨并转为可编辑音符（消耗 2 次 AI 转写额度）</option>
             </select>
           </label>
           <p id="audioSeparationCost" class="transcriptionSettingsTargetHelp">将扣除 1 次 AI 转写次数</p>
@@ -2173,18 +2173,18 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/i18n/i18n.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=quota-copy-v1"></script>
+  <script src="/static/i18n/i18n.js?v=quota-copy-v1"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
-  <script src="/static/pianoroll/project.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/project.js?v=quota-copy-v1"></script>
   <script src="/static/pianoroll/core/waveform_peaks.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/local_audio_assets.js"></script>
-  <script src="/static/pianoroll/controllers/instrument_library_store.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/core/instrument_manifest.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/core/gm_drum_kit.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/controllers/instrument_library_store.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/core/instrument_manifest.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/core/gm_drum_kit.js?v=quota-copy-v1"></script>
   <script src="/static/pianoroll/core/agent_patch.js?v=1"></script>
   <script src="/static/pianoroll/core/velocity_shape.js?v=1"></script>
   <script src="/static/pianoroll/core/local_transpose.js?v=1"></script>
@@ -2203,12 +2203,12 @@
   <script src="/static/pianoroll/ui/timeline_view.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
-  <script src="/static/pianoroll/timeline_controller.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/controllers/library_controller.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/controllers/audio_controller.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/timeline_controller.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/controllers/library_controller.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/controllers/audio_controller.js?v=quota-copy-v1"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
   <script src="/static/pianoroll/llm_client.js"></script>
@@ -2225,11 +2225,11 @@
   <script src="/static/pianoroll/controllers/editor_runtime.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/controllers/export_flatten_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
-  <script src="/static/pianoroll/controllers/export_wav_controller.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/controllers/export_wav_controller.js?v=quota-copy-v1"></script>
   <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v16"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=quota-copy-v1"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -2455,9 +2455,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=uvr5-ensemble-v5"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=uvr5-ensemble-v5"></script>
+  <script src="/static/pianoroll/app.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=quota-copy-v1"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=quota-copy-v1"></script>
   <script>
   (function () {
     try {

@@ -505,8 +505,8 @@
       var cost = panel.querySelector('[data-role="wfSeparationCost"]');
       if (!cost) return;
       cost.textContent = mode && mode.value === 'separate_and_transcribe'
-        ? t('audio.waveform.separationCostTwo', 'Stem separation + transcription uses 2 AI transcription credits.')
-        : t('audio.waveform.separationCostOne', 'Stem separation uses 1 AI transcription credit.');
+        ? t('audio.waveform.separationCostTwo', 'Creating audio stems and editable notes uses 2 AI transcription credits.')
+        : t('audio.waveform.separationCostOne', 'Creating audio stems uses 1 AI transcription credit.');
     }
 
     function syncTwoChoiceButtons(selectRole, groupRole, valueAttribute) {
@@ -557,8 +557,8 @@
       if (preset) preset.disabled = uvrSelected || separationBusy || _isConvertBusy();
       var hint = panel.querySelector('[data-role="wfSeparatorOptionHint"]');
       if (hint) hint.textContent = midiEnabled
-        ? t('audio.waveform.uvr5DisabledForMidi', 'Enhanced vocal separation is unavailable when MIDI conversion is selected.')
-        : t('audio.waveform.uvr5Hint', 'Experimental and slower. Produces vocals.wav and instrumental.wav only.');
+        ? t('audio.waveform.uvr5DisabledForMidi', 'Creating editable notes requires Stable separation.')
+        : t('audio.waveform.uvr5Hint', 'Vocal enhancement is still experimental and slower; it outputs only vocal and accompaniment stems.');
       syncSeparationChoiceButtons();
     }
 
@@ -630,13 +630,13 @@
       var modeLabel = panel.querySelector('[data-i18n-role="wfSeparationModeLabel"]');
       if (modeLabel) modeLabel.textContent = t('audio.waveform.separationMode', 'Processing mode');
       var separatorLabel = panel.querySelector('[data-i18n-role="wfSeparatorOptionLabel"]');
-      if (separatorLabel) separatorLabel.textContent = t('audio.waveform.separatorOption', 'Separation strategy');
+      if (separatorLabel) separatorLabel.textContent = t('audio.waveform.separatorOption', 'Stem separation mode');
       var separator = panel.querySelector('[data-role="wfSeparatorOption"]');
       if (separator) {
         Array.prototype.forEach.call(separator.options, function (option) {
           option.textContent = option.value === 'uvr5_ensemble_vocal_full'
-            ? t('audio.waveform.separatorOption.uvr5', 'Enhanced vocal separation (experimental only)')
-            : t('audio.waveform.separatorOption.demucs', 'Standard separation (default)');
+            ? t('audio.waveform.separatorOption.uvr5', 'Vocal enhancement (experimental)')
+            : t('audio.waveform.separatorOption.demucs', 'Stable separation (recommended)');
         });
       }
       var preset = panel.querySelector('[data-role="wfSeparationPreset"]');
@@ -655,8 +655,8 @@
       if (mode) {
         Array.prototype.forEach.call(mode.options, function (option) {
           option.textContent = option.value === 'separate_and_transcribe'
-            ? t('audio.waveform.separationMode.transcribe', 'Separate and convert to editable notes (2 credits)')
-            : t('audio.waveform.separationMode.only', 'Separate only (1 credit)');
+            ? t('audio.waveform.separationMode.transcribe', 'Create stems and editable notes (uses 2 credits)')
+            : t('audio.waveform.separationMode.only', 'Create stems (uses 1 credit)');
         });
       }
       var separatorChoices = panel.querySelector('[data-role="wfSeparatorOptionChoices"]');
