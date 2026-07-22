@@ -10,6 +10,9 @@
   var RESULT_RPC_TIMEOUT_MS = 90000;
   var ALLOWED_HOSTS = {
     'https://hum2song.cn': true,
+    'https://www.hum2song.cn': true,
+    'https://hum2song.com': true,
+    'https://www.hum2song.com': true,
     'http://localhost:3000': true,
     'http://127.0.0.1:3000': true,
     'http://localhost:3010': true,

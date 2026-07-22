@@ -311,6 +311,7 @@
   "top.importAudioMakeNotesTitle": "オン: 編集可能なノートクリップを作成します（サーバー使用）。オフ: 元音声のみ保持します（このブラウザーに保存、ピアノロール編集不可）。",
   "top.importAudioModeHint": "オンにすると、採譜設定が読み込んだ音声に適用されます。",
   "top.importAudioModeOffHint": "オフ：音声クリップのみを読み込みます。",
+  "cloudAuth.serverFeatureSignIn": "サーバー採譜と AI 分離を使うにはログインしてください。元音声の読み込みとローカル編集は引き続き利用できます。",
   "top.vol": "音量",
   "top.localClipsHint": "ローカルクリップ + タイムライン。クリップをダブルクリックして編集します。",
   "top.projectHomeBtn": "プロジェクト",

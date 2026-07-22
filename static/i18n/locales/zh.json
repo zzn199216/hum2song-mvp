@@ -317,6 +317,7 @@
   "top.importAudioMakeNotesTitle": "开启：经服务器生成可编辑音符片段。关闭：仅保留原始音频片段（保存在本浏览器；钢琴卷帘中不可编辑）。",
   "top.importAudioModeHint": "勾选后，右侧“转写设置”将用于导入音频",
   "top.importAudioModeOffHint": "已关闭：仅导入原始音频片段",
+  "cloudAuth.serverFeatureSignIn": "请先登录后使用服务器转写和 AI 分轨；未登录仍可导入原始音频并在本地编辑。",
   "top.vol": "音量",
   "top.localClipsHint": "本地片段 + 时间轴。双击片段进行编辑。",
   "top.projectHomeBtn": "工程",

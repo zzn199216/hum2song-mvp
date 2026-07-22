@@ -1820,6 +1820,16 @@ function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
     }catch(e){ return ''; }
   }
 
+  function _cloudServerFeaturesAllowed(){
+    if (!_cloudModeRequestedForStorageReset()) return true;
+    try{
+      if (typeof window !== 'undefined' && typeof window.H2S_CLOUD_AUTHENTICATED === 'boolean') {
+        return window.H2S_CLOUD_AUTHENTICATED === true;
+      }
+    }catch(e){}
+    return /^user-[A-Za-z0-9_-]+$/.test(_cloudHostSessionKeyFromLocation());
+  }
+
   function _clearStoredProjectDocumentsForCloudHostReset(){
     try{
       if (typeof localStorage === 'undefined') return;
@@ -6827,6 +6837,26 @@ renderTimeline(){
       return this._topBarImportTranscriptionControls;
     },
 
+    _cloudServerFeaturesAllowed(){
+      return _cloudServerFeaturesAllowed();
+    },
+
+    _requireCloudServerFeatureAuth(showAlert){
+      if (this._cloudServerFeaturesAllowed()) return true;
+      const _t = (window.I18N && window.I18N.t)
+        ? window.I18N.t.bind(window.I18N)
+        : (key, fallback) => fallback || key;
+      const text = _t(
+        'cloudAuth.serverFeatureSignIn',
+        'Sign in to use server transcription and AI separation. Original-audio import and local editing remain available.'
+      );
+      this.setImportStatus(text, false);
+      if (showAlert !== false) {
+        try { alert(text); } catch (_e) {}
+      }
+      return false;
+    },
+
     _syncTopBarImportTranscriptionControls(){
       if (typeof document === 'undefined') return;
       const _t = (window.I18N && window.I18N.t)
@@ -6838,7 +6868,14 @@ renderTimeline(){
       const separationCost = document.getElementById('importAudioSeparationCost');
       const trigger = document.getElementById('btnTopImportTranscriptionSettings');
       const group = document.getElementById('topbarTranscriptionGroup');
-      const enabled = !checkbox || !!checkbox.checked;
+      const authHint = document.getElementById('cloudServerAuthRequired');
+      const serverAllowed = this._cloudServerFeaturesAllowed();
+      if (checkbox){
+        if (!serverAllowed) checkbox.checked = false;
+        checkbox.disabled = !serverAllowed;
+      }
+      if (authHint) authHint.hidden = serverAllowed;
+      const enabled = serverAllowed && (!checkbox || !!checkbox.checked);
       const controls = this.getTopBarImportTranscriptionControls();
       if (trigger) trigger.hidden = !enabled;
       if (group) group.setAttribute('data-enabled', enabled ? 'true' : 'false');
@@ -7050,6 +7087,7 @@ renderTimeline(){
 
     async _runAudioSeparationForClip(clipId, opts){
       opts = opts || {};
+      if (!this._requireCloudServerFeatureAuth(true)) throw new Error('auth_required');
       if (this._audioSeparationBusy) return { ok: false, reason: 'already_active' };
       const client = (typeof window !== 'undefined') ? window.H2SAudioWorkerSeparationClient : null;
       const timeline = (typeof window !== 'undefined') ? window.H2SAudioSeparationTimeline : null;
@@ -7264,6 +7302,7 @@ renderTimeline(){
     },
 
     async pickWavAndGenerate(transcriptionControls){
+      if (!this._requireCloudServerFeatureAuth(true)) return { ok: false, reason: 'auth_required' };
       const f = await this.pickFile('.wav,.mp3,.m4a,.flac,.ogg');
       if (!f) return;
       const controls = Object.assign({
@@ -7551,6 +7590,7 @@ renderTimeline(){
       if (typeof window === 'undefined' || !window.parent || window.parent === window || !window.H2S_CLOUD_MODE) {
         return Promise.reject(new Error('cloud_bridge_unavailable'));
       }
+      if (!this._cloudServerFeaturesAllowed()) return Promise.reject(new Error('auth_required'));
       const requestId = 'humming-music-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
       return new Promise(function(resolve, reject){
         let done = false;
@@ -8278,6 +8318,7 @@ renderTimeline(){
     async uploadFileAndGenerate(f, opts){
       opts = opts || {};
       if (!f || !(f instanceof Blob)) return;
+      if (!this._requireCloudServerFeatureAuth(true)) return { ok: false, reason: 'auth_required' };
       const conversionClipId = (typeof opts.conversionClipId === 'string' && opts.conversionClipId.trim())
         ? opts.conversionClipId.trim()
         : (typeof opts.sourceAudioClipId === 'string' ? opts.sourceAudioClipId.trim() : '');
@@ -8798,6 +8839,7 @@ renderTimeline(){
       const P = window.H2SProject;
       const _t = (window.I18N && window.I18N.t) ? window.I18N.t.bind(window.I18N) : (k, d) => (d != null ? d : k);
       if (!clipId || !P || typeof P.clipKind !== 'function') return { ok: false, reason: 'bad_args' };
+      if (!this._requireCloudServerFeatureAuth(true)) return { ok: false, reason: 'auth_required' };
       if (this._isAudioConvertActive(clipId)){
         const busy = this._audioConvertStatusText(clipId);
         if (busy) this.setImportStatus(busy, true);

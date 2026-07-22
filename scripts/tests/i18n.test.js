@@ -127,7 +127,7 @@ if (fs.existsSync(indexHtmlPath)) {
   assert(indexHtml.indexOf('data-i18n="transcription.separationPreset.fourStem"') !== -1, 'separation preset choices should be localized');
   assert(indexHtml.indexOf('data-i18n="audio.waveform.separationHelp"') !== -1, 'separation dialog help should be localized');
   assert(indexHtml.indexOf('data-i18n="audio.waveform.separationStart"') !== -1, 'separation dialog action should be localized');
-  assert(indexHtml.indexOf('global-bridge-v2') !== -1, 'global i18n release should bump Studio script cache version');
+  assert(indexHtml.indexOf('cloud-auth-v1') !== -1, 'Cloud auth release should bump Studio script cache version');
 }
 
 // Last optimize: staleness uses revision + project doc key (see app.js)
@@ -156,7 +156,7 @@ if (fs.existsSync(i18nCorePath)) {
 var assetVersionPath = path.join(__dirname, '../../static/pianoroll/studio_asset_version.js');
 if (fs.existsSync(assetVersionPath)) {
   var assetVersionSrc = fs.readFileSync(assetVersionPath, 'utf8');
-  assert(assetVersionSrc.indexOf('global-bridge-v2') !== -1, 'Studio asset version should change for global i18n release');
+  assert(assetVersionSrc.indexOf('cloud-auth-v1') !== -1, 'Studio asset version should change for Cloud auth release');
 }
 
 var bridgePath = path.join(__dirname, '../../static/pianoroll/cloud_project_bridge.js');

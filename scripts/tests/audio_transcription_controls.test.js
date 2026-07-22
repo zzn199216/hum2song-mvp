@@ -38,6 +38,7 @@ const read = (...parts) => fs.readFileSync(path.join(repoRoot, ...parts), 'utf8'
   assert(indexHtml.includes('class="transcriptionImportToggle"'));
   assert(indexHtml.includes('data-transcription-mode-on'));
   assert(indexHtml.includes('data-transcription-mode-off'));
+  assert(indexHtml.includes('id="cloudServerAuthRequired"'));
   assert(indexHtml.includes('id="btnTopImportTranscriptionSettings"'));
   assert(indexHtml.includes('id="transcriptionSettingsModal"'));
   assert(indexHtml.includes('id="transcriptionSettingsTarget"'));
@@ -119,6 +120,9 @@ const read = (...parts) => fs.readFileSync(path.join(repoRoot, ...parts), 'utf8'
   assert(appSource.includes('this.uploadFileAndGenerate(f, controls)'));
   assert(appSource.includes('trigger.hidden = !enabled'));
   assert(appSource.includes("group.setAttribute('data-enabled', enabled ? 'true' : 'false')"));
+  assert(appSource.includes('checkbox.disabled = !serverAllowed'));
+  assert(appSource.includes('const enabled = serverAllowed &&'));
+  assert(appSource.includes("_requireCloudServerFeatureAuth(true)"));
   assert(appSource.includes("checkbox.addEventListener('change'"));
   assert(appSource.includes('openTranscriptionSettings(opts)'));
   assert(appSource.includes('this.setAudioTranscriptionControls(context.clipId, controls)'));
