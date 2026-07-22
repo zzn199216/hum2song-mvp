@@ -4230,7 +4230,7 @@ rollbackClipRevision(clipId){
       autoOpenAfterImport: true,
       statusText: '', // PR-UX3a: central status for log status bar (set by setImportStatus, etc.)
       aiSettingsOpen: false, // PR-UX4c: AI Settings drawer visibility
-      aiAssistOpen: true, // Standalone defaults open; Cloud first use is collapsed to preserve the workspace.
+      aiAssistOpen: true, // PR-UX7a1: default open on first use; persisted in LS
       modal: {
         show: false,
         clipId: null,
@@ -4362,12 +4362,10 @@ if (typeof localStorage !== 'undefined') {
 
       // PR-UX4c: AI Settings drawer — restore open state, bind open/close
       if (typeof localStorage !== 'undefined' && localStorage.getItem(LS_KEY_AI_DRAWER_OPEN) === '1') this.state.aiSettingsOpen = true;
-      // Keep the embedded Cloud workspace unobstructed on first use; respect explicit user choice.
+      // PR-UX7a1: AI Assistant dock — default open on first use; persist once user toggles
       if (typeof localStorage !== 'undefined') {
         const stored = localStorage.getItem(LS_KEY_AI_ASSIST_OPEN);
-        this.state.aiAssistOpen = (stored === null)
-          ? !(typeof window !== 'undefined' && window.H2S_CLOUD_MODE === true)
-          : (stored === '1');
+        this.state.aiAssistOpen = (stored === null) ? true : (stored === '1');
       }
       this._initAiSettingsDrawer();
       this._initAiAssistDock();

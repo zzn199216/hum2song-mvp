@@ -96,7 +96,7 @@ assert(runtime.send('https://studio.hum2song.com').length === 0, 'studio.hum2son
 const productionDefaultRuntime = createRuntime(undefined);
 assert(productionDefaultRuntime.send('https://hum2song.cn').length === 1, 'production Studio host should keep hum2song.cn default parent');
 assert(productionDefaultRuntime.send('https://www.hum2song.cn').length === 1, 'production Studio host should keep www.hum2song.cn default parent');
-assert(productionDefaultRuntime.send('https://hum2song.com').length === 1, 'production Studio host should keep hum2song.com default parent');
-assert(productionDefaultRuntime.send('https://www.hum2song.com').length === 1, 'production Studio host should keep www.hum2song.com default parent');
+assert(productionDefaultRuntime.send('https://hum2song.com').length === 0, 'production Studio host should not allow hum2song.com without config injection');
+assert(productionDefaultRuntime.send('https://www.hum2song.com').length === 0, 'production Studio host should not allow www.hum2song.com without config injection');
 
 console.log('cloud_parent_origins_runtime.test.js ok');
