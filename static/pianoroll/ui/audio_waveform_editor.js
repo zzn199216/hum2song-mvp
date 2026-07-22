@@ -682,7 +682,7 @@
         ['waveLen30', 'convert.preset30', '30s'],
         ['waveLen60', 'convert.preset60', '60s'],
         ['wavePreview', 'audio.waveform.preview', 'Preview selection'],
-        ['waveDownloadOriginal', 'cliplib.downloadOriginal', 'Download original', 'cliplib.downloadOriginalTitle'],
+        ['waveDownloadOriginal', 'audio.waveform.download', 'Download audio', 'audio.waveform.downloadTitle'],
         ['waveSeparate', 'audio.waveform.separate', 'AI stem separation'],
         ['waveConvert', 'audio.waveform.convert', 'Convert to editable notes'],
         ['waveRetry', 'audio.waveform.retry', 'Retry conversion'],

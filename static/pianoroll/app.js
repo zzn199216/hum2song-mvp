@@ -7174,7 +7174,18 @@ renderTimeline(){
             const downloaded = await client.downloadArtifact(result.workerJobId, artifact.artifactId);
             const trackIndex = plan.trackIndices[index];
             if (item.kind === 'audio') {
-              const stemFile = new File([downloaded.buffer], downloaded.filename || (item.stem + '.wav'), { type: downloaded.mimeType || 'audio/wav' });
+              const LAS = window.H2SLocalAudioAssets;
+              const artifactMime = (artifact.mimeType && artifact.mimeType !== 'application/octet-stream')
+                ? artifact.mimeType
+                : '';
+              const stemMime = (downloaded.mimeType && downloaded.mimeType !== 'application/octet-stream')
+                ? downloaded.mimeType
+                : (artifactMime || 'audio/wav');
+              const stemNameCandidate = artifact.filename || downloaded.filename || (item.stem + '.wav');
+              const stemFilename = (LAS && typeof LAS.normalizeAudioDownloadFilename === 'function')
+                ? LAS.normalizeAudioDownloadFilename(stemNameCandidate, stemMime, downloaded.buffer, item.stem)
+                : (item.stem + '.wav');
+              const stemFile = new File([downloaded.buffer], stemFilename, { type: stemMime });
               const committed = await this._commitNativeAudioFile(stemFile, {
                 baseName: item.stem,
                 trackIndex: trackIndex,
@@ -9037,7 +9048,16 @@ renderTimeline(){
         objectUrl = urlApi.createObjectURL(file);
         const link = document.createElement('a');
         link.href = objectUrl;
-        link.download = (file.name && String(file.name).trim()) ? String(file.name).trim() : 'audio.wav';
+        let headBytes = null;
+        try{
+          if (file.slice && file.arrayBuffer){
+            headBytes = await file.slice(0, 16).arrayBuffer();
+          }
+        }catch(_headerReadErr){}
+        const LAS = window.H2SLocalAudioAssets;
+        link.download = (LAS && typeof LAS.normalizeAudioDownloadFilename === 'function')
+          ? LAS.normalizeAudioDownloadFilename(file.name, file.type, headBytes, clip.name || 'audio')
+          : ((file.name && String(file.name).trim()) ? String(file.name).trim() : 'audio.wav');
         link.style.display = 'none';
         (document.body || document.documentElement).appendChild(link);
         try{

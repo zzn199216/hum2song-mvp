@@ -80,7 +80,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
   assert(wfSrc.includes('data-act="waveRetry"'), 'retry button in modal');
   assert(wfSrc.includes('data-act="waveDownloadOriginal"'), 'original audio download button in modal');
   assert(wfSrc.includes('hooks.downloadOriginal(openCtx.clipId)'), 'modal download forwards the current audio clip');
-  assert(wfSrc.includes("'cliplib.downloadOriginal'"), 'modal download reuses the localized original-audio label');
+  assert(wfSrc.includes("'audio.waveform.download'"), 'modal download uses the concise waveform-specific label');
   assert(wfSrc.includes('data-act="waveSeparate"'), 'AI separation button in waveform modal');
   assert(wfSrc.includes('data-role="wfSeparateBeforeConvert"'), 'waveform modal offers separation before MIDI conversion');
   assert(wfSrc.includes('data-role="wfSeparationPreset"'), 'separation target is inline in waveform modal');

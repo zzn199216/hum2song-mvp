@@ -137,6 +137,8 @@
   "audio.waveform.selectedDuration": "選択範囲の長さ",
   "audio.waveform.preview": "選択範囲をプレビュー",
   "audio.waveform.previewStop": "プレビュー停止",
+  "audio.waveform.download": "音声をダウンロード",
+  "audio.waveform.downloadTitle": "この音声ファイルをダウンロード",
   "audio.waveform.separate": "AIステム分離",
   "audio.waveform.separateBeforeConvert": "AIステム分離後にMIDI変換（2回消費）",
   "audio.waveform.separationSettings": "ステム分離設定",

@@ -137,6 +137,8 @@
   "audio.waveform.selectedDuration": "选区时长",
   "audio.waveform.preview": "试听选区",
   "audio.waveform.previewStop": "停止试听",
+  "audio.waveform.download": "下载音频",
+  "audio.waveform.downloadTitle": "下载当前音频文件",
   "audio.waveform.separate": "AI 自动分轨",
   "audio.waveform.separateBeforeConvert": "先 AI 分轨后转 MIDI（扣除 2 次）",
   "audio.waveform.separationSettings": "分轨设置",

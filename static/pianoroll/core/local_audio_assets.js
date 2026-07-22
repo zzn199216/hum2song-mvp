@@ -31,6 +31,60 @@
     return ref.slice(LOCAL_AUDIO_ASSET_PREFIX.length);
   }
 
+  var AUDIO_DOWNLOAD_EXTENSION_RE = /\.(wav|mp3|m4a|mp4|aac|ogg|oga|flac|webm|opus)$/i;
+
+  function _audioExtensionFromMime(mimeType){
+    var mime = String(mimeType || '').toLowerCase().split(';')[0].trim();
+    if (mime === 'audio/wav' || mime === 'audio/x-wav' || mime === 'audio/wave' || mime === 'audio/vnd.wave') return '.wav';
+    if (mime === 'audio/mpeg' || mime === 'audio/mp3') return '.mp3';
+    if (mime === 'audio/mp4' || mime === 'audio/m4a' || mime === 'audio/x-m4a') return '.m4a';
+    if (mime === 'audio/aac') return '.aac';
+    if (mime === 'audio/ogg' || mime === 'application/ogg') return '.ogg';
+    if (mime === 'audio/flac' || mime === 'audio/x-flac') return '.flac';
+    if (mime === 'audio/webm') return '.webm';
+    if (mime === 'audio/opus') return '.opus';
+    return '';
+  }
+
+  function _audioExtensionFromHeader(headBytes){
+    var bytes = null;
+    try{
+      if (headBytes instanceof Uint8Array) bytes = headBytes;
+      else if (headBytes instanceof ArrayBuffer) bytes = new Uint8Array(headBytes);
+      else if (headBytes && headBytes.buffer instanceof ArrayBuffer) bytes = new Uint8Array(headBytes.buffer, headBytes.byteOffset || 0, headBytes.byteLength || 0);
+    }catch(_bytesErr){}
+    if (!bytes || !bytes.length) return '';
+    var ascii = function(offset, text){
+      if (bytes.length < offset + text.length) return false;
+      for (var i = 0; i < text.length; i += 1){
+        if (bytes[offset + i] !== text.charCodeAt(i)) return false;
+      }
+      return true;
+    };
+    if (ascii(0, 'RIFF') && ascii(8, 'WAVE')) return '.wav';
+    if (ascii(0, 'ID3') || (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0)) return '.mp3';
+    if (ascii(0, 'OggS')) return '.ogg';
+    if (ascii(0, 'fLaC')) return '.flac';
+    if (bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return '.webm';
+    if (ascii(4, 'ftyp')) return '.m4a';
+    return '';
+  }
+
+  function _safeDownloadBase(value){
+    var base = String(value || '').split(/[\\/]/).pop().trim();
+    base = base.replace(/\.[a-z0-9]+$/i, '');
+    base = base.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').trim();
+    return base || 'audio';
+  }
+
+  /** Keep real audio names, but repair generic .bin names using MIME or file signatures. */
+  function normalizeAudioDownloadFilename(filename, mimeType, headBytes, fallbackBase){
+    var name = String(filename || '').split(/[\\/]/).pop().trim();
+    if (AUDIO_DOWNLOAD_EXTENSION_RE.test(name)) return name;
+    var ext = _audioExtensionFromMime(mimeType) || _audioExtensionFromHeader(headBytes) || '.wav';
+    return _safeDownloadBase(fallbackBase || name || 'audio') + ext;
+  }
+
   function _openDb(){
     if (typeof indexedDB === 'undefined'){
       return Promise.reject(new Error('indexedDB_unavailable'));
@@ -222,6 +276,7 @@
     LOCAL_AUDIO_ASSET_PREFIX: LOCAL_AUDIO_ASSET_PREFIX,
     isLocalImportedAudioRef: isLocalImportedAudioRef,
     localAssetIdFromRef: localAssetIdFromRef,
+    normalizeAudioDownloadFilename: normalizeAudioDownloadFilename,
     storeImportedAudioFile: storeImportedAudioFile,
     resolveAssetRefToPlaybackUrl: resolveAssetRefToPlaybackUrl,
     getFileForLocalAssetRef: getFileForLocalAssetRef,

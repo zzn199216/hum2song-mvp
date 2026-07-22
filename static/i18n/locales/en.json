@@ -137,6 +137,8 @@
   "audio.waveform.selectedDuration": "Selected duration",
   "audio.waveform.preview": "Preview selection",
   "audio.waveform.previewStop": "Stop preview",
+  "audio.waveform.download": "Download audio",
+  "audio.waveform.downloadTitle": "Download this audio file",
   "audio.waveform.separate": "AI stem separation",
   "audio.waveform.separateBeforeConvert": "AI stem separation before MIDI conversion (2 credits)",
   "audio.waveform.separationSettings": "Stem separation settings",

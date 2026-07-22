@@ -85,6 +85,8 @@ function testAppUsesOnlyBrowserLocalFile(){
   assert(method.includes('this._resolveLocalAudioFileForClip(clipId)'), 'download should reuse the IndexedDB-backed local file');
   assert(method.includes('createObjectURL(file)'), 'download should use a browser blob URL');
   assert(method.includes('link.download'), 'download should use the browser download attribute');
+  assert(method.includes('file.slice(0, 16).arrayBuffer()'), 'download should inspect ambiguous local files without re-downloading them');
+  assert(method.includes('LAS.normalizeAudioDownloadFilename'), 'download should repair .bin names from MIME or audio signatures');
   assert(method.includes('revokeObjectURL'), 'download should release the temporary blob URL');
   assert(!/\bfetch\s*\(/.test(method), 'download must not fetch the source from the network');
   assert(!/XMLHttpRequest/.test(method), 'download must not issue an XHR');
@@ -99,7 +101,7 @@ function testAppUsesOnlyBrowserLocalFile(){
 function testLocales(){
   for (const locale of ['en', 'zh', 'ja']){
     const messages = JSON.parse(fs.readFileSync(path.join(repoRoot, 'static', 'i18n', 'locales', locale + '.json'), 'utf8'));
-    for (const key of ['cliplib.downloadOriginal', 'cliplib.downloadOriginalTitle', 'cliplib.downloadMissing', 'cliplib.downloadFailed']){
+    for (const key of ['cliplib.downloadOriginal', 'cliplib.downloadOriginalTitle', 'cliplib.downloadMissing', 'cliplib.downloadFailed', 'audio.waveform.download', 'audio.waveform.downloadTitle']){
       assert.strictEqual(typeof messages[key], 'string', locale + ' missing ' + key);
       assert(messages[key].trim(), locale + ' has empty ' + key);
     }
