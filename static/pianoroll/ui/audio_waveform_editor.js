@@ -359,7 +359,6 @@
           '</div>' +
           '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
             '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
-            '<button type="button" class="btn mini" data-act="waveDownloadOriginal"></button>' +
             '<label class="h2s-audio-waveform-separation-toggle">' +
               '<input type="checkbox" data-role="wfSeparateBeforeConvert">' +
               '<span data-i18n-role="wfSeparateBeforeConvertLabel"></span>' +
@@ -368,6 +367,11 @@
             '<button type="button" class="btn mini" data-act="waveRetry" hidden></button>' +
             '<button type="button" class="btn mini" data-act="waveExtract"></button>' +
             '<button type="button" class="btn mini ghost" data-act="waveCloseBtn"></button>' +
+            '<button type="button" class="btn mini h2s-audio-waveform-download-icon" data-act="waveDownloadOriginal" aria-label="Download audio">' +
+              '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path>' +
+              '</svg>' +
+            '</button>' +
           '</div>' +
           '<div class="row h2s-audio-waveform-separation-actions">' +
             '<label class="h2s-audio-waveform-separation-toggle">' +
@@ -682,7 +686,6 @@
         ['waveLen30', 'convert.preset30', '30s'],
         ['waveLen60', 'convert.preset60', '60s'],
         ['wavePreview', 'audio.waveform.preview', 'Preview selection'],
-        ['waveDownloadOriginal', 'audio.waveform.download', 'Download audio', 'audio.waveform.downloadTitle'],
         ['waveSeparate', 'audio.waveform.separate', 'AI stem separation'],
         ['waveConvert', 'audio.waveform.convert', 'Convert to editable notes'],
         ['waveRetry', 'audio.waveform.retry', 'Retry conversion'],
@@ -696,6 +699,13 @@
           if (row[3]) btn.title = t(row[3], row[2]);
         }
       });
+      var downloadBtn = panel.querySelector('[data-act="waveDownloadOriginal"]');
+      if (downloadBtn) {
+        var downloadLabel = t('audio.waveform.download', 'Download audio');
+        var downloadTitle = t('audio.waveform.downloadTitle', downloadLabel);
+        downloadBtn.setAttribute('aria-label', downloadLabel);
+        downloadBtn.title = downloadTitle;
+      }
       updatePreviewButton();
       updateSeparationCost();
       syncSeparatorAvailability();

@@ -87,6 +87,8 @@ function testAppUsesOnlyBrowserLocalFile(){
   assert(method.includes('link.download'), 'download should use the browser download attribute');
   assert(method.includes('file.slice(0, 16).arrayBuffer()'), 'download should inspect ambiguous local files without re-downloading them');
   assert(method.includes('LAS.audioDownloadFilenameForClip(clip.name'), 'download should use the current clip name with the real audio extension');
+  assert(method.includes('(fallbackBase + fallbackExt)'), 'download fallback should still use the clip name and an audio extension');
+  assert(!method.includes("String(file.name).trim() : 'audio.wav'"), 'download must never fall back to the cached .bin source filename');
   assert(method.includes('revokeObjectURL'), 'download should release the temporary blob URL');
   assert(!/\bfetch\s*\(/.test(method), 'download must not fetch the source from the network');
   assert(!/XMLHttpRequest/.test(method), 'download must not issue an XHR');
@@ -95,6 +97,8 @@ function testAppUsesOnlyBrowserLocalFile(){
 
   const waveformSource = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'ui', 'audio_waveform_editor.js'), 'utf8');
   assert(waveformSource.includes('data-act="waveDownloadOriginal"'), 'audio segment editor should expose the original download button');
+  assert(waveformSource.indexOf('data-act="waveCloseBtn"') < waveformSource.indexOf('data-act="waveDownloadOriginal"'), 'modal download should be placed last');
+  assert(waveformSource.includes('<svg viewBox="0 0 24 24"'), 'modal download should use a download icon');
   assert(waveformSource.includes('hooks.downloadOriginal(openCtx.clipId)'), 'audio segment editor should download its current source clip');
 }
 

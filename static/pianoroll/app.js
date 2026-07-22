@@ -9055,9 +9055,21 @@ renderTimeline(){
           }
         }catch(_headerReadErr){}
         const LAS = window.H2SLocalAudioAssets;
+        const fallbackSourceName = String(file.name || '');
+        const fallbackExtMatch = fallbackSourceName.match(/\.(wav|mp3|m4a|mp4|aac|ogg|oga|flac|webm|opus)$/i);
+        const fallbackMime = String(file.type || '').toLowerCase();
+        const fallbackExt = fallbackExtMatch
+          ? fallbackExtMatch[0].toLowerCase()
+          : ((fallbackMime === 'audio/mpeg' || fallbackMime === 'audio/mp3') ? '.mp3' : '.wav');
+        const fallbackBase = String(clip.name || 'audio')
+          .split(/[\\/]/).pop()
+          .replace(/\.(wav|mp3|m4a|mp4|aac|ogg|oga|flac|webm|opus|bin)$/i, '')
+          .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+          .replace(/[. ]+$/g, '')
+          .trim() || 'audio';
         link.download = (LAS && typeof LAS.audioDownloadFilenameForClip === 'function')
           ? LAS.audioDownloadFilenameForClip(clip.name || 'audio', file.name, file.type, headBytes)
-          : ((file.name && String(file.name).trim()) ? String(file.name).trim() : 'audio.wav');
+          : (fallbackBase + fallbackExt);
         link.style.display = 'none';
         (document.body || document.documentElement).appendChild(link);
         try{
