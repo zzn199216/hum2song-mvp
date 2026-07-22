@@ -122,12 +122,13 @@ if (fs.existsSync(indexHtmlPath)) {
   assert(indexHtml.indexOf('id="btnLastOptimizeDetails"') !== -1, 'index.html must include last optimize details button');
   assert(indexHtml.indexOf('id="studioLastOptimizeDetails"') !== -1, 'index.html must include last optimize details panel');
   assert(indexHtml.indexOf('studio-lang-select-active') !== -1, 'language select should temporarily de-emphasize AI dock while open');
+  assert(/\.topbar\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-areas:[\s\S]*?workflow/.test(indexHtml), 'Studio topbar should use deterministic rows instead of free wrapping');
   assert(indexHtml.indexOf('id="chkImportAudioSeparateFirst"') !== -1, 'top-bar separation toggle should exist');
   assert(indexHtml.indexOf('data-i18n="transcription.separateFirst"') !== -1, 'top-bar separation toggle should be localized');
   assert(indexHtml.indexOf('data-i18n="transcription.separationPreset.fourStem"') !== -1, 'separation preset choices should be localized');
   assert(indexHtml.indexOf('data-i18n="audio.waveform.separationHelp"') !== -1, 'separation dialog help should be localized');
   assert(indexHtml.indexOf('data-i18n="audio.waveform.separationStart"') !== -1, 'separation dialog action should be localized');
-  assert(indexHtml.indexOf('global-i18n-v2') !== -1, 'global i18n release should bump Studio script cache version');
+  assert(indexHtml.indexOf('global-shell-v1') !== -1, 'global i18n release should bump Studio script cache version');
 }
 
 // Last optimize: staleness uses revision + project doc key (see app.js)
@@ -145,6 +146,7 @@ if (fs.existsSync(appJsPath)) {
   assert(appJs.indexOf('studio-lang-select-active') !== -1, 'app.js should mark language select activity for overlay-safe interaction');
   assert(appJs.indexOf("_t('transcription.separationCost.enabled'") !== -1, 'dynamic separation cost should use localized copy');
   assert(/_syncTopBarImportTranscriptionControls\(\)\{[\s\S]*?const _t = \(window\.I18N && window\.I18N\.t\)[\s\S]*?_t\('transcription\.separationCost\.enabled'/.test(appJs), 'top-bar separation sync should define its translation helper before use');
+  assert(/stored === null\)[\s\S]*?window\.H2S_CLOUD_MODE === true/.test(appJs), 'Cloud Studio should collapse the AI Assistant on first use');
 }
 
 var i18nCorePath = path.join(__dirname, '../../static/i18n/i18n.js');
@@ -156,7 +158,7 @@ if (fs.existsSync(i18nCorePath)) {
 var assetVersionPath = path.join(__dirname, '../../static/pianoroll/studio_asset_version.js');
 if (fs.existsSync(assetVersionPath)) {
   var assetVersionSrc = fs.readFileSync(assetVersionPath, 'utf8');
-  assert(assetVersionSrc.indexOf('global-i18n-v2') !== -1, 'Studio asset version should change for global i18n release');
+  assert(assetVersionSrc.indexOf('global-shell-v1') !== -1, 'Studio asset version should change for global i18n release');
 }
 
 var bridgePath = path.join(__dirname, '../../static/pianoroll/cloud_project_bridge.js');

@@ -40,29 +40,43 @@
     }
     .topbar{
       min-height:54px;
-      display:flex;
-      flex-wrap:wrap;
+      display:grid;
+      grid-template-columns:auto auto minmax(12px, 1fr) auto auto auto;
+      grid-template-areas:
+        "brand project spacer help credits ai"
+        "workflow workflow workflow workflow workflow workflow"
+        "status cancel hint hint hint hint";
       align-items:center;
       align-content:center;
-      padding:0 14px;
+      padding:8px 14px;
       border-bottom:1px solid var(--border);
       background: rgba(18,22,28,.85);
       backdrop-filter: blur(10px);
-      gap:12px;
+      gap:8px 12px;
     }
+    .topbar .brand{ grid-area:brand; }
+    #btnProjectHome{ grid-area:project; }
     .topbar .row{
+      grid-area:workflow;
       min-width:0;
-      flex:1 1 360px;
+      width:100%;
     }
     .topbar .spacer{
-      flex:1 1 16px;
+      grid-area:spacer;
       min-width:0;
     }
+    #btnBeginnerHelpEntry{ grid-area:help; }
+    #btnCreditsEntry{ grid-area:credits; }
+    #btnAiSettings{ grid-area:ai; }
+    #studioImportStatus{ grid-area:status; }
+    #btnCancelImport{ grid-area:cancel; }
+    .topbar > .smallmuted[data-i18n="top.localClipsHint"]{ grid-area:hint; }
     .topbarImportWorkflow{
       display:inline-flex;
       align-items:center;
       gap:8px;
       min-width:0;
+      flex:1 1 720px;
       flex-wrap:wrap;
     }
     .transcriptionImportOptions{
@@ -75,6 +89,7 @@
       border:1px solid var(--border);
       border-radius:6px;
       background:#151a21;
+      flex:1 1 620px;
     }
     .transcriptionImportOptions[data-enabled="false"]{
       grid-template-columns:minmax(0, auto);
@@ -200,16 +215,18 @@
     }
     @media (max-width: 900px){
       .topbar{
+        grid-template-columns:minmax(180px, 1fr) auto auto auto auto;
+        grid-template-areas:
+          "brand project help credits ai"
+          "workflow workflow workflow workflow workflow";
         padding:6px 10px;
         gap:8px;
       }
       .topbar .brand{
-        flex:1 1 auto;
         min-width:180px;
       }
       .topbar .row{
-        order:2;
-        flex-basis:100%;
+        width:100%;
       }
       .topbar .spacer{
         display:none;
@@ -220,6 +237,10 @@
       #studioImportStatus,
       .topbar > .smallmuted[data-i18n="top.localClipsHint"]{
         display:none;
+      }
+      .topbarImportWorkflow,
+      .transcriptionImportOptions{
+        flex-basis:100%;
       }
     }
     .studioMobileWarning{
@@ -2173,18 +2194,18 @@
   </div>
 
   <!-- i18n core (PR-G1a) - load before other scripts -->
-  <script src="/static/pianoroll/studio_asset_version.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/h2s_startup_perf.js?v=global-i18n-v2"></script>
-  <script src="/static/i18n/i18n.js?v=global-i18n-v2"></script>
+  <script src="/static/pianoroll/studio_asset_version.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/h2s_startup_perf.js?v=global-shell-v1"></script>
+  <script src="/static/i18n/i18n.js?v=global-shell-v1"></script>
   <!-- Tone.js (UMD) - local vendor -->
   <script src="/static/pianoroll/vendor/tone/Tone.js"></script>
 
-  <script src="/static/pianoroll/project.js?v=global-i18n-v2"></script>
+  <script src="/static/pianoroll/project.js?v=global-shell-v1"></script>
   <script src="/static/pianoroll/core/waveform_peaks.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/local_audio_assets.js"></script>
-  <script src="/static/pianoroll/controllers/instrument_library_store.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/core/instrument_manifest.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/core/gm_drum_kit.js?v=global-i18n-v2"></script>
+  <script src="/static/pianoroll/controllers/instrument_library_store.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/core/instrument_manifest.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/core/gm_drum_kit.js?v=global-shell-v1"></script>
   <script src="/static/pianoroll/core/agent_patch.js?v=1"></script>
   <script src="/static/pianoroll/core/velocity_shape.js?v=1"></script>
   <script src="/static/pianoroll/core/local_transpose.js?v=1"></script>
@@ -2203,12 +2224,12 @@
   <script src="/static/pianoroll/ui/timeline_view.js?v=clip-canvas-v1"></script>
   <script src="/static/pianoroll/core/timeline_math.js"></script>
   <script src="/static/pianoroll/controllers/timeline_runtime.js"></script>
-  <script src="/static/pianoroll/timeline_controller.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/ui/library_view.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/controllers/library_controller.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/ui/selection_view.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/controllers/selection_controller.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/controllers/audio_controller.js?v=global-i18n-v2"></script>
+  <script src="/static/pianoroll/timeline_controller.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/ui/library_view.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/controllers/library_controller.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/ui/selection_view.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/controllers/selection_controller.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/controllers/audio_controller.js?v=global-shell-v1"></script>
   <script src="/static/pianoroll/llm_defaults.js"></script>
   <script src="/static/pianoroll/llm_config.js"></script>
   <script src="/static/pianoroll/llm_client.js"></script>
@@ -2225,11 +2246,11 @@
   <script src="/static/pianoroll/controllers/editor_runtime.js?v=clip-edit-v16"></script>
   <script src="/static/pianoroll/controllers/export_flatten_controller.js"></script>
   <script src="/static/pianoroll/controllers/export_midi_controller.js"></script>
-  <script src="/static/pianoroll/controllers/export_wav_controller.js?v=global-i18n-v2"></script>
+  <script src="/static/pianoroll/controllers/export_wav_controller.js?v=global-shell-v1"></script>
   <script src="/static/pianoroll/core/audio_convert_segment.js?v=clip-edit-v16"></script>
-  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=global-i18n-v2"></script>
+  <script src="/static/pianoroll/core/audio_worker_conversion_client.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/core/audio_separation_timeline.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/core/audio_worker_separation_client.js?v=global-shell-v1"></script>
   <script src="/static/pianoroll/internal_action_registry.js"></script>
   <script src="/static/pianoroll/internal_skill_registry.js"></script>
   <style>
@@ -2438,6 +2459,8 @@
       if (window.location && window.location.hostname === 'studio.hum2song.cn') {
         origins.push('https://hum2song.cn');
         origins.push('https://www.hum2song.cn');
+        origins.push('https://hum2song.com');
+        origins.push('https://www.hum2song.com');
       }
       return origins.indexOf(origin) >= 0;
     }
@@ -2455,9 +2478,9 @@
     } catch (_err) {}
   })();
   </script>
-  <script src="/static/pianoroll/app.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/cloud_project_bridge.js?v=global-i18n-v2"></script>
-  <script src="/static/pianoroll/cloud_materials_panel.js?v=global-i18n-v2"></script>
+  <script src="/static/pianoroll/app.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/cloud_project_bridge.js?v=global-shell-v1"></script>
+  <script src="/static/pianoroll/cloud_materials_panel.js?v=global-shell-v1"></script>
   <script>
   (function () {
     try {
