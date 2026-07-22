@@ -44,6 +44,14 @@ function testLocalAudioAssetsModule(){
     'bass.mp3',
   );
   assert.strictEqual(LA.normalizeAudioDownloadFilename('source.mp3', 'audio/mpeg', null, 'renamed clip'), 'source.mp3');
+  assert.strictEqual(LA.audioDownloadFilenameForClip('bass', 'stem.bin', 'audio/wav', null), 'bass.wav');
+  assert.strictEqual(
+    LA.audioDownloadFilenameForClip('drums', 'stem.bin', 'application/octet-stream', Buffer.from('RIFF0000WAVE')),
+    'drums.wav',
+  );
+  assert.strictEqual(LA.audioDownloadFilenameForClip('lead vocal', 'source.mp3', 'audio/mpeg', null), 'lead vocal.mp3');
+  assert.strictEqual(LA.audioDownloadFilenameForClip('take.1', 'source.wav', 'audio/wav', null), 'take.1.wav');
+  assert.strictEqual(LA.audioDownloadFilenameForClip('bass.wav', 'source.wav', 'audio/wav', null), 'bass.wav');
   return LA.resolveAssetRefToPlaybackUrl('https://example.com/a.wav').then(function(r){
     assert.ok(r && r.url === 'https://example.com/a.wav' && r.revoke == null);
     return LA.resolveAssetRefToPlaybackUrl('localidb:la_missing');

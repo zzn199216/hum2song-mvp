@@ -85,6 +85,19 @@
     return _safeDownloadBase(fallbackBase || name || 'audio') + ext;
   }
 
+  /** Name a single-clip download after the current clip while preserving the source audio format. */
+  function audioDownloadFilenameForClip(clipName, sourceFilename, mimeType, headBytes){
+    var sourceName = String(sourceFilename || '').split(/[\\/]/).pop().trim();
+    var sourceExtMatch = sourceName.match(AUDIO_DOWNLOAD_EXTENSION_RE);
+    var ext = sourceExtMatch
+      ? sourceExtMatch[0].toLowerCase()
+      : (_audioExtensionFromHeader(headBytes) || _audioExtensionFromMime(mimeType) || '.wav');
+    var base = String(clipName || 'audio').split(/[\\/]/).pop().trim();
+    base = base.replace(AUDIO_DOWNLOAD_EXTENSION_RE, '').replace(/\.bin$/i, '');
+    base = base.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').trim();
+    return (base || 'audio') + ext;
+  }
+
   function _openDb(){
     if (typeof indexedDB === 'undefined'){
       return Promise.reject(new Error('indexedDB_unavailable'));
@@ -277,6 +290,7 @@
     isLocalImportedAudioRef: isLocalImportedAudioRef,
     localAssetIdFromRef: localAssetIdFromRef,
     normalizeAudioDownloadFilename: normalizeAudioDownloadFilename,
+    audioDownloadFilenameForClip: audioDownloadFilenameForClip,
     storeImportedAudioFile: storeImportedAudioFile,
     resolveAssetRefToPlaybackUrl: resolveAssetRefToPlaybackUrl,
     getFileForLocalAssetRef: getFileForLocalAssetRef,

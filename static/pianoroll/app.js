@@ -9055,8 +9055,8 @@ renderTimeline(){
           }
         }catch(_headerReadErr){}
         const LAS = window.H2SLocalAudioAssets;
-        link.download = (LAS && typeof LAS.normalizeAudioDownloadFilename === 'function')
-          ? LAS.normalizeAudioDownloadFilename(file.name, file.type, headBytes, clip.name || 'audio')
+        link.download = (LAS && typeof LAS.audioDownloadFilenameForClip === 'function')
+          ? LAS.audioDownloadFilenameForClip(clip.name || 'audio', file.name, file.type, headBytes)
           : ((file.name && String(file.name).trim()) ? String(file.name).trim() : 'audio.wav');
         link.style.display = 'none';
         (document.body || document.documentElement).appendChild(link);
