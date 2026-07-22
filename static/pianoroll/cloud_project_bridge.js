@@ -16,6 +16,8 @@
   var PRODUCTION_CLOUD_PARENT_ORIGINS = [
     'https://hum2song.cn',
     'https://www.hum2song.cn',
+    'https://hum2song.com',
+    'https://www.hum2song.com',
   ];
 
   function _normalizeStudioLocale(locale) {
