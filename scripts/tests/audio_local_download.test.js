@@ -88,6 +88,12 @@ function testAppUsesOnlyBrowserLocalFile(){
   assert(method.includes('revokeObjectURL'), 'download should release the temporary blob URL');
   assert(!/\bfetch\s*\(/.test(method), 'download must not fetch the source from the network');
   assert(!/XMLHttpRequest/.test(method), 'download must not issue an XHR');
+  assert(appSource.includes('downloadOriginal(clipId)'), 'waveform editor should receive an original-audio download hook');
+  assert(appSource.includes('return self.downloadNativeAudioClip(clipId)'), 'waveform hook should reuse the same browser-local download method');
+
+  const waveformSource = fs.readFileSync(path.join(repoRoot, 'static', 'pianoroll', 'ui', 'audio_waveform_editor.js'), 'utf8');
+  assert(waveformSource.includes('data-act="waveDownloadOriginal"'), 'audio segment editor should expose the original download button');
+  assert(waveformSource.includes('hooks.downloadOriginal(openCtx.clipId)'), 'audio segment editor should download its current source clip');
 }
 
 function testLocales(){

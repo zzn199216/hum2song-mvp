@@ -359,6 +359,7 @@
           '</div>' +
           '<div class="row h2s-audio-waveform-actions" style="flex-wrap:wrap;gap:6px;margin-top:10px;">' +
             '<button type="button" class="btn mini" data-act="wavePreview"></button>' +
+            '<button type="button" class="btn mini" data-act="waveDownloadOriginal"></button>' +
             '<label class="h2s-audio-waveform-separation-toggle">' +
               '<input type="checkbox" data-role="wfSeparateBeforeConvert">' +
               '<span data-i18n-role="wfSeparateBeforeConvertLabel"></span>' +
@@ -436,6 +437,17 @@
           applySegmentFromHooks();
         }
         if (act === 'wavePreview') startPreview();
+        if (act === 'waveDownloadOriginal' && typeof hooks.downloadOriginal === 'function') {
+          var downloadBtn = panel.querySelector('[data-act="waveDownloadOriginal"]');
+          if (downloadBtn) downloadBtn.disabled = true;
+          Promise.resolve().then(function () {
+            return hooks.downloadOriginal(openCtx.clipId);
+          }).then(function () {
+            if (downloadBtn) downloadBtn.disabled = false;
+          }, function () {
+            if (downloadBtn) downloadBtn.disabled = false;
+          });
+        }
         if (act === 'waveSeparate') startSeparation();
         if (act === 'waveConvert' && typeof hooks.convertToEditable === 'function') {
           var separateBeforeConvert = panel.querySelector('[data-role="wfSeparateBeforeConvert"]');
@@ -670,6 +682,7 @@
         ['waveLen30', 'convert.preset30', '30s'],
         ['waveLen60', 'convert.preset60', '60s'],
         ['wavePreview', 'audio.waveform.preview', 'Preview selection'],
+        ['waveDownloadOriginal', 'cliplib.downloadOriginal', 'Download original', 'cliplib.downloadOriginalTitle'],
         ['waveSeparate', 'audio.waveform.separate', 'AI stem separation'],
         ['waveConvert', 'audio.waveform.convert', 'Convert to editable notes'],
         ['waveRetry', 'audio.waveform.retry', 'Retry conversion'],
@@ -678,7 +691,10 @@
       ];
       btnMap.forEach(function (row) {
         var btn = panel.querySelector('[data-act="' + row[0] + '"]');
-        if (btn) btn.textContent = t(row[1], row[2]);
+        if (btn) {
+          btn.textContent = t(row[1], row[2]);
+          if (row[3]) btn.title = t(row[3], row[2]);
+        }
       });
       updatePreviewButton();
       updateSeparationCost();

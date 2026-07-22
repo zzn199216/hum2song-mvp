@@ -9098,6 +9098,9 @@ renderTimeline(){
         resolveAudioFile(clipId){
           return self._resolveLocalAudioFileForClip(clipId);
         },
+        downloadOriginal(clipId){
+          return self.downloadNativeAudioClip(clipId);
+        },
         runSeparation(clipId, instanceId, options){
           options = options || {};
           const sourceAudioInstanceId = self._ensureAudioSeparationSourceInstance(clipId, instanceId);
